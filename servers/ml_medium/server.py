@@ -1,0 +1,152 @@
+"""ml_medium server — Tier 2 MCP tool wrappers. Zero domain logic."""
+
+import argparse
+import logging
+import sys
+
+from fastmcp import FastMCP
+
+from . import engine
+
+logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
+
+mcp = FastMCP("ml-medium")
+
+
+@mcp.tool(
+    annotations={
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": False,
+    }
+)
+def run_preprocessing(
+    file_path: str,
+    ops: list[dict],
+    output_path: str = "",
+    dry_run: bool = False,
+) -> dict:
+    """Apply preprocessing ops to dataset. Snapshot before write."""
+    return engine.run_preprocessing(file_path, ops, output_path, dry_run)
+
+
+@mcp.tool(
+    annotations={
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    }
+)
+def detect_outliers(
+    file_path: str,
+    columns: list[str],
+    method: str = "iqr",
+    th1: float = 0.25,
+    th3: float = 0.75,
+) -> dict:
+    """Detect outliers in numeric columns. method: iqr std."""
+    return engine.detect_outliers(file_path, columns, method, th1, th3)
+
+
+@mcp.tool(
+    annotations={
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": False,
+    }
+)
+def train_with_cv(
+    file_path: str,
+    target_column: str,
+    model: str,
+    task: str,
+    n_splits: int = 5,
+    random_state: int = 42,
+    dry_run: bool = False,
+) -> dict:
+    """Train with K-fold CV. Returns per-fold and mean scores."""
+    return engine.train_with_cv(
+        file_path, target_column, model, task, n_splits, random_state, dry_run
+    )
+
+
+@mcp.tool(
+    annotations={
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": False,
+    }
+)
+def compare_models(
+    file_path: str,
+    target_column: str,
+    task: str,
+    models: list[str],
+    test_size: float = 0.2,
+    random_state: int = 42,
+    dry_run: bool = False,
+) -> dict:
+    """Train multiple models, return sorted comparison table."""
+    return engine.compare_models(
+        file_path, target_column, task, models, test_size, random_state, dry_run
+    )
+
+
+@mcp.tool(
+    annotations={
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": False,
+    }
+)
+def run_clustering(
+    file_path: str,
+    feature_columns: list[str],
+    algorithm: str,
+    n_clusters: int = 3,
+    eps: float = 3.0,
+    min_samples: int = 5,
+    reduce_dims: str = "",
+    n_components: int = 2,
+    save_labels: bool = False,
+    dry_run: bool = False,
+) -> dict:
+    """Cluster dataset. algorithm: kmeans meanshift dbscan."""
+    return engine.run_clustering(
+        file_path, feature_columns, algorithm, n_clusters, eps,
+        min_samples, reduce_dims, n_components, save_labels, dry_run
+    )
+
+
+@mcp.tool(
+    annotations={
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    }
+)
+def read_receipt(file_path: str) -> dict:
+    """Read operation history for a file. Returns log entries."""
+    return engine.read_receipt(file_path)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="ml-medium MCP server")
+    parser.add_argument("--transport", choices=["stdio", "http"], default="stdio")
+    parser.add_argument("--port", type=int, default=8766)
+    args = parser.parse_args()
+
+    if args.transport == "http":
+        mcp.run(transport="streamable-http", host="127.0.0.1", port=args.port, path="/mcp")
+    else:
+        mcp.run()
+
+
+if __name__ == "__main__":
+    main()
