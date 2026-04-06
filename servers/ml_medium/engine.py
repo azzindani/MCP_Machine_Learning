@@ -4,13 +4,14 @@ from ._medium_cluster import read_receipt, run_clustering
 from ._medium_data import (
     anomaly_detection,
     batch_predict,
+    check_data_quality,
     evaluate_model,
     filter_rows,
     find_optimal_clusters,
     merge_datasets,
 )
 from ._medium_preprocess import detect_outliers, run_preprocessing
-from ._medium_reports import check_data_quality, generate_eda_report
+from ._medium_reports import generate_eda_report
 from ._medium_train import compare_models, train_with_cv
 
 __all__ = [
