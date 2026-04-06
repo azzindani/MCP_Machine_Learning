@@ -416,8 +416,12 @@ class TestReadReceipt:
         assert r["success"] is True
         assert r["entry_count"] >= 1
 
-    def test_path_outside_home(self, tmp_path):
-        r = read_receipt(str(tmp_path / "outside.csv"))
+    def test_path_outside_home(self):
+        import sys
+
+        # Use a path guaranteed to be outside home on all platforms
+        outside = "/etc/outside.csv" if sys.platform != "win32" else "C:\\outside.csv"
+        r = read_receipt(outside)
         assert r["success"] is False
 
 
