@@ -130,6 +130,98 @@ def generate_training_report(
     )
 
 
+@mcp.tool(
+    annotations={
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    }
+)
+def plot_roc_curve(
+    model_path: str,
+    file_path: str,
+    theme: str = "light",
+    output_path: str = "",
+    open_browser: bool = True,
+    dry_run: bool = False,
+) -> dict:
+    """Plot ROC curve for classifier. Saves interactive HTML."""
+    return engine.plot_roc_curve(
+        model_path, file_path, theme, output_path, open_browser, dry_run
+    )
+
+
+@mcp.tool(
+    annotations={
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    }
+)
+def plot_learning_curve(
+    file_path: str,
+    target_column: str,
+    model: str,
+    task: str,
+    cv: int = 5,
+    theme: str = "light",
+    output_path: str = "",
+    open_browser: bool = True,
+    dry_run: bool = False,
+) -> dict:
+    """Plot train vs val score by training size. HTML output."""
+    return engine.plot_learning_curve(
+        file_path, target_column, model, task, cv, theme, output_path, open_browser, dry_run
+    )
+
+
+@mcp.tool(
+    annotations={
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    }
+)
+def plot_predictions_vs_actual(
+    model_path: str,
+    file_path: str,
+    theme: str = "light",
+    output_path: str = "",
+    open_browser: bool = True,
+    dry_run: bool = False,
+) -> dict:
+    """Scatter predicted vs actual for regression. HTML output."""
+    return engine.plot_predictions_vs_actual(
+        model_path, file_path, theme, output_path, open_browser, dry_run
+    )
+
+
+@mcp.tool(
+    annotations={
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    }
+)
+def generate_cluster_report(
+    file_path: str,
+    feature_columns: list[str],
+    label_column: str,
+    theme: str = "light",
+    output_path: str = "",
+    open_browser: bool = True,
+    dry_run: bool = False,
+) -> dict:
+    """Generate HTML cluster visualization with PCA scatter and profile."""
+    return engine.generate_cluster_report(
+        file_path, feature_columns, label_column, theme, output_path, open_browser, dry_run
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="ml-advanced MCP server")
     parser.add_argument("--transport", choices=["stdio", "http"], default="stdio")

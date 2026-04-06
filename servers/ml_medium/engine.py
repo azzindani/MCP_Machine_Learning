@@ -60,6 +60,9 @@ ALLOWED_OPS = {
     "drop_column",
     "rename_column",
     "convert_dtype",
+    "bin_numeric",
+    "add_date_parts",
+    "log_transform",
 }
 FILL_STRATEGIES = {"mean", "median", "mode", "ffill", "bfill", "zero"}
 SCALE_METHODS = {"standard", "minmax"}
@@ -353,6 +356,48 @@ def _apply_op(df: pd.DataFrame, op: dict) -> tuple[pd.DataFrame, dict]:
         except Exception as exc:
             return df, {"op": op_name, "column": col, "error": str(exc)}
         return df, {"op": op_name, "column": col, "to": to}
+
+    elif op_name == "bin_numeric":
+        col = op["column"]
+        bins = op.get("bins", 5)
+        labels = op.get("labels")
+        new_col = op.get("new_column", f"{col}_bin")
+        if col not in df.columns:
+            return df, {"op": op_name, "column": col, "error": "column not found"}
+        df[new_col] = pd.cut(df[col], bins=bins, labels=labels)
+        return df, {"op": op_name, "column": col, "new_column": new_col, "bins": bins}
+
+    elif op_name == "add_date_parts":
+        col = op["column"]
+        if col not in df.columns:
+            return df, {"op": op_name, "column": col, "error": "column not found"}
+        try:
+            dt = pd.to_datetime(df[col], errors="coerce")
+            parts = op.get("parts", ["year", "month", "day", "dayofweek"])
+            added = []
+            for part in parts:
+                new_col = f"{col}_{part}"
+                df[new_col] = getattr(dt.dt, part)
+                added.append(new_col)
+        except Exception as exc:
+            return df, {"op": op_name, "column": col, "error": str(exc)}
+        return df, {"op": op_name, "column": col, "added_columns": added}
+
+    elif op_name == "log_transform":
+        col = op["column"]
+        base = op.get("base", "natural")  # "natural", "log2", "log10"
+        new_col = op.get("new_column", f"{col}_log")
+        if col not in df.columns:
+            return df, {"op": op_name, "column": col, "error": "column not found"}
+        series = pd.to_numeric(df[col], errors="coerce")
+        offset = max(0, float(-series.min()) + 1) if series.min() <= 0 else 0.0
+        if base == "log2":
+            df[new_col] = np.log2(series + offset)
+        elif base == "log10":
+            df[new_col] = np.log10(series + offset)
+        else:
+            df[new_col] = np.log1p(series + offset)
+        return df, {"op": op_name, "column": col, "new_column": new_col, "base": base, "offset": offset}
 
     return df, {"op": op_name, "error": "unhandled op"}
 
@@ -1558,6 +1603,394 @@ def generate_eda_report(
         "charts_generated": len(sections),
         "progress": progress,
         "token_estimate": 0,
+    }
+    resp["token_estimate"] = len(str(resp)) // 4
+    return resp
+
+
+# ---------------------------------------------------------------------------
+# Tool: filter_rows
+# ---------------------------------------------------------------------------
+
+FILTER_OPS = {"eq", "ne", "gt", "lt", "gte", "lte", "contains", "not_contains",
+              "is_null", "not_null", "starts_with", "ends_with"}
+
+
+def filter_rows(
+    file_path: str,
+    column: str,
+    operator: str,
+    value: str = "",
+    output_path: str = "",
+    dry_run: bool = False,
+) -> dict:
+    """Filter dataset rows by condition. operator: eq ne gt lt gte lte contains is_null not_null."""
+    progress: list[dict] = []
+    try:
+        path = resolve_path(file_path)
+    except ValueError as exc:
+        return _error(str(exc), "Check that file_path is inside your home directory.")
+    if not path.exists():
+        return _error(f"File not found: {file_path}", "Check the file path.")
+    if path.suffix.lower() != ".csv":
+        return _error(f"Expected .csv, got {path.suffix!r}", "Provide a CSV file.")
+    if operator not in FILTER_OPS:
+        return _error(
+            f"Unknown operator: '{operator}'. Allowed: {', '.join(sorted(FILTER_OPS))}",
+            "Use one of: eq ne gt lt gte lte contains is_null not_null starts_with ends_with",
+        )
+
+    try:
+        df = pd.read_csv(path, low_memory=False)
+    except Exception as exc:
+        return _error(f"Failed to read CSV: {exc}", "Check the file is valid.")
+
+    if column not in df.columns:
+        return _error(f"Column '{column}' not found.", "Use inspect_dataset() to list column names.")
+
+    progress.append(ok(f"Loaded {path.name}", f"{len(df):,} rows"))
+    original_count = len(df)
+
+    col = df[column]
+    try:
+        if operator == "eq":
+            mask = col.astype(str) == str(value)
+        elif operator == "ne":
+            mask = col.astype(str) != str(value)
+        elif operator == "gt":
+            mask = pd.to_numeric(col, errors="coerce") > float(value)
+        elif operator == "lt":
+            mask = pd.to_numeric(col, errors="coerce") < float(value)
+        elif operator == "gte":
+            mask = pd.to_numeric(col, errors="coerce") >= float(value)
+        elif operator == "lte":
+            mask = pd.to_numeric(col, errors="coerce") <= float(value)
+        elif operator == "contains":
+            mask = col.astype(str).str.contains(str(value), na=False)
+        elif operator == "not_contains":
+            mask = ~col.astype(str).str.contains(str(value), na=False)
+        elif operator == "is_null":
+            mask = col.isnull()
+        elif operator == "not_null":
+            mask = col.notnull()
+        elif operator == "starts_with":
+            mask = col.astype(str).str.startswith(str(value), na=False)
+        elif operator == "ends_with":
+            mask = col.astype(str).str.endswith(str(value), na=False)
+        else:
+            mask = pd.Series([True] * len(df))
+    except Exception as exc:
+        return _error(f"Filter failed: {exc}", "Check value type matches column dtype.")
+
+    df_filtered = df[mask].copy()
+    kept = len(df_filtered)
+    removed = original_count - kept
+    progress.append(ok("Filter applied", f"{kept:,} rows kept, {removed:,} removed"))
+
+    if dry_run:
+        resp: dict = {
+            "success": True, "op": "filter_rows", "dry_run": True,
+            "rows_kept": kept, "rows_removed": removed, "progress": progress, "token_estimate": 0,
+        }
+        resp["token_estimate"] = len(str(resp)) // 4
+        return resp
+
+    out_path = Path(output_path) if output_path else path.parent / f"{path.stem}_filtered.csv"
+    try:
+        out_resolved = resolve_path(str(out_path))
+    except ValueError:
+        out_resolved = out_path
+
+    backup = ""
+    if out_resolved.exists():
+        try:
+            backup = snapshot(str(out_resolved))
+        except Exception:
+            pass
+
+    out_resolved.parent.mkdir(parents=True, exist_ok=True)
+    df_filtered.to_csv(out_resolved, index=False)
+    progress.append(ok("Saved filtered dataset", out_resolved.name))
+    append_receipt(str(path), "filter_rows", {"column": column, "operator": operator, "value": value}, "success", backup)
+
+    resp = {
+        "success": True, "op": "filter_rows",
+        "output_path": str(out_resolved),
+        "rows_original": original_count, "rows_kept": kept, "rows_removed": removed,
+        "backup": backup, "progress": progress, "token_estimate": 0,
+    }
+    resp["token_estimate"] = len(str(resp)) // 4
+    return resp
+
+
+# ---------------------------------------------------------------------------
+# Tool: merge_datasets
+# ---------------------------------------------------------------------------
+
+def merge_datasets(
+    file_path_1: str,
+    file_path_2: str,
+    on: str,
+    how: str = "left",
+    output_path: str = "",
+    dry_run: bool = False,
+) -> dict:
+    """Merge two CSVs on a key column. how: left right inner outer."""
+    progress: list[dict] = []
+    if how not in ("left", "right", "inner", "outer"):
+        return _error(f"Unknown how: '{how}'.", "Use: left right inner outer")
+
+    try:
+        p1 = resolve_path(file_path_1)
+        p2 = resolve_path(file_path_2)
+    except ValueError as exc:
+        return _error(str(exc), "Check both paths are inside your home directory.")
+
+    for p in (p1, p2):
+        if not p.exists():
+            return _error(f"File not found: {p}", "Check the file path.")
+
+    try:
+        df1 = pd.read_csv(p1, low_memory=False)
+        df2 = pd.read_csv(p2, low_memory=False)
+    except Exception as exc:
+        return _error(f"Failed to read CSV: {exc}", "Check files are valid CSVs.")
+
+    progress.append(ok(f"Loaded {p1.name}", f"{len(df1):,} rows × {len(df1.columns)} cols"))
+    progress.append(ok(f"Loaded {p2.name}", f"{len(df2):,} rows × {len(df2.columns)} cols"))
+
+    # Validate key column exists in both
+    keys = [k.strip() for k in on.split(",")]
+    for k in keys:
+        if k not in df1.columns:
+            return _error(f"Key '{k}' not in {p1.name}.", "Use inspect_dataset() to list column names.")
+        if k not in df2.columns:
+            return _error(f"Key '{k}' not in {p2.name}.", "Use inspect_dataset() to list column names.")
+
+    if dry_run:
+        resp: dict = {
+            "success": True, "op": "merge_datasets", "dry_run": True,
+            "left_rows": len(df1), "right_rows": len(df2),
+            "join_keys": keys, "how": how, "progress": progress, "token_estimate": 0,
+        }
+        resp["token_estimate"] = len(str(resp)) // 4
+        return resp
+
+    on_param = keys[0] if len(keys) == 1 else keys
+    df_merged = pd.merge(df1, df2, on=on_param, how=how, suffixes=("", "_right"))
+    progress.append(ok("Merged", f"{len(df_merged):,} rows × {len(df_merged.columns)} cols"))
+
+    out_path = Path(output_path) if output_path else p1.parent / f"{p1.stem}_merged.csv"
+    try:
+        out_resolved = resolve_path(str(out_path))
+    except ValueError:
+        out_resolved = out_path
+
+    backup = ""
+    if out_resolved.exists():
+        try:
+            backup = snapshot(str(out_resolved))
+        except Exception:
+            pass
+
+    out_resolved.parent.mkdir(parents=True, exist_ok=True)
+    df_merged.to_csv(out_resolved, index=False)
+    progress.append(ok("Saved merged dataset", out_resolved.name))
+    append_receipt(str(p1), "merge_datasets",
+                   {"file_2": p2.name, "on": on, "how": how}, "success", backup)
+
+    resp = {
+        "success": True, "op": "merge_datasets",
+        "output_path": str(out_resolved),
+        "left_rows": len(df1), "right_rows": len(df2),
+        "merged_rows": len(df_merged), "merged_columns": len(df_merged.columns),
+        "join_keys": keys, "how": how,
+        "backup": backup, "progress": progress, "token_estimate": 0,
+    }
+    resp["token_estimate"] = len(str(resp)) // 4
+    return resp
+
+
+# ---------------------------------------------------------------------------
+# Tool: find_optimal_clusters
+# ---------------------------------------------------------------------------
+
+def find_optimal_clusters(
+    file_path: str,
+    feature_columns: list[str],
+    max_k: int = 10,
+    theme: str = "light",
+    output_path: str = "",
+    open_browser: bool = True,
+) -> dict:
+    """Find optimal K for K-Means via elbow + silhouette. Saves HTML chart."""
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+    from sklearn.cluster import KMeans as _KMeans
+    from sklearn.metrics import silhouette_score
+    from shared.html_theme import _open_file, save_chart, get_theme
+
+    progress: list[dict] = []
+    try:
+        path = resolve_path(file_path)
+    except ValueError as exc:
+        return _error(str(exc), "Check that file_path is inside your home directory.")
+    if not path.exists():
+        return _error(f"File not found: {file_path}", "Check the file path.")
+
+    try:
+        df = pd.read_csv(path, low_memory=False)
+    except Exception as exc:
+        return _error(f"Failed to read CSV: {exc}", "Check the file is valid.")
+
+    missing = [c for c in feature_columns if c not in df.columns]
+    if missing:
+        return _error(f"Columns not found: {', '.join(missing)}", "Use inspect_dataset() for column names.")
+
+    x = df[feature_columns].select_dtypes(include="number").dropna().values
+    if x.shape[0] < 4:
+        return _error("Need at least 4 rows for cluster analysis.", "Provide a larger dataset.")
+
+    from sklearn.preprocessing import StandardScaler as _SS
+    x_scaled = _SS().fit_transform(x)
+
+    max_k = min(max_k, x_scaled.shape[0] - 1, 15)
+    k_range = list(range(2, max_k + 1))
+
+    inertias, silhouettes = [], []
+    for k in k_range:
+        km = _KMeans(n_clusters=k, random_state=42, max_iter=100)
+        labels = km.fit_predict(x_scaled)
+        inertias.append(float(km.inertia_))
+        silhouettes.append(float(silhouette_score(x_scaled, labels)))
+        progress.append(info(f"k={k}", f"inertia={km.inertia_:.1f} sil={silhouettes[-1]:.3f}"))
+
+    best_k = k_range[int(np.argmax(silhouettes))]
+    t = get_theme(theme)
+
+    fig = make_subplots(rows=1, cols=2,
+                        subplot_titles=["Elbow Curve (Inertia)", "Silhouette Score"])
+    fig.add_trace(go.Scatter(x=k_range, y=inertias, mode="lines+markers",
+                             name="Inertia", marker_color=t["accent"]), row=1, col=1)
+    fig.add_trace(go.Scatter(x=k_range, y=silhouettes, mode="lines+markers",
+                             name="Silhouette", marker_color=t["success"]), row=1, col=2)
+    fig.add_vline(x=best_k, line_dash="dash", line_color=t["danger"],
+                  annotation_text=f"Best K={best_k}", row=1, col=2)
+    fig.update_layout(
+        title=f"Optimal Clusters for {path.name}",
+        template=t["plotly_template"], paper_bgcolor=t["paper_color"],
+        plot_bgcolor=t["bg_color"], font_color=t["text_color"],
+        height=420, margin=dict(l=10, r=10, t=50, b=10),
+    )
+
+    out_str = output_path or str(path.parent / f"{path.stem}_optimal_k.html")
+    out_abs, out_name = save_chart(fig, out_str, theme=theme, open_browser=open_browser,
+                                   title=f"Optimal Clusters — {path.name}")
+    progress.append(ok("Saved elbow chart", out_name))
+
+    resp: dict = {
+        "success": True, "op": "find_optimal_clusters",
+        "best_k": best_k,
+        "k_range": k_range, "inertias": [round(v, 2) for v in inertias],
+        "silhouette_scores": [round(v, 4) for v in silhouettes],
+        "output_path": out_abs,
+        "progress": progress, "token_estimate": 0,
+    }
+    resp["token_estimate"] = len(str(resp)) // 4
+    return resp
+
+
+# ---------------------------------------------------------------------------
+# Tool: anomaly_detection
+# ---------------------------------------------------------------------------
+
+def anomaly_detection(
+    file_path: str,
+    feature_columns: list[str],
+    method: str = "isolation_forest",
+    contamination: float = 0.05,
+    save_labels: bool = False,
+    dry_run: bool = False,
+) -> dict:
+    """Detect anomalies. method: isolation_forest lof. Adds anomaly_score column if save_labels=True."""
+    from sklearn.ensemble import IsolationForest
+    from sklearn.neighbors import LocalOutlierFactor
+
+    progress: list[dict] = []
+    if method not in ("isolation_forest", "lof"):
+        return _error(f"Unknown method: '{method}'.", "Use 'isolation_forest' or 'lof'.")
+    if not 0 < contamination < 0.5:
+        return _error(f"contamination={contamination} must be in (0, 0.5).", "Use e.g. contamination=0.05")
+
+    try:
+        path = resolve_path(file_path)
+    except ValueError as exc:
+        return _error(str(exc), "Check that file_path is inside your home directory.")
+    if not path.exists():
+        return _error(f"File not found: {file_path}", "Check the file path.")
+
+    try:
+        df = pd.read_csv(path, low_memory=False)
+    except Exception as exc:
+        return _error(f"Failed to read CSV: {exc}", "Check the file is valid.")
+
+    missing = [c for c in feature_columns if c not in df.columns]
+    if missing:
+        return _error(f"Columns not found: {', '.join(missing)}", "Use inspect_dataset() for column names.")
+
+    x = df[feature_columns].select_dtypes(include="number").fillna(0).values
+    progress.append(ok(f"Loaded {path.name}", f"{len(df):,} rows, {len(feature_columns)} features"))
+
+    if dry_run:
+        resp: dict = {
+            "success": True, "op": "anomaly_detection", "dry_run": True,
+            "method": method, "contamination": contamination,
+            "progress": progress, "token_estimate": 0,
+        }
+        resp["token_estimate"] = len(str(resp)) // 4
+        return resp
+
+    from sklearn.preprocessing import StandardScaler as _SS
+    x_scaled = _SS().fit_transform(x)
+
+    if method == "isolation_forest":
+        det = IsolationForest(contamination=contamination, random_state=42)
+        labels = det.fit_predict(x_scaled)        # -1 = anomaly, 1 = normal
+        scores = det.score_samples(x_scaled)      # lower = more anomalous
+    else:
+        det = LocalOutlierFactor(contamination=contamination)
+        labels = det.fit_predict(x_scaled)
+        scores = det.negative_outlier_factor_
+
+    anomaly_mask = labels == -1
+    n_anomalies = int(anomaly_mask.sum())
+    anomaly_pct = round(n_anomalies / len(df) * 100, 2)
+    progress.append(ok(f"Detected anomalies", f"{n_anomalies} ({anomaly_pct}%) anomalous rows"))
+
+    # Top anomaly indices
+    top_anomaly_idx = np.argsort(scores)[:min(10, n_anomalies)].tolist()
+
+    backup = ""
+    if save_labels:
+        try:
+            backup = snapshot(str(path))
+        except Exception as exc:
+            progress.append(warn("Snapshot failed", str(exc)))
+        df["anomaly_score"] = scores
+        df["is_anomaly"] = anomaly_mask.astype(int)
+        df.to_csv(path, index=False)
+        progress.append(ok("Saved anomaly labels", path.name))
+
+    append_receipt(str(path), "anomaly_detection",
+                   {"method": method, "contamination": contamination},
+                   "success", backup)
+
+    resp = {
+        "success": True, "op": "anomaly_detection",
+        "method": method, "contamination": contamination,
+        "n_anomalies": n_anomalies, "anomaly_pct": anomaly_pct,
+        "top_anomaly_indices": top_anomaly_idx,
+        "backup": backup, "progress": progress, "token_estimate": 0,
     }
     resp["token_estimate"] = len(str(resp)) // 4
     return resp
