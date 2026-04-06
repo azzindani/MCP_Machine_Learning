@@ -32,6 +32,10 @@ jobs:
         with:
           version: "latest"
 
+      - name: Install libomp (macOS)
+        if: runner.os == 'macOS'
+        run: brew install libomp
+
       - name: Install dependencies
         run: uv sync --frozen
 
