@@ -10,8 +10,8 @@ from ._medium_data import (
     find_optimal_clusters,
     merge_datasets,
 )
+from ._medium_eda import generate_eda_report
 from ._medium_preprocess import detect_outliers, run_preprocessing
-from ._medium_reports import generate_eda_report
 from ._medium_train import compare_models, train_with_cv
 
 __all__ = [
