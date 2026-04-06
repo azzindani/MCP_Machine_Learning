@@ -16,7 +16,7 @@ from sklearn.decomposition import PCA, FastICA
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 from sklearn.preprocessing import StandardScaler
 
-from shared.file_utils import resolve_path
+from shared.file_utils import get_output_dir, resolve_path
 from shared.platform_utils import get_cv_folds, is_constrained_mode
 from shared.progress import info, ok, warn
 from shared.receipt import append_receipt
@@ -416,7 +416,7 @@ def run_profiling_report(
     if path.suffix.lower() != ".csv":
         return _error(f"Expected .csv file, got {path.suffix!r}", "Provide a CSV file path.")
 
-    out_path = Path(output_path) if output_path else path.with_suffix(".html")
+    out_path = Path(output_path) if output_path else get_output_dir() / f"{path.stem}_profile.html"
     try:
         out_path_resolved = resolve_path(str(out_path))
     except ValueError:
@@ -624,7 +624,7 @@ def apply_dimensionality_reduction(
     if method not in ("pca", "ica"):
         return _error(f"Unknown method: '{method}'.", "Use 'pca' or 'ica'.")
 
-    out_path_str = output_path or str(path.parent / f"{path.stem}_{method}_reduced.csv")
+    out_path_str = output_path or str(get_output_dir() / f"{path.stem}_{method}_reduced.csv")
     try:
         out_path = resolve_path(out_path_str)
     except ValueError:
@@ -753,7 +753,7 @@ def generate_training_report(
     if mp.suffix.lower() != ".pkl":
         return _error(f"Expected .pkl file, got {mp.suffix!r}", "Provide a path to a .pkl model file.")
 
-    out_path_str = output_path or str(mp.parent / f"{mp.stem}_report.html")
+    out_path_str = output_path or str(get_output_dir() / f"{mp.stem}_report.html")
     try:
         out_path = resolve_path(out_path_str)
     except ValueError:

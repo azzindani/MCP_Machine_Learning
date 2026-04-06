@@ -33,7 +33,7 @@ from sklearn.preprocessing import LabelEncoder, MinMaxScaler, StandardScaler
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
-from shared.file_utils import resolve_path
+from shared.file_utils import get_output_dir, resolve_path
 from shared.platform_utils import get_cv_folds, get_max_models
 from shared.progress import fail, info, ok, warn
 from shared.receipt import append_receipt, read_receipt_log
@@ -421,6 +421,7 @@ def _apply_op(df: pd.DataFrame, op: dict) -> tuple[pd.DataFrame, dict]:
 
 __all__ = [
     # re-exports from shared
+    "get_output_dir",
     "resolve_path",
     "get_cv_folds",
     "get_max_models",

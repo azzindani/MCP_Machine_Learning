@@ -31,7 +31,7 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler  # noqa: F401
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
-from shared.file_utils import resolve_path
+from shared.file_utils import get_output_dir, resolve_path
 from shared.platform_utils import get_cv_folds, is_constrained_mode  # noqa: F401
 from shared.progress import info, ok, warn  # noqa: F401
 from shared.receipt import append_receipt  # noqa: F401
@@ -170,6 +170,7 @@ __all__ = [
     # shared re-exports
     "append_receipt",
     "get_cv_folds",
+    "get_output_dir",
     "info",
     "is_constrained_mode",
     "ok",

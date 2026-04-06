@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from shared.file_utils import resolve_path
+from shared.file_utils import get_output_dir, resolve_path
 from shared.html_theme import get_theme, save_chart
 from shared.progress import info, ok
 
@@ -204,7 +204,7 @@ def plot_roc_curve(
             template=t["plotly_template"],
         )
 
-        out_path_str = output_path or str(dp.parent / f"{dp.stem}_roc_curve.html")
+        out_path_str = output_path or str(get_output_dir() / f"{dp.stem}_roc_curve.html")
         out_abs, out_name = save_chart(
             fig, out_path_str, theme=theme, open_browser=open_browser, title=f"ROC Curve — {mp.stem}"
         )
@@ -369,7 +369,7 @@ def plot_learning_curve(
             template=t["plotly_template"],
         )
 
-        out_path_str = output_path or str(dp.parent / f"{dp.stem}_{model}_learning_curve.html")
+        out_path_str = output_path or str(get_output_dir() / f"{dp.stem}_{model}_learning_curve.html")
         out_abs, out_name = save_chart(
             fig, out_path_str, theme=theme, open_browser=open_browser, title=f"Learning Curve — {model}"
         )
@@ -530,7 +530,7 @@ def plot_predictions_vs_actual(
             template=t["plotly_template"],
         )
 
-        out_path_str = output_path or str(dp.parent / f"{dp.stem}_pred_vs_actual.html")
+        out_path_str = output_path or str(get_output_dir() / f"{dp.stem}_pred_vs_actual.html")
         out_abs, out_name = save_chart(
             fig, out_path_str, theme=theme, open_browser=open_browser, title="Predictions vs Actual"
         )

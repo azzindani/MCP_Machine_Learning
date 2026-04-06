@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 
-from shared.file_utils import resolve_path
+from shared.file_utils import get_output_dir, resolve_path
 from shared.platform_utils import get_max_rows
 from shared.progress import info, ok
 from shared.progress import name as pname
@@ -374,7 +374,7 @@ def split_dataset(
             "Use e.g. test_size=0.2 for 20% test.",
         )
 
-    out_dir = resolve_path(output_dir) if output_dir else path.parent
+    out_dir = resolve_path(output_dir) if output_dir else get_output_dir()
     out_dir.mkdir(parents=True, exist_ok=True)
 
     stratify = None

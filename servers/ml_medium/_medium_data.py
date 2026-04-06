@@ -11,6 +11,7 @@ import pandas as pd
 from ._medium_helpers import (
     _error,
     append_receipt,
+    get_output_dir,
     info,
     ok,
     resolve_path,
@@ -118,7 +119,7 @@ def filter_rows(
         resp["token_estimate"] = len(str(resp)) // 4
         return resp
 
-    out_path = Path(output_path) if output_path else path.parent / f"{path.stem}_filtered.csv"
+    out_path = Path(output_path) if output_path else get_output_dir() / f"{path.stem}_filtered.csv"
     try:
         out_resolved = resolve_path(str(out_path))
     except ValueError:
@@ -217,7 +218,7 @@ def merge_datasets(
     df_merged = pd.merge(df1, df2, on=on_param, how=how, suffixes=("", "_right"))
     progress.append(ok("Merged", f"{len(df_merged):,} rows × {len(df_merged.columns)} cols"))
 
-    out_path = Path(output_path) if output_path else p1.parent / f"{p1.stem}_merged.csv"
+    out_path = Path(output_path) if output_path else get_output_dir() / f"{p1.stem}_merged.csv"
     try:
         out_resolved = resolve_path(str(out_path))
     except ValueError:
@@ -333,7 +334,7 @@ def find_optimal_clusters(
         margin=dict(l=10, r=10, t=50, b=10),
     )
 
-    out_str = output_path or str(path.parent / f"{path.stem}_optimal_k.html")
+    out_str = output_path or str(get_output_dir() / f"{path.stem}_optimal_k.html")
     out_abs, out_name = save_chart(
         fig, out_str, theme=theme, open_browser=open_browser, title=f"Optimal Clusters — {path.name}"
     )
@@ -737,7 +738,7 @@ def batch_predict(
         df["prediction"] = preds
         progress.append(ok("Generated predictions", f"{len(preds):,} rows"))
 
-        out_path_str = output_path or str(dp.parent / f"{dp.stem}_predictions.csv")
+        out_path_str = output_path or str(get_output_dir() / f"{dp.stem}_predictions.csv")
         from pathlib import Path
 
         out = Path(out_path_str).resolve()

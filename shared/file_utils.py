@@ -33,6 +33,18 @@ def resolve_path(
     return path
 
 
+def get_output_dir() -> Path:
+    """Return the standard output directory for generated files.
+
+    All generated outputs (HTML reports, charts, exported CSVs, predictions)
+    are saved to ~/Downloads/MCP_Machine_Learning/. The directory is created
+    automatically if it does not exist.
+    """
+    out = Path.home() / "Downloads" / "MCP_Machine_Learning"
+    out.mkdir(parents=True, exist_ok=True)
+    return out
+
+
 def atomic_write_json(path: Path, data: dict) -> None:
     """Write JSON atomically via temp file + rename."""
     with tempfile.NamedTemporaryFile(

@@ -9,6 +9,7 @@ import pandas as pd
 from ._medium_helpers import (
     _error,
     append_receipt,
+    get_output_dir,
     ok,
     resolve_path,
 )
@@ -260,7 +261,7 @@ def generate_eda_report(
     if path.suffix.lower() != ".csv":
         return _error(f"Expected .csv file, got {path.suffix!r}", "Provide a CSV file path.")
 
-    out_path_str = output_path or str(path.parent / f"{path.stem}_eda_report.html")
+    out_path_str = output_path or str(get_output_dir() / f"{path.stem}_eda_report.html")
     try:
         out_path = resolve_path(out_path_str)
     except ValueError:
