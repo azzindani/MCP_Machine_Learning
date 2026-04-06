@@ -194,8 +194,6 @@ Copy the JSON config for your platform into your MCP client config file. Each se
 
 Each server entry auto-clones to `%USERPROFILE%\.mcp_servers\MCP_Machine_Learning`, pulls latest, syncs dependencies, and runs. Set `MCP_CONSTRAINED_MODE` to `1` for 8 GB VRAM or less.
 
-<details>
-<summary><strong>All Three Servers</strong></summary>
 
 ```json
 {
@@ -246,10 +244,7 @@ Each server entry auto-clones to `%USERPROFILE%\.mcp_servers\MCP_Machine_Learnin
 }
 ```
 
-</details>
 
-<details>
-<summary><strong>ml-basic only (4–6 GB VRAM)</strong></summary>
 
 ```json
 {
@@ -272,10 +267,7 @@ Each server entry auto-clones to `%USERPROFILE%\.mcp_servers\MCP_Machine_Learnin
 }
 ```
 
-</details>
 
-<details>
-<summary><strong>ml-basic + ml-medium (8 GB VRAM)</strong></summary>
 
 ```json
 {
@@ -312,14 +304,11 @@ Each server entry auto-clones to `%USERPROFILE%\.mcp_servers\MCP_Machine_Learnin
 }
 ```
 
-</details>
 
 ### macOS / Linux (bash)
 
 Each server entry auto-clones to `~/.mcp_servers/MCP_Machine_Learning`, pulls latest, syncs dependencies, and runs.
 
-<details>
-<summary><strong>All Three Servers</strong></summary>
 
 ```json
 {
@@ -361,10 +350,7 @@ Each server entry auto-clones to `~/.mcp_servers/MCP_Machine_Learning`, pulls la
 }
 ```
 
-</details>
 
-<details>
-<summary><strong>ml-basic only (4–6 GB VRAM)</strong></summary>
 
 ```json
 {
@@ -384,10 +370,7 @@ Each server entry auto-clones to `~/.mcp_servers/MCP_Machine_Learning`, pulls la
 }
 ```
 
-</details>
 
-<details>
-<summary><strong>ml-basic + ml-medium (8 GB VRAM)</strong></summary>
 
 ```json
 {
@@ -418,7 +401,6 @@ Each server entry auto-clones to `~/.mcp_servers/MCP_Machine_Learning`, pulls la
 }
 ```
 
-</details>
 
 ### Constrained Mode
 
