@@ -136,6 +136,28 @@ def read_receipt(file_path: str) -> dict:
     return engine.read_receipt(file_path)
 
 
+@mcp.tool(
+    annotations={
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": False,
+    }
+)
+def generate_eda_report(
+    file_path: str,
+    target_column: str = "",
+    theme: str = "light",
+    output_path: str = "",
+    open_browser: bool = True,
+    dry_run: bool = False,
+) -> dict:
+    """Generate interactive HTML EDA report. theme: light dark."""
+    return engine.generate_eda_report(
+        file_path, target_column, theme, output_path, open_browser, dry_run
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="ml-medium MCP server")
     parser.add_argument("--transport", choices=["stdio", "http"], default="stdio")

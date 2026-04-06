@@ -109,6 +109,27 @@ def apply_dimensionality_reduction(
     )
 
 
+@mcp.tool(
+    annotations={
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": False,
+    }
+)
+def generate_training_report(
+    model_path: str,
+    theme: str = "light",
+    output_path: str = "",
+    open_browser: bool = True,
+    dry_run: bool = False,
+) -> dict:
+    """Generate HTML report: metrics, confusion matrix, feature importance."""
+    return engine.generate_training_report(
+        model_path, theme, output_path, open_browser, dry_run
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="ml-advanced MCP server")
     parser.add_argument("--transport", choices=["stdio", "http"], default="stdio")
