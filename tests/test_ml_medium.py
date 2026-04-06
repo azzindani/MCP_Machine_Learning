@@ -17,6 +17,7 @@ import pytest
 from servers.ml_medium.engine import (
     compare_models,
     detect_outliers,
+    generate_eda_report,
     read_receipt,
     run_clustering,
     run_preprocessing,
@@ -416,3 +417,114 @@ class TestReadReceipt:
     def test_path_outside_home(self, tmp_path):
         r = read_receipt(str(tmp_path / "outside.csv"))
         assert r["success"] is False
+
+
+# ---------------------------------------------------------------------------
+# generate_eda_report
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateEdaReport:
+    def test_success(self, classification_simple, home_tmp):
+        out = str(home_tmp / "eda.html")
+        r = generate_eda_report(
+            classification_simple, target_column="churned",
+            output_path=out, open_browser=False,
+        )
+        assert r["success"] is True
+        assert r["op"] == "generate_eda_report"
+        assert Path(out).exists()
+
+    def test_quality_score_present(self, classification_simple, home_tmp):
+        out = str(home_tmp / "eda_qs.html")
+        r = generate_eda_report(classification_simple, output_path=out, open_browser=False)
+        assert "quality_score" in r
+        assert 0 <= r["quality_score"] <= 100
+
+    def test_alerts_returned(self, classification_messy, home_tmp):
+        out = str(home_tmp / "eda_alerts.html")
+        r = generate_eda_report(
+            classification_messy, target_column="churned",
+            output_path=out, open_browser=False,
+        )
+        assert r["success"] is True
+        assert "alerts" in r
+        assert "alerts_count" in r
+        assert "alerts_high" in r
+        assert "alerts_medium" in r
+        assert "alerts_low" in r
+
+    def test_alert_has_recommendation(self, classification_messy, home_tmp):
+        out = str(home_tmp / "eda_rec.html")
+        r = generate_eda_report(
+            classification_messy, target_column="churned",
+            output_path=out, open_browser=False,
+        )
+        for alert in r.get("alerts", []):
+            assert "recommendation" in alert
+            assert "message" in alert
+            assert "severity" in alert
+            assert alert["severity"] in ("high", "medium", "low")
+
+    def test_file_not_found(self, home_tmp):
+        r = generate_eda_report(str(home_tmp / "nope.csv"), open_browser=False)
+        assert r["success"] is False
+        assert "hint" in r
+
+    def test_token_estimate_present(self, classification_simple, home_tmp):
+        out = str(home_tmp / "eda_tok.html")
+        r = generate_eda_report(classification_simple, output_path=out, open_browser=False)
+        assert "token_estimate" in r
+
+    def test_progress_present(self, classification_simple, home_tmp):
+        out = str(home_tmp / "eda_prog.html")
+        r = generate_eda_report(classification_simple, output_path=out, open_browser=False)
+        assert "progress" in r
+        assert isinstance(r["progress"], list)
+
+    def test_dry_run(self, classification_simple, home_tmp):
+        out = str(home_tmp / "eda_dry.html")
+        r = generate_eda_report(
+            classification_simple, output_path=out,
+            open_browser=False, dry_run=True,
+        )
+        assert r["success"] is True
+        assert r.get("dry_run") is True
+        assert not Path(out).exists()
+
+    def test_constrained_mode(self, classification_simple, constrained_mode, home_tmp):
+        out = str(home_tmp / "eda_cons.html")
+        r = generate_eda_report(classification_simple, output_path=out, open_browser=False)
+        assert r["success"] is True
+
+    def test_dark_theme(self, classification_simple, home_tmp):
+        out = str(home_tmp / "eda_dark.html")
+        r = generate_eda_report(
+            classification_simple, theme="dark",
+            output_path=out, open_browser=False,
+        )
+        assert r["success"] is True
+
+    def test_pearson_and_spearman_in_html(self, classification_simple, home_tmp):
+        out = str(home_tmp / "eda_corr.html")
+        r = generate_eda_report(classification_simple, output_path=out, open_browser=False)
+        assert r["success"] is True
+        html = Path(out).read_text()
+        assert "Pearson" in html
+        assert "Spearman" in html
+
+    def test_charts_count(self, classification_simple, home_tmp):
+        out = str(home_tmp / "eda_cnt.html")
+        r = generate_eda_report(
+            classification_simple, target_column="churned",
+            output_path=out, open_browser=False,
+        )
+        assert r.get("charts_generated", 0) >= 3  # at minimum: quality, distributions, correlation
+
+    def test_duplicate_alert_detected(self, classification_messy, home_tmp):
+        """classification_messy has 5 duplicate rows."""
+        out = str(home_tmp / "eda_dup.html")
+        r = generate_eda_report(classification_messy, output_path=out, open_browser=False)
+        assert r["success"] is True
+        types = [a["type"] for a in r.get("alerts", [])]
+        assert "duplicate_rows" in types
