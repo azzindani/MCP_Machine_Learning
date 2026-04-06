@@ -158,6 +158,90 @@ def generate_eda_report(
     )
 
 
+@mcp.tool(
+    annotations={
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": False,
+    }
+)
+def filter_rows(
+    file_path: str,
+    column: str,
+    operator: str,
+    value: str = "",
+    output_path: str = "",
+    dry_run: bool = False,
+) -> dict:
+    """Filter rows by column condition. Saves filtered CSV."""
+    return engine.filter_rows(file_path, column, operator, value, output_path, dry_run)
+
+
+@mcp.tool(
+    annotations={
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": False,
+    }
+)
+def merge_datasets(
+    file_path_1: str,
+    file_path_2: str,
+    on: str,
+    how: str = "left",
+    output_path: str = "",
+    dry_run: bool = False,
+) -> dict:
+    """Merge two CSVs on a key column. how: left right inner outer."""
+    return engine.merge_datasets(file_path_1, file_path_2, on, how, output_path, dry_run)
+
+
+@mcp.tool(
+    annotations={
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    }
+)
+def find_optimal_clusters(
+    file_path: str,
+    feature_columns: list[str],
+    max_k: int = 10,
+    theme: str = "light",
+    output_path: str = "",
+    open_browser: bool = True,
+) -> dict:
+    """Find optimal K via elbow + silhouette. Saves HTML chart."""
+    return engine.find_optimal_clusters(
+        file_path, feature_columns, max_k, theme, output_path, open_browser
+    )
+
+
+@mcp.tool(
+    annotations={
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": False,
+    }
+)
+def anomaly_detection(
+    file_path: str,
+    feature_columns: list[str],
+    method: str = "isolation_forest",
+    contamination: float = 0.05,
+    save_labels: bool = False,
+    dry_run: bool = False,
+) -> dict:
+    """Detect anomalies. method: isolation_forest lof."""
+    return engine.anomaly_detection(
+        file_path, feature_columns, method, contamination, save_labels, dry_run
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="ml-medium MCP server")
     parser.add_argument("--transport", choices=["stdio", "http"], default="stdio")

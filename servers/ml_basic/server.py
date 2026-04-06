@@ -142,6 +142,39 @@ def restore_version(file_path: str, timestamp: str = "") -> dict:
     return engine.restore_version(file_path, timestamp)
 
 
+@mcp.tool(
+    annotations={"readOnlyHint": True, "destructiveHint": False,
+                 "idempotentHint": True, "openWorldHint": False}
+)
+def predict_single(model_path: str, input_data: str) -> dict:
+    """Predict on one JSON record. No CSV file needed."""
+    return engine.predict_single(model_path, input_data)
+
+
+@mcp.tool(
+    annotations={"readOnlyHint": True, "destructiveHint": False,
+                 "idempotentHint": True, "openWorldHint": False}
+)
+def list_models(directory: str = "") -> dict:
+    """List all saved .pkl models with metadata. Empty = home dir."""
+    return engine.list_models(directory)
+
+
+@mcp.tool(
+    annotations={"readOnlyHint": False, "destructiveHint": False,
+                 "idempotentHint": False, "openWorldHint": False}
+)
+def split_dataset(
+    file_path: str,
+    test_size: float = 0.2,
+    stratify_column: str = "",
+    output_dir: str = "",
+    random_state: int = 42,
+) -> dict:
+    """Split CSV into train/test CSV files and save both."""
+    return engine.split_dataset(file_path, test_size, stratify_column, output_dir, random_state)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="ml-basic MCP server")
     parser.add_argument("--transport", choices=["stdio", "http"], default="stdio")
