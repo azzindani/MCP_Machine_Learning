@@ -565,36 +565,117 @@ def run_profiling_report(
         df = df.sample(sample_rows, random_state=42)
         progress.append(info("Sampled dataset", f"{sample_rows} rows"))
 
+    # Try ydata-profiling first; fall back to built-in Plotly report
     try:
         from ydata_profiling import ProfileReport
+        minimal = is_constrained_mode()
+        profile = ProfileReport(df, minimal=minimal, title=path.name)
+        out_path_resolved.parent.mkdir(parents=True, exist_ok=True)
+        profile.to_file(str(out_path_resolved))
+        progress.append(ok("Saved ydata-profiling report", out_path_resolved.name))
+        ydata_used = True
     except ImportError:
-        return _error(
-            "ydata-profiling is not installed.",
-            "Install it with: pip install ydata-profiling",
-        )
+        ydata_used = False
+        progress.append(info("ydata-profiling not installed", "Using built-in Plotly report"))
 
-    minimal = is_constrained_mode()
-    profile = ProfileReport(df, minimal=minimal, title=path.name)
-    out_path_resolved.parent.mkdir(parents=True, exist_ok=True)
-    profile.to_file(str(out_path_resolved))
-    progress.append(ok("Saved HTML report", out_path_resolved.name))
+    if not ydata_used:
+        # Built-in Plotly-based profiling report
+        from shared.html_theme import (
+            _open_file as _of,
+            build_html_report,
+            data_table_html,
+            get_theme,
+            metrics_cards_html,
+            plotly_div,
+        )
+        import plotly.express as px
+        import plotly.graph_objects as go
+
+        t = get_theme("light")
+        sections: list[dict] = []
+        numeric_cols = df.select_dtypes(include="number").columns.tolist()
+
+        # Overview cards
+        missing_total = int(df.isnull().sum().sum())
+        total_cells = len(df) * len(df.columns)
+        miss_pct = round(missing_total / total_cells * 100, 2) if total_cells else 0.0
+        dup_rows_n = int(df.duplicated().sum())
+        sections.append({"id": "overview", "heading": "Overview", "html": metrics_cards_html({
+            "rows": f"{len(df):,}", "columns": len(df.columns),
+            "numeric_cols": len(numeric_cols),
+            "missing_cells": f"{miss_pct}%", "duplicate_rows": dup_rows_n,
+        })})
+
+        # Distributions
+        if numeric_cols:
+            from plotly.subplots import make_subplots
+            show = numeric_cols[:12]
+            cols_n = min(3, len(show))
+            rows_n = (len(show) + cols_n - 1) // cols_n
+            fig = make_subplots(rows=rows_n, cols=cols_n, subplot_titles=show)
+            for i, col in enumerate(show):
+                fig.add_trace(go.Histogram(x=df[col].dropna(), name=col,
+                                           showlegend=False, marker_color=t["accent"]),
+                              row=i // cols_n + 1, col=i % cols_n + 1)
+            fig.update_layout(title="Distributions", template=t["plotly_template"],
+                              paper_bgcolor=t["paper_color"], plot_bgcolor=t["bg_color"],
+                              font_color=t["text_color"], height=280 * rows_n,
+                              margin=dict(l=10, r=10, t=50, b=10))
+            sections.append({"id": "dist", "heading": "Distributions",
+                              "html": plotly_div(fig, height=280 * rows_n + 60)})
+
+        if len(numeric_cols) >= 2:
+            corr = df[numeric_cols].corr()
+            fig_c = go.Figure(go.Heatmap(z=corr.values, x=corr.columns.tolist(),
+                                         y=corr.index.tolist(), colorscale="RdBu_r", zmid=0,
+                                         text=[[f"{v:.2f}" for v in row] for row in corr.values],
+                                         texttemplate="%{text}"))
+            fig_c.update_layout(title="Correlation", template=t["plotly_template"],
+                                paper_bgcolor=t["paper_color"], plot_bgcolor=t["bg_color"],
+                                font_color=t["text_color"], height=480,
+                                margin=dict(l=10, r=10, t=50, b=10))
+            sections.append({"id": "corr", "heading": "Correlation Heatmap",
+                              "html": plotly_div(fig_c, 520)})
+
+        if numeric_cols:
+            desc = df[numeric_cols[:12]].describe().round(3).transpose()
+            desc.index.name = "column"
+            rows_data = [{"column": idx, **row.to_dict()} for idx, row in desc.iterrows()]
+            sections.append({"id": "stats", "heading": "Summary Statistics",
+                              "html": data_table_html(rows_data)})
+
+        plotly_cdn = '<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>'
+        from datetime import datetime as _dt
+        html = build_html_report(
+            title=f"Profile Report — {path.name}",
+            subtitle=f"Generated {_dt.now().strftime('%Y-%m-%d %H:%M')} · {len(df):,} rows",
+            sections=sections, theme="light", open_browser=False, output_path="",
+        )
+        html = html.replace("</head>", f"  {plotly_cdn}\n</head>")
+        out_path_resolved.parent.mkdir(parents=True, exist_ok=True)
+        out_path_resolved.write_text(html, encoding="utf-8")
+        progress.append(ok("Saved Plotly profile report", out_path_resolved.name))
+
+    from shared.html_theme import _open_file
+    _open_file(out_path_resolved)
 
     file_size_kb = out_path_resolved.stat().st_size // 1024 if out_path_resolved.exists() else 0
-    missing_pct = round(df.isnull().sum().sum() / (len(df) * len(df.columns)) * 100, 2)
-    dup_rows = int(df.duplicated().sum())
-    dup_pct = round(dup_rows / len(df) * 100, 2) if len(df) > 0 else 0.0
+    missing_pct_r = round(df.isnull().sum().sum() / (len(df) * len(df.columns)) * 100, 2)
+    dup_rows_r = int(df.duplicated().sum())
+    dup_pct_r = round(dup_rows_r / len(df) * 100, 2) if len(df) > 0 else 0.0
 
     resp = {
         "success": True,
         "op": "run_profiling_report",
         "output_path": str(out_path_resolved),
         "file_size_kb": file_size_kb,
+        "engine_used": "ydata-profiling" if ydata_used else "plotly",
         "summary": {
             "row_count": len(df),
             "column_count": len(df.columns),
-            "missing_cells_pct": missing_pct,
-            "duplicate_rows": dup_rows,
-            "duplicate_rows_pct": dup_pct,
+            "missing_cells_pct": missing_pct_r,
+            "duplicate_rows": dup_rows_r,
+            "duplicate_rows_pct": dup_pct_r,
         },
         "progress": progress,
         "token_estimate": 0,
@@ -717,3 +798,224 @@ def apply_dimensionality_reduction(
     resp["token_estimate"] = len(str(resp)) // 4
     return resp
 
+
+
+# ---------------------------------------------------------------------------
+# Tool: generate_training_report
+# ---------------------------------------------------------------------------
+
+
+def generate_training_report(
+    model_path: str,
+    theme: str = "light",
+    output_path: str = "",
+    open_browser: bool = True,
+    dry_run: bool = False,
+) -> dict:
+    """Generate HTML report with metrics, confusion matrix, feature importance."""
+    import plotly.express as px
+    import plotly.graph_objects as go
+    from shared.html_theme import (
+        _open_file,
+        build_html_report,
+        data_table_html,
+        get_theme,
+        metrics_cards_html,
+        plotly_div,
+    )
+
+    progress: list[dict] = []
+    try:
+        mp = resolve_path(model_path)
+    except ValueError as exc:
+        return _error(str(exc), "Check that model_path is inside your home directory.")
+    if not mp.exists():
+        return _error(f"Model file not found: {model_path}", "Train a model first with train_classifier() or train_regressor().")
+    if mp.suffix.lower() != ".pkl":
+        return _error(f"Expected .pkl file, got {mp.suffix!r}", "Provide a path to a .pkl model file.")
+
+    out_path_str = output_path or str(mp.parent / f"{mp.stem}_report.html")
+    try:
+        out_path = resolve_path(out_path_str)
+    except ValueError:
+        out_path = Path(out_path_str)
+
+    if dry_run:
+        resp: dict = {
+            "success": True,
+            "op": "generate_training_report",
+            "dry_run": True,
+            "output_path": str(out_path),
+            "progress": progress,
+            "token_estimate": 0,
+        }
+        resp["token_estimate"] = len(str(resp)) // 4
+        return resp
+
+    try:
+        model_obj, metadata = _load_model(str(mp))
+    except Exception as exc:
+        return _error(f"Failed to load model: {exc}", "Check model_path points to a valid .pkl file.")
+    progress.append(ok("Loaded model", mp.name))
+
+    t = get_theme(theme)
+    sections: list[dict] = []
+
+    # --- Model overview ---
+    task = metadata.get("task", "unknown")
+    model_type = metadata.get("model_type", "unknown")
+    metrics = metadata.get("metrics", {})
+    feature_columns = metadata.get("feature_columns", [])
+    target_column = metadata.get("target_column", "")
+    training_date = metadata.get("training_date", "")
+    trained_on = metadata.get("trained_on", "")
+
+    overview_cards: dict = {
+        "model": model_type,
+        "task": task,
+        "trained_on": trained_on,
+        "features": len(feature_columns),
+        "target": target_column,
+    }
+    # Add top metrics to overview
+    for k, v in metrics.items():
+        if k not in ("confusion_matrix", "classification_report") and not isinstance(v, dict):
+            overview_cards[k] = v
+
+    sections.append({
+        "id": "overview",
+        "heading": "Model Overview",
+        "html": metrics_cards_html(overview_cards),
+    })
+    progress.append(ok("Overview section", model_type))
+
+    # --- Metrics section ---
+    clean_metrics = {k: v for k, v in metrics.items()
+                     if k not in ("confusion_matrix", "classification_report")
+                     and not isinstance(v, dict)}
+    if clean_metrics:
+        metric_rows = [{"metric": k.replace("_", " ").title(), "value": f"{v:.4f}" if isinstance(v, float) else str(v)}
+                       for k, v in clean_metrics.items()]
+        sections.append({
+            "id": "metrics",
+            "heading": "Performance Metrics",
+            "html": data_table_html(metric_rows),
+        })
+
+    # --- Confusion matrix heatmap ---
+    cm_data = metrics.get("confusion_matrix", {})
+    if cm_data:
+        if set(cm_data.keys()) <= {"TP", "FP", "FN", "TN"}:
+            # Binary
+            tp = cm_data.get("TP", 0)
+            fp = cm_data.get("FP", 0)
+            fn = cm_data.get("FN", 0)
+            tn = cm_data.get("TN", 0)
+            z = [[tn, fp], [fn, tp]]
+            labels = ["Negative", "Positive"]
+            fig_cm = go.Figure(data=go.Heatmap(
+                z=z,
+                x=labels,
+                y=labels,
+                colorscale="Blues",
+                text=[[str(v) for v in row] for row in z],
+                texttemplate="%{text}",
+                showscale=True,
+            ))
+            fig_cm.update_layout(
+                title="Confusion Matrix",
+                xaxis_title="Predicted",
+                yaxis_title="Actual",
+                template=t["plotly_template"],
+                paper_bgcolor=t["paper_color"],
+                plot_bgcolor=t["bg_color"],
+                font_color=t["text_color"],
+                height=380,
+                margin=dict(l=10, r=10, t=50, b=10),
+            )
+            sections.append({
+                "id": "confusion",
+                "heading": "Confusion Matrix",
+                "html": plotly_div(fig_cm, height=420),
+            })
+            progress.append(ok("Confusion matrix chart", "binary classification"))
+
+    # --- Feature importance ---
+    if model_obj is not None and hasattr(model_obj, "feature_importances_"):
+        importances = model_obj.feature_importances_
+        fi_pairs = sorted(
+            zip(feature_columns, importances.tolist()),
+            key=lambda x: x[1], reverse=True
+        )[:20]
+        fi_features = [p[0] for p in fi_pairs]
+        fi_values = [p[1] for p in fi_pairs]
+
+        fig_fi = px.bar(
+            x=fi_values,
+            y=fi_features,
+            orientation="h",
+            title="Feature Importance (Top 20)",
+            labels={"x": "Importance", "y": "Feature"},
+            template=t["plotly_template"],
+            color=fi_values,
+            color_continuous_scale="Blues",
+        )
+        fig_fi.update_layout(
+            paper_bgcolor=t["paper_color"],
+            plot_bgcolor=t["bg_color"],
+            font_color=t["text_color"],
+            height=max(300, len(fi_pairs) * 28 + 80),
+            margin=dict(l=10, r=10, t=50, b=10),
+        )
+        sections.append({
+            "id": "features",
+            "heading": "Feature Importance",
+            "html": plotly_div(fig_fi, height=max(300, len(fi_pairs) * 28 + 120)),
+        })
+        progress.append(ok("Feature importance chart", f"{len(fi_pairs)} features"))
+
+    # --- Classification report table ---
+    clf_report = metadata.get("classification_report", "")
+    if clf_report:
+        sections.append({
+            "id": "clf_report",
+            "heading": "Classification Report",
+            "html": f"<pre style='font-size:0.85rem;overflow-x:auto;'>{clf_report[:2000]}</pre>",
+        })
+
+    # --- Build report ---
+    from datetime import datetime
+    subtitle = f"Model: {model_type} · Task: {task} · Trained: {training_date[:10] if training_date else 'unknown'}"
+
+    plotly_cdn = '<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>'
+    html = build_html_report(
+        title=f"Training Report — {mp.stem}",
+        subtitle=subtitle,
+        sections=sections,
+        theme=theme,
+        open_browser=False,
+        output_path="",
+    )
+    html = html.replace("</head>", f"  {plotly_cdn}\n</head>")
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(html, encoding="utf-8")
+    progress.append(ok("Saved HTML report", out_path.name))
+
+    if open_browser:
+        _open_file(out_path)
+
+    file_size_kb = out_path.stat().st_size // 1024
+
+    resp = {
+        "success": True,
+        "op": "generate_training_report",
+        "model_path": str(mp),
+        "output_path": str(out_path),
+        "file_size_kb": file_size_kb,
+        "sections_generated": len(sections),
+        "progress": progress,
+        "token_estimate": 0,
+    }
+    resp["token_estimate"] = len(str(resp)) // 4
+    return resp

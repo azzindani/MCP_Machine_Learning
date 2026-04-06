@@ -1058,3 +1058,284 @@ def read_receipt(file_path: str) -> dict:
     resp["token_estimate"] = len(str(resp)) // 4
     return resp
 
+
+
+# ---------------------------------------------------------------------------
+# Tool: generate_eda_report
+# ---------------------------------------------------------------------------
+
+
+def generate_eda_report(
+    file_path: str,
+    target_column: str = "",
+    theme: str = "light",
+    output_path: str = "",
+    open_browser: bool = True,
+    dry_run: bool = False,
+) -> dict:
+    """Generate interactive HTML EDA report with Plotly charts."""
+    import plotly.express as px
+    import plotly.graph_objects as go
+    from shared.html_theme import (
+        _open_file,
+        build_html_report,
+        data_table_html,
+        get_theme,
+        metrics_cards_html,
+        plotly_div,
+    )
+
+    progress: list[dict] = []
+    try:
+        path = resolve_path(file_path)
+    except ValueError as exc:
+        return _error(str(exc), "Check that file_path is inside your home directory.")
+    if not path.exists():
+        return _error(f"File not found: {file_path}", "Check that file_path is absolute and the CSV file exists.")
+    if path.suffix.lower() != ".csv":
+        return _error(f"Expected .csv file, got {path.suffix!r}", "Provide a CSV file path.")
+
+    out_path_str = output_path or str(path.parent / f"{path.stem}_eda_report.html")
+    try:
+        out_path = resolve_path(out_path_str)
+    except ValueError:
+        out_path = Path(out_path_str)
+
+    try:
+        df = pd.read_csv(path, low_memory=False)
+    except Exception as exc:
+        return _error(f"Failed to read CSV: {exc}", "Check the file is a valid CSV.")
+    progress.append(ok(f"Loaded {path.name}", f"{len(df):,} rows × {len(df.columns)} cols"))
+
+    if dry_run:
+        resp: dict = {
+            "success": True,
+            "op": "generate_eda_report",
+            "dry_run": True,
+            "output_path": str(out_path),
+            "progress": progress,
+            "token_estimate": 0,
+        }
+        resp["token_estimate"] = len(str(resp)) // 4
+        return resp
+
+    t = get_theme(theme)
+    sections: list[dict] = []
+
+    # --- Overview section ---
+    numeric_cols = df.select_dtypes(include="number").columns.tolist()
+    cat_cols = [c for c in df.columns if c not in numeric_cols]
+    missing_total = int(df.isnull().sum().sum())
+    missing_pct = round(missing_total / (len(df) * len(df.columns)) * 100, 2) if len(df) > 0 else 0.0
+    dup_rows = int(df.duplicated().sum())
+
+    overview_metrics = {
+        "rows": f"{len(df):,}",
+        "columns": len(df.columns),
+        "numeric": len(numeric_cols),
+        "categorical": len(cat_cols),
+        "missing_cells": f"{missing_pct}%",
+        "duplicate_rows": dup_rows,
+    }
+    sections.append({
+        "id": "overview",
+        "heading": "Dataset Overview",
+        "html": metrics_cards_html(overview_metrics),
+    })
+    progress.append(ok("Overview computed", f"{len(df.columns)} cols"))
+
+    # --- Missing values section ---
+    if missing_total > 0:
+        null_series = df.isnull().sum().sort_values(ascending=False)
+        null_series = null_series[null_series > 0]
+        fig_missing = px.bar(
+            x=null_series.values,
+            y=null_series.index,
+            orientation="h",
+            title="Missing Values per Column",
+            labels={"x": "Missing Count", "y": "Column"},
+            template=t["plotly_template"],
+            color=null_series.values,
+            color_continuous_scale="Reds",
+        )
+        fig_missing.update_layout(
+            paper_bgcolor=t["paper_color"],
+            plot_bgcolor=t["bg_color"],
+            font_color=t["text_color"],
+            height=max(300, len(null_series) * 30),
+            margin=dict(l=10, r=10, t=40, b=10),
+        )
+        sections.append({
+            "id": "missing",
+            "heading": "Missing Values",
+            "html": plotly_div(fig_missing, height=max(300, len(null_series) * 30 + 80)),
+        })
+        progress.append(ok("Missing values chart", f"{len(null_series)} cols affected"))
+
+    # --- Numeric distributions ---
+    if numeric_cols:
+        # Cap to first 12 numeric columns to keep report manageable
+        show_nums = numeric_cols[:12]
+        n = len(show_nums)
+        cols_per_row = min(3, n)
+        from plotly.subplots import make_subplots
+        rows = (n + cols_per_row - 1) // cols_per_row
+        fig_dist = make_subplots(rows=rows, cols=cols_per_row, subplot_titles=show_nums)
+        for i, col in enumerate(show_nums):
+            r = i // cols_per_row + 1
+            c = i % cols_per_row + 1
+            clean = df[col].dropna()
+            fig_dist.add_trace(
+                go.Histogram(x=clean, name=col, showlegend=False,
+                             marker_color=t["accent"]),
+                row=r, col=c,
+            )
+        fig_dist.update_layout(
+            title="Numeric Column Distributions",
+            template=t["plotly_template"],
+            paper_bgcolor=t["paper_color"],
+            plot_bgcolor=t["bg_color"],
+            font_color=t["text_color"],
+            height=280 * rows,
+            margin=dict(l=10, r=10, t=50, b=10),
+        )
+        sections.append({
+            "id": "distributions",
+            "heading": "Numeric Distributions",
+            "html": plotly_div(fig_dist, height=280 * rows + 60),
+        })
+        progress.append(ok("Distribution charts", f"{len(show_nums)} numeric cols"))
+
+    # --- Correlation heatmap ---
+    if len(numeric_cols) >= 2:
+        corr = df[numeric_cols].corr()
+        fig_corr = go.Figure(data=go.Heatmap(
+            z=corr.values,
+            x=corr.columns.tolist(),
+            y=corr.index.tolist(),
+            colorscale="RdBu_r",
+            zmid=0,
+            text=[[f"{v:.2f}" for v in row] for row in corr.values],
+            texttemplate="%{text}",
+        ))
+        fig_corr.update_layout(
+            title="Correlation Heatmap",
+            template=t["plotly_template"],
+            paper_bgcolor=t["paper_color"],
+            plot_bgcolor=t["bg_color"],
+            font_color=t["text_color"],
+            height=500,
+            margin=dict(l=10, r=10, t=50, b=10),
+        )
+        sections.append({
+            "id": "correlation",
+            "heading": "Correlation Heatmap",
+            "html": plotly_div(fig_corr, height=540),
+        })
+        progress.append(ok("Correlation heatmap", f"{len(numeric_cols)}×{len(numeric_cols)}"))
+
+    # --- Categorical columns ---
+    show_cats = [c for c in cat_cols if c != target_column][:6]
+    if show_cats:
+        cat_html = ""
+        for col in show_cats:
+            vc = df[col].value_counts().head(15)
+            fig_cat = px.bar(
+                x=vc.values, y=vc.index, orientation="h",
+                title=f"{col} — Top Values",
+                labels={"x": "Count", "y": col},
+                template=t["plotly_template"],
+                color=vc.values,
+                color_continuous_scale="Blues",
+            )
+            fig_cat.update_layout(
+                paper_bgcolor=t["paper_color"], plot_bgcolor=t["bg_color"],
+                font_color=t["text_color"], height=max(250, len(vc) * 25 + 80),
+                margin=dict(l=10, r=10, t=40, b=10), showlegend=False,
+            )
+            cat_html += plotly_div(fig_cat, height=max(250, len(vc) * 25 + 80))
+        sections.append({"id": "categorical", "heading": "Categorical Columns", "html": cat_html})
+        progress.append(ok("Categorical charts", f"{len(show_cats)} cols"))
+
+    # --- Target column analysis ---
+    if target_column and target_column in df.columns:
+        tgt = df[target_column]
+        if tgt.nunique() <= 20:
+            vc = tgt.value_counts()
+            fig_tgt = px.pie(
+                names=vc.index.astype(str),
+                values=vc.values,
+                title=f"Target Distribution: {target_column}",
+                template=t["plotly_template"],
+                color_discrete_sequence=px.colors.qualitative.Set2,
+            )
+        else:
+            fig_tgt = px.histogram(
+                df, x=target_column,
+                title=f"Target Distribution: {target_column}",
+                template=t["plotly_template"],
+                nbins=40,
+            )
+        fig_tgt.update_layout(
+            paper_bgcolor=t["paper_color"], plot_bgcolor=t["bg_color"],
+            font_color=t["text_color"], height=380,
+            margin=dict(l=10, r=10, t=50, b=10),
+        )
+        sections.append({
+            "id": "target",
+            "heading": f"Target Column: {target_column}",
+            "html": plotly_div(fig_tgt, height=420),
+        })
+        progress.append(ok("Target distribution", f"{tgt.nunique()} unique values"))
+
+    # --- Summary stats table ---
+    if numeric_cols:
+        desc = df[numeric_cols[:12]].describe().round(3).transpose()
+        desc.index.name = "column"
+        rows_data = [{"column": idx, **row.to_dict()} for idx, row in desc.iterrows()]
+        sections.append({
+            "id": "stats",
+            "heading": "Summary Statistics",
+            "html": data_table_html(rows_data),
+        })
+
+    # Build and save report
+    from datetime import datetime
+    subtitle = f"Generated {datetime.now().strftime('%Y-%m-%d %H:%M')} · {len(df):,} rows · {len(df.columns)} columns"
+
+    # Include plotly.js CDN in head
+    plotly_cdn = '<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>'
+    html = build_html_report(
+        title=f"EDA Report — {path.name}",
+        subtitle=subtitle,
+        sections=sections,
+        theme=theme,
+        open_browser=False,  # we open manually below after writing
+        output_path="",      # we write manually
+    )
+    # inject plotly cdn before </head>
+    html = html.replace("</head>", f"  {plotly_cdn}\n</head>")
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(html, encoding="utf-8")
+    progress.append(ok("Saved HTML report", out_path.name))
+
+    if open_browser:
+        _open_file(out_path)
+
+    file_size_kb = out_path.stat().st_size // 1024
+    append_receipt(str(path), "generate_eda_report",
+                   {"theme": theme, "target_column": target_column},
+                   "success", "")
+
+    resp = {
+        "success": True,
+        "op": "generate_eda_report",
+        "output_path": str(out_path),
+        "file_size_kb": file_size_kb,
+        "charts_generated": len(sections),
+        "progress": progress,
+        "token_estimate": 0,
+    }
+    resp["token_estimate"] = len(str(resp)) // 4
+    return resp
