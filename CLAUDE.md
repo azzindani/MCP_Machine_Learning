@@ -15,20 +15,24 @@ binding. Where this file conflicts with STANDARDS.md, this file takes precedence
 2. [Goals and Non-Goals](#2-goals-and-non-goals)
 3. [Repository Structure](#3-repository-structure)
 4. [Architecture Principles](#4-architecture-principles)
-5. [Three-Tier ML Server Design](#5-three-tier-ml-server-design)
-6. [Tool Catalogue — ml_basic (Tier 1)](#6-tool-catalogue--ml_basic-tier-1)
-7. [Tool Catalogue — ml_medium (Tier 2)](#7-tool-catalogue--ml_medium-tier-2)
-8. [Tool Catalogue — ml_advanced (Tier 3)](#8-tool-catalogue--ml_advanced-tier-3)
-9. [ML Pipeline Implementation Rules](#9-ml-pipeline-implementation-rules)
-10. [Supported Algorithms Reference](#10-supported-algorithms-reference)
-11. [Return Value Contracts for ML Tools](#11-return-value-contracts-for-ml-tools)
-12. [Error Handling — ML-Specific Patterns](#12-error-handling--ml-specific-patterns)
-13. [Model Persistence and Versioning](#13-model-persistence-and-versioning)
-14. [Hardware and Resource Constraints](#14-hardware-and-resource-constraints)
-15. [Shared Module Contracts](#15-shared-module-contracts)
-16. [Testing Standards for ML](#16-testing-standards-for-ml)
-17. [What the AI Must Never Do](#17-what-the-ai-must-never-do)
-18. [Progress Tracker](#18-progress-tracker)
+5. [MCP Primitives — Tools, Resources, and Prompts](#5-mcp-primitives--tools-resources-and-prompts)
+6. [Tool Annotations](#6-tool-annotations)
+7. [Security Considerations](#7-security-considerations)
+8. [Engine Sub-Module Pattern](#8-engine-sub-module-pattern)
+9. [Three-Tier ML Server Design](#9-three-tier-ml-server-design)
+10. [Tool Catalogue — ml_basic (Tier 1)](#10-tool-catalogue--ml_basic-tier-1)
+11. [Tool Catalogue — ml_medium (Tier 2)](#11-tool-catalogue--ml_medium-tier-2)
+12. [Tool Catalogue — ml_advanced (Tier 3)](#12-tool-catalogue--ml_advanced-tier-3)
+13. [ML Pipeline Implementation Rules](#13-ml-pipeline-implementation-rules)
+14. [Supported Algorithms Reference](#14-supported-algorithms-reference)
+15. [Return Value Contracts for ML Tools](#15-return-value-contracts-for-ml-tools)
+16. [Error Handling — ML-Specific Patterns](#16-error-handling--ml-specific-patterns)
+17. [Model Persistence and Versioning](#17-model-persistence-and-versioning)
+18. [Hardware and Resource Constraints](#18-hardware-and-resource-constraints)
+19. [Shared Module Contracts](#19-shared-module-contracts)
+20. [Testing Standards for ML](#20-testing-standards-for-ml)
+21. [What the AI Must Never Do](#21-what-the-ai-must-never-do)
+22. [Progress Tracker](#22-progress-tracker)
 
 ---
 
@@ -128,7 +132,7 @@ MCP_Machine_Learning/
 │
 ├── pyproject.toml                      # root workspace
 ├── uv.lock
-├── .python-version                     # 3.11
+├── .python-version                     # 3.12
 ├── .gitattributes
 ├── CLAUDE.md                           # this file
 ├── STANDARDS.md                        # general MCP server standards
@@ -240,7 +244,203 @@ max_results = get_max_results()  # 10 in constrained, 50 in standard
 
 ---
 
-## 5. Three-Tier ML Server Design
+## 5. MCP Primitives — Tools, Resources, and Prompts
+
+The MCP protocol defines three primitives. Use each for what it is designed for.
+
+### Tools
+
+**Tools** are called by the model with arguments and return structured JSON. Use
+tools for all operations that read, transform, write, or execute something.
+
+Tools are the right choice for:
+- Reading a file or dataset (result changes between calls)
+- Applying preprocessing or training a model
+- Running evaluation or generating a report
+
+### Resources
+
+**Resources** expose stable, re-readable context without a tool call. Use resources
+for reference data the model needs repeatedly (e.g. supported algorithm lists,
+dataset schema that rarely changes). Resources are read-only and stateless.
+
+```python
+@mcp.resource("schema://{file_path}")
+def get_schema_resource(file_path: str) -> str:
+    """Expose dataset schema as a resource for repeated model reference."""
+    return engine.get_schema_json(file_path)
+```
+
+Do not use Resources for data that changes between calls — that must be a tool.
+
+### Prompts
+
+**Prompts** are reusable workflow templates. Use sparingly — only when you need
+a structured starting workflow (e.g. a "run full ML pipeline" prompt). Most
+servers do not need prompts.
+
+### Rule of thumb
+
+```
+Model needs to call it to do work          → Tool
+Model needs to reference it for context    → Resource
+User needs a starting workflow template    → Prompt
+```
+
+---
+
+## 6. Tool Annotations
+
+FastMCP supports tool annotations that help AI clients display and reason about
+tools correctly. **Always set these on every `@mcp.tool()` decorator.**
+
+```python
+@mcp.tool(
+    annotations={
+        "readOnlyHint": True,       # does not modify any state
+        "destructiveHint": False,   # does not destroy data
+        "idempotentHint": True,     # safe to call multiple times
+        "openWorldHint": False,     # does not interact with external services
+    }
+)
+def inspect_dataset(file_path: str) -> dict:
+    """Inspect dataset schema, row count, dtypes, null summary."""
+    return engine.inspect_dataset(file_path)
+```
+
+### Annotation rules by ML tool type
+
+| Tool type | readOnlyHint | destructiveHint | idempotentHint | openWorldHint |
+|---|---|---|---|---|
+| inspect / read / search / profile | True | False | True | False |
+| train / preprocess / cluster (with snapshot) | False | False | False | False |
+| drop column / delete rows | False | True | False | False |
+| export / generate report | False | False | True | False |
+| download weights (first-run only) | False | False | False | True |
+
+`destructiveHint=True` triggers an extra confirmation in most AI clients. Use it
+for any tool that permanently removes data.
+
+---
+
+## 7. Security Considerations
+
+### Path Traversal Prevention
+
+All file paths from tool parameters must be validated through `resolve_path()`
+before any I/O. The `shared/file_utils.py` implementation must include a home
+directory boundary check:
+
+```python
+def resolve_path(file_path: str, allowed_extensions: tuple[str, ...] = ()) -> Path:
+    path = Path(file_path).resolve()
+    home = Path.home().resolve()
+    try:
+        path.relative_to(home)
+    except ValueError:
+        raise ValueError(f"Path outside allowed directory: {file_path}")
+    if allowed_extensions and path.suffix.lower() not in allowed_extensions:
+        raise ValueError(
+            f"Extension {path.suffix!r} not allowed. Expected: {allowed_extensions}"
+        )
+    return path
+```
+
+Never use raw `file_path` strings in `open()`, `pd.read_csv()`, or subprocess
+calls without first calling `resolve_path()`.
+
+### No eval() / exec()
+
+For any tool that evaluates expressions (filter expressions, formula strings),
+never use `eval()` or `exec()`. Parse with AST and an allowlist:
+
+```python
+# Wrong
+result = eval(user_expression)
+
+# Correct — parse against allowlist
+ALLOWED_OPS = {"+", "-", "*", "/"}
+result = _safe_eval_expr(user_expression, df.columns, ALLOWED_OPS)
+```
+
+### Subprocess Safety
+
+ML tools that invoke subprocesses (model export tools, profiling) must use
+argument lists with `shell=False` and `timeout`:
+
+```python
+# Wrong
+subprocess.run(f"some_cmd {user_input}", shell=True)
+
+# Correct
+subprocess.run(
+    ["some_cmd", str(validated_path)],
+    shell=False, capture_output=True, timeout=300,
+)
+```
+
+### Sensitive Data in Responses
+
+Never include full system paths, credentials, or environment variables in tool
+responses. Always use `Path(x).name` (filename only) in progress messages.
+
+---
+
+## 8. Engine Sub-Module Pattern
+
+When `engine.py` grows beyond ~400–500 lines, split it into focused sub-modules.
+The engine entry point becomes a thin router.
+
+### Sub-module layout for ML servers
+
+```
+servers/ml_advanced/
+├── server.py              ← MCP wrapper (unchanged)
+├── engine.py              ← thin router: re-exports from sub-modules
+├── _adv_tuning.py         ← tune_hyperparameters logic
+├── _adv_export.py         ← export_model + manifest writing
+├── _adv_report.py         ← read_model_report + feature importance
+├── _adv_profiling.py      ← run_profiling_report (ydata-profiling)
+└── _adv_reduction.py      ← apply_dimensionality_reduction (PCA/ICA)
+```
+
+### engine.py as thin router
+
+```python
+# engine.py — thin router, zero MCP imports
+from ._adv_tuning    import tune_hyperparameters
+from ._adv_export    import export_model
+from ._adv_report    import read_model_report
+from ._adv_profiling import run_profiling_report
+from ._adv_reduction import apply_dimensionality_reduction
+
+__all__ = [
+    "tune_hyperparameters", "export_model", "read_model_report",
+    "run_profiling_report", "apply_dimensionality_reduction",
+]
+```
+
+Tests still import from `engine.py` — sub-module structure is invisible to tests.
+
+### Lazy imports for heavy ML libraries
+
+Sub-modules that depend on large libraries (sklearn, xgboost, ydata_profiling)
+should import those libraries **inside** the function, not at module level:
+
+```python
+# _adv_profiling.py — lazy import
+def run_profiling_report(file_path: str, ...) -> dict:
+    from ydata_profiling import ProfileReport   # lazy — only when called
+    import pandas as pd
+    ...
+```
+
+This avoids paying the full import cost when the server loads other tools that
+don't need those libraries.
+
+---
+
+## 9. Three-Tier ML Server Design
 
 ### Tier 1 — ml_basic
 
@@ -300,7 +500,7 @@ in dedicated sessions — these tools require significant compute and context.
 
 ---
 
-## 6. Tool Catalogue — ml_basic (Tier 1)
+## 10. Tool Catalogue — ml_basic (Tier 1)
 
 ### 6.1 inspect_dataset
 
@@ -477,7 +677,7 @@ def restore_version(file_path: str, timestamp: str = "") -> dict:
 
 ---
 
-## 7. Tool Catalogue — ml_medium (Tier 2)
+## 11. Tool Catalogue — ml_medium (Tier 2)
 
 ### 7.1 run_preprocessing
 
@@ -629,7 +829,7 @@ Delegates to `shared.receipt.read_receipt_log()`.
 
 ---
 
-## 8. Tool Catalogue — ml_advanced (Tier 3)
+## 12. Tool Catalogue — ml_advanced (Tier 3)
 
 ### 8.1 tune_hyperparameters
 
@@ -771,7 +971,7 @@ def apply_dimensionality_reduction(
 
 ---
 
-## 9. ML Pipeline Implementation Rules
+## 13. ML Pipeline Implementation Rules
 
 ### 9.1 Data Loading
 
@@ -909,7 +1109,7 @@ else:
 
 ---
 
-## 10. Supported Algorithms Reference
+## 14. Supported Algorithms Reference
 
 This table maps the short `model` parameter string to the scikit-learn / XGBoost
 class. Use these exact classes and default parameters unless overridden by the user.
@@ -974,7 +1174,7 @@ or `scoring='r2'` (regression)
 
 ---
 
-## 11. Return Value Contracts for ML Tools
+## 15. Return Value Contracts for ML Tools
 
 ### 11.1 Required Fields in Every Response
 
@@ -1087,7 +1287,7 @@ Every tool returns a `dict`. No exceptions.
 
 ---
 
-## 12. Error Handling — ML-Specific Patterns
+## 16. Error Handling — ML-Specific Patterns
 
 All exceptions are caught in `engine.py` and returned as error dicts. Never raise
 to the MCP layer. Use the standard patterns below.
@@ -1177,7 +1377,7 @@ def _error(error: str, hint: str, backup: str | None = None) -> dict:
 
 ---
 
-## 13. Model Persistence and Versioning
+## 17. Model Persistence and Versioning
 
 ### 13.1 Model Storage Layout
 
@@ -1247,7 +1447,7 @@ def _load_model(model_path: str) -> tuple[object, dict]:
 
 ---
 
-## 14. Hardware and Resource Constraints
+## 18. Hardware and Resource Constraints
 
 ### 14.1 RAM Check Before Heavy Operations
 
@@ -1298,7 +1498,7 @@ Do not load ml_advanced alongside ml_basic + ml_medium on 8 GB VRAM.
 
 ---
 
-## 15. Shared Module Contracts
+## 19. Shared Module Contracts
 
 Every shared module must be implemented exactly as specified. Do not modify
 interfaces — add new functions instead.
@@ -1356,8 +1556,17 @@ def read_receipt_log(file_path: str) -> list[dict]:
 ### shared/file_utils.py
 
 ```python
-def resolve_path(file_path: str) -> Path:
-    """Resolve to absolute path. Never use raw string paths in engine."""
+def resolve_path(file_path: str, allowed_extensions: tuple[str, ...] = ()) -> Path:
+    """Resolve path, enforce home-dir boundary, validate extension."""
+    path = Path(file_path).resolve()
+    home = Path.home().resolve()
+    try:
+        path.relative_to(home)
+    except ValueError:
+        raise ValueError(f"Path outside allowed directory: {file_path}")
+    if allowed_extensions and path.suffix.lower() not in allowed_extensions:
+        raise ValueError(f"Extension {path.suffix!r} not allowed.")
+    return path
 
 def atomic_write_json(path: Path, data: dict) -> None:
     """Write JSON atomically via temp file + rename."""
@@ -1377,7 +1586,7 @@ def validate_ops(ops: list[dict], allowed: set[str]) -> tuple[bool, str]:
 
 ---
 
-## 16. Testing Standards for ML
+## 20. Testing Standards for ML
 
 ### 16.1 Test Engine Directly
 
@@ -1441,23 +1650,24 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-22.04, windows-latest, macos-13]
+    env:
+      MCP_CONSTRAINED_MODE: "1"
+      PYTHONPATH: "."          # required so shared/ imports resolve from repo root
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v3
       - run: uv sync --frozen
       - run: uv run ruff check .
       - run: uv run ruff format --check .
-      - run: uv run pyright servers/ shared/
+      - run: uv run pyright servers/ shared/   # covers engine sub-modules too
       - run: uv run pytest tests/ --cov=servers --cov=shared --cov-fail-under=90
       - run: python verify_tool_docstrings.py
-    env:
-      MCP_CONSTRAINED_MODE: "1"
 ```
 
 
 ---
 
-## 17. What the AI Must Never Do
+## 21. What the AI Must Never Do
 
 These are absolute prohibitions. Any generated code that violates them is a defect
 and must be corrected immediately.
@@ -1534,9 +1744,31 @@ and must be corrected immediately.
     Cap to top 20 rows sorted by score. The full dict can contain thousands of
     entries and will overflow the context window.
 
+19. **Never use `eval()` or `exec()` on any user-provided input.**
+    Parse expressions with AST and an operation allowlist. No exceptions.
+
+20. **Never pass user-provided strings into subprocess calls with `shell=True`.**
+    Always use an argument list, `shell=False`, `capture_output=True`, and
+    `timeout`. Shell injection is a real risk even in local tools.
+
+21. **Never use raw `file_path` strings from tool parameters without calling
+    `resolve_path()` first.**
+    Path traversal attacks work against local tools. Validate every path against
+    the user's home directory before any I/O.
+
+22. **Never mix async and sync tool definitions without verifying FastMCP
+    version compatibility.**
+    Either all tools are sync or you have a fully async-aware server setup.
+    Never return `None` from an async tool — all code paths must return a dict.
+
+23. **Never import heavy libraries (sklearn, xgboost, ydata_profiling) at
+    module level in sub-modules.**
+    Use lazy imports inside functions. This avoids paying the full import cost
+    when the server loads for tools that don't need those libraries.
+
 ---
 
-## 18. Progress Tracker
+## 22. Progress Tracker
 
 Track implementation progress here. Update checkboxes as work completes.
 
@@ -1544,15 +1776,16 @@ Track implementation progress here. Update checkboxes as work completes.
 - [ ] `shared/__init__.py`
 - [ ] `shared/version_control.py` — snapshot / restore / list
 - [ ] `shared/patch_validator.py` — validate_ops + ALLOWED_PREPROCESSING_OPS
-- [ ] `shared/file_utils.py` — resolve_path / atomic_write_json
+- [ ] `shared/file_utils.py` — resolve_path (with home-dir boundary check) / atomic_write_json
 - [ ] `shared/platform_utils.py` — all constrained mode helpers
 - [ ] `shared/progress.py` — ok / fail / info / warn / undo
 - [ ] `shared/receipt.py` — append_receipt / read_receipt_log
 - [ ] Unit tests for all shared modules (100% coverage)
+- [ ] `resolve_path()` rejects paths outside home directory (security test)
 
 ### Phase 1 — ml_basic (Tier 1)
 - [ ] `servers/ml_basic/__init__.py`
-- [ ] `servers/ml_basic/pyproject.toml`
+- [ ] `servers/ml_basic/pyproject.toml` — `requires-python = ">=3.12"`, `fastmcp>=2.0,<3.0`
 - [ ] `servers/ml_basic/engine.py` — inspect_dataset
 - [ ] `servers/ml_basic/engine.py` — read_column_profile
 - [ ] `servers/ml_basic/engine.py` — search_columns
@@ -1561,7 +1794,7 @@ Track implementation progress here. Update checkboxes as work completes.
 - [ ] `servers/ml_basic/engine.py` — train_regressor (all 7 algorithms)
 - [ ] `servers/ml_basic/engine.py` — get_predictions
 - [ ] `servers/ml_basic/engine.py` — restore_version
-- [ ] `servers/ml_basic/server.py` — all 8 @mcp.tool() wrappers
+- [ ] `servers/ml_basic/server.py` — all 8 @mcp.tool() wrappers with annotations
 - [ ] `tests/fixtures/` — all 6 fixture CSVs
 - [ ] `tests/test_ml_basic.py` — all required tests (§16.3)
 - [ ] `uv run pytest tests/test_ml_basic.py` — all pass
@@ -1571,45 +1804,51 @@ Track implementation progress here. Update checkboxes as work completes.
 
 ### Phase 2 — ml_medium (Tier 2)
 - [ ] `servers/ml_medium/__init__.py`
-- [ ] `servers/ml_medium/pyproject.toml`
+- [ ] `servers/ml_medium/pyproject.toml` — `requires-python = ">=3.12"`, `fastmcp>=2.0,<3.0`
 - [ ] `servers/ml_medium/engine.py` — run_preprocessing + all ops
 - [ ] `servers/ml_medium/engine.py` — detect_outliers (IQR + std)
 - [ ] `servers/ml_medium/engine.py` — train_with_cv
 - [ ] `servers/ml_medium/engine.py` — compare_models
 - [ ] `servers/ml_medium/engine.py` — run_clustering (3 algorithms)
 - [ ] `servers/ml_medium/engine.py` — read_receipt
-- [ ] `servers/ml_medium/server.py` — all 6 @mcp.tool() wrappers
+- [ ] `servers/ml_medium/server.py` — all 6 @mcp.tool() wrappers with annotations
 - [ ] `tests/test_ml_medium.py` — all required tests
 - [ ] `uv run pytest tests/test_ml_medium.py` — all pass
 - [ ] Manual test: ml_basic + ml_medium loaded together (≤ 14 tools total)
 
 ### Phase 3 — ml_advanced (Tier 3)
 - [ ] `servers/ml_advanced/__init__.py`
-- [ ] `servers/ml_advanced/pyproject.toml`
+- [ ] `servers/ml_advanced/pyproject.toml` — `requires-python = ">=3.12"`, `fastmcp>=2.0,<3.0`
+- [ ] Sub-module layout: `_adv_tuning.py`, `_adv_export.py`, `_adv_report.py`, `_adv_profiling.py`, `_adv_reduction.py`
+- [ ] `engine.py` is a thin router re-exporting from sub-modules
+- [ ] All heavy imports (sklearn, xgboost, ydata_profiling) are lazy (inside functions)
 - [ ] `servers/ml_advanced/engine.py` — tune_hyperparameters (grid + random)
 - [ ] `servers/ml_advanced/engine.py` — export_model + manifest
 - [ ] `servers/ml_advanced/engine.py` — read_model_report
 - [ ] `servers/ml_advanced/engine.py` — run_profiling_report
 - [ ] `servers/ml_advanced/engine.py` — apply_dimensionality_reduction
-- [ ] `servers/ml_advanced/server.py` — all 5 @mcp.tool() wrappers
+- [ ] `servers/ml_advanced/server.py` — all 5 @mcp.tool() wrappers with annotations
 - [ ] `tests/test_ml_advanced.py` — all required tests
 - [ ] `uv run pytest tests/test_ml_advanced.py` — all pass
 
 ### Phase 4 — Installation and Distribution
-- [ ] `install/install.sh` — Python 3.11 check, uv sync, VRAM detection, client config
+- [ ] `install/install.sh` — Python 3.12 check, uv sync, VRAM detection, client config
 - [ ] `install/install.bat` — Windows equivalent
 - [ ] `install/mcp_config_writer.py` — LM Studio / Claude Desktop / Cursor / Windsurf
 - [ ] `root pyproject.toml` — workspace with all three server members
 - [ ] `uv.lock` committed
-- [ ] `.python-version` = `3.11`
+- [ ] `.python-version` = `3.12`
 - [ ] `.gitattributes` — `* text=auto eol=lf`
+- [ ] `.editorconfig` — consistent editor settings
 - [ ] Test install on clean machine / VM
 
 ### Phase 5 — CI/CD
 - [ ] `.github/workflows/test.yml` — matrix: ubuntu + windows + macos
+- [ ] `PYTHONPATH: "."` set in CI env so `shared/` imports resolve correctly
 - [ ] `verify_tool_docstrings.py` — ≤ 80 char enforcement
 - [ ] All CI checks passing on all three platforms
 - [ ] `MCP_CONSTRAINED_MODE=1` enforced in CI environment
+- [ ] `pyright` covers all engine sub-modules, not just top-level engine.py
 
 ### Phase 6 — Documentation
 - [ ] `README.md` — full required sections (§29 of STANDARDS.md)
