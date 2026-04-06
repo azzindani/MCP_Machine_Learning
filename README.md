@@ -165,51 +165,116 @@ Pass an `ops` array to apply a pipeline in one call:
 - [uv](https://github.com/astral-sh/uv) package manager
 - Git
 
-### Steps
+### Quick Start (Local Clone)
 
 ```bash
-# Clone the repo
 git clone https://github.com/azzindani/MCP_Machine_Learning.git
 cd MCP_Machine_Learning
-
-# Install all dependencies
 uv sync
 ```
 
-### LM Studio Configuration (Windows)
+---
 
-Add to your LM Studio MCP config file (`%APPDATA%\LM-Studio\mcp-config.json`):
+## MCP Configuration
+
+### Option A — Local Clone (recommended)
+
+Clone the repo first, then point your MCP client to the local directory. Replace `/path/to/MCP_Machine_Learning` with your actual clone path.
+
+<details>
+<summary><strong>All Three Servers</strong></summary>
 
 ```json
 {
   "mcpServers": {
     "ml-basic": {
       "command": "uv",
+      "args": ["run", "--directory", "/path/to/MCP_Machine_Learning", "ml-basic"],
+      "env": { "PYTHONPATH": "/path/to/MCP_Machine_Learning" }
+    },
+    "ml-medium": {
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/MCP_Machine_Learning", "ml-medium"],
+      "env": { "PYTHONPATH": "/path/to/MCP_Machine_Learning" }
+    },
+    "ml-advanced": {
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/MCP_Machine_Learning", "ml-advanced"],
+      "env": { "PYTHONPATH": "/path/to/MCP_Machine_Learning" }
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><strong>ml-basic only (4–6 GB VRAM)</strong></summary>
+
+```json
+{
+  "mcpServers": {
+    "ml-basic": {
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/MCP_Machine_Learning", "ml-basic"],
+      "env": { "PYTHONPATH": "/path/to/MCP_Machine_Learning" }
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary><strong>ml-basic + ml-medium (8 GB VRAM)</strong></summary>
+
+```json
+{
+  "mcpServers": {
+    "ml-basic": {
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/MCP_Machine_Learning", "ml-basic"],
+      "env": { "PYTHONPATH": "/path/to/MCP_Machine_Learning" }
+    },
+    "ml-medium": {
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/MCP_Machine_Learning", "ml-medium"],
+      "env": { "PYTHONPATH": "/path/to/MCP_Machine_Learning" }
+    }
+  }
+}
+```
+
+</details>
+
+### Option B — Pull from Repository (no clone needed)
+
+Run directly from the GitHub repository. uv downloads and caches the code automatically.
+
+<details>
+<summary><strong>All Three Servers</strong></summary>
+
+```json
+{
+  "mcpServers": {
+    "ml-basic": {
+      "command": "uvx",
       "args": [
-        "--directory",
-        "C:\\path\\to\\MCP_Machine_Learning",
-        "run",
-        "--package", "ml-basic",
+        "--from", "git+https://github.com/azzindani/MCP_Machine_Learning.git#subdirectory=servers/ml_basic",
         "ml-basic"
       ]
     },
     "ml-medium": {
-      "command": "uv",
+      "command": "uvx",
       "args": [
-        "--directory",
-        "C:\\path\\to\\MCP_Machine_Learning",
-        "run",
-        "--package", "ml-medium",
+        "--from", "git+https://github.com/azzindani/MCP_Machine_Learning.git#subdirectory=servers/ml_medium",
         "ml-medium"
       ]
     },
     "ml-advanced": {
-      "command": "uv",
+      "command": "uvx",
       "args": [
-        "--directory",
-        "C:\\path\\to\\MCP_Machine_Learning",
-        "run",
-        "--package", "ml-advanced",
+        "--from", "git+https://github.com/azzindani/MCP_Machine_Learning.git#subdirectory=servers/ml_advanced",
         "ml-advanced"
       ]
     }
@@ -217,41 +282,75 @@ Add to your LM Studio MCP config file (`%APPDATA%\LM-Studio\mcp-config.json`):
 }
 ```
 
-### Claude Desktop Configuration (macOS/Linux)
+</details>
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `~/.config/claude/claude_desktop_config.json` (Linux):
+<details>
+<summary><strong>ml-basic only</strong></summary>
 
 ```json
 {
   "mcpServers": {
     "ml-basic": {
-      "command": "uv",
+      "command": "uvx",
       "args": [
-        "--directory", "/path/to/MCP_Machine_Learning",
-        "run", "--package", "ml-basic", "ml-basic"
-      ]
-    },
-    "ml-medium": {
-      "command": "uv",
-      "args": [
-        "--directory", "/path/to/MCP_Machine_Learning",
-        "run", "--package", "ml-medium", "ml-medium"
+        "--from", "git+https://github.com/azzindani/MCP_Machine_Learning.git#subdirectory=servers/ml_basic",
+        "ml-basic"
       ]
     }
   }
 }
 ```
 
+</details>
+
+<details>
+<summary><strong>ml-basic + ml-medium</strong></summary>
+
+```json
+{
+  "mcpServers": {
+    "ml-basic": {
+      "command": "uvx",
+      "args": [
+        "--from", "git+https://github.com/azzindani/MCP_Machine_Learning.git#subdirectory=servers/ml_basic",
+        "ml-basic"
+      ]
+    },
+    "ml-medium": {
+      "command": "uvx",
+      "args": [
+        "--from", "git+https://github.com/azzindani/MCP_Machine_Learning.git#subdirectory=servers/ml_medium",
+        "ml-medium"
+      ]
+    }
+  }
+}
+```
+
+</details>
+
+### Where to add this configuration
+
+| Client | Config file location |
+|---|---|
+| **LM Studio** | `%APPDATA%\LM-Studio\mcp-config.json` (Win) / `~/.lmstudio/mcp-config.json` (Mac/Linux) |
+| **Claude Desktop** | `%APPDATA%\Claude\claude_desktop_config.json` (Win) / `~/Library/Application Support/Claude/claude_desktop_config.json` (Mac) |
+| **Cursor** | `~/.cursor/mcp.json` |
+| **Windsurf** | `~/.codeium/windsurf/mcp_config.json` |
+
 ### Constrained Mode (8 GB VRAM)
 
-Set this environment variable before starting LM Studio or your MCP host:
+Add `MCP_CONSTRAINED_MODE` to the `env` block of any server config:
 
-```bash
-# Linux/macOS
-export MCP_CONSTRAINED_MODE=1
-
-# Windows
-set MCP_CONSTRAINED_MODE=1
+```json
+{
+  "command": "uv",
+  "args": ["run", "--directory", "/path/to/MCP_Machine_Learning", "ml-basic"],
+  "env": {
+    "PYTHONPATH": "/path/to/MCP_Machine_Learning",
+    "MCP_CONSTRAINED_MODE": "1"
+  }
+}
 ```
 
 In constrained mode, row limits, search results, CV folds, and model comparison counts are automatically reduced to fit within 8 GB VRAM.
