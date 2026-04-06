@@ -85,10 +85,15 @@ def train_classifier(
     model: str,
     test_size: float = 0.2,
     random_state: int = 42,
+    class_weight: str = "",
+    return_train_score: bool = False,
     dry_run: bool = False,
 ) -> dict:
     """Train classifier on CSV. model: lr svm rf dtc knn nb xgb."""
-    return engine.train_classifier(file_path, target_column, model, test_size, random_state, dry_run)
+    return engine.train_classifier(
+        file_path, target_column, model, test_size, random_state,
+        class_weight, return_train_score, dry_run
+    )
 
 
 @mcp.tool(
@@ -124,9 +129,9 @@ def train_regressor(
         "openWorldHint": False,
     }
 )
-def get_predictions(model_path: str, file_path: str, max_rows: int = 20) -> dict:
+def get_predictions(model_path: str, file_path: str, max_rows: int = 20, return_proba: bool = False) -> dict:
     """Run predictions with saved model. Returns bounded prediction list."""
-    return engine.get_predictions(model_path, file_path, max_rows)
+    return engine.get_predictions(model_path, file_path, max_rows, return_proba)
 
 
 @mcp.tool(

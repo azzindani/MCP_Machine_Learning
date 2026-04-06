@@ -27,17 +27,17 @@ The server suite is split into three focused tiers. Load only what you need — 
 | Tier | Server | Tools | Purpose |
 |---|---|---|---|
 | 1 | `ml-basic` | 11 | Dataset inspection + single-model training + prediction |
-| 2 | `ml-medium` | 11 | Preprocessing pipelines + CV + clustering + EDA reports |
-| 3 | `ml-advanced` | 9 | Tuning + export + evaluation charts + profiling |
+| 2 | `ml-medium` | 14 | Preprocessing pipelines + CV + clustering + EDA + batch predict |
+| 3 | `ml-advanced` | 10 | Tuning + export + evaluation charts + profiling |
 
 **Recommended loading by hardware:**
 
 | VRAM | Recommended load | Total tools |
 |---|---|---|
 | 4–6 GB | ml-basic only | 11 |
-| 8 GB | ml-basic + ml-medium | 22 |
-| 12–16 GB | all three tiers | 31 |
-| 24 GB+ | all three tiers | 31 |
+| 8 GB | ml-basic + ml-medium | 25 |
+| 12–16 GB | all three tiers | 35 |
+| 24 GB+ | all three tiers | 35 |
 
 ---
 
@@ -51,9 +51,9 @@ The server suite is split into three focused tiers. Load only what you need — 
 | 2 | `read_column_profile` | INSPECT | Stats for one column (mean, std, nulls, unique) |
 | 3 | `search_columns` | LOCATE | Find columns matching a condition |
 | 4 | `read_rows` | INSPECT | Bounded row slice |
-| 5 | `train_classifier` | PATCH | Train classifier: `lr svm rf dtc knn nb xgb` |
+| 5 | `train_classifier` | PATCH | Train classifier: `lr svm rf dtc knn nb xgb` — AUC-ROC + class_weight + train_score |
 | 6 | `train_regressor` | PATCH | Train regressor: `lir pr lar rr dtr rfr xgb` |
-| 7 | `get_predictions` | VERIFY | Run predictions with saved model |
+| 7 | `get_predictions` | VERIFY | Run predictions — supports `return_proba=True` for probabilities |
 | 8 | `restore_version` | CONTROL | Rollback model or dataset to previous snapshot |
 | 9 | `predict_single` | VERIFY | Predict one JSON record — no CSV needed |
 | 10 | `list_models` | LOCATE | List all saved `.pkl` models with metadata |
@@ -63,17 +63,20 @@ The server suite is split into three focused tiers. Load only what you need — 
 
 | # | Tool | Category | Description |
 |---|---|---|---|
-| 1 | `run_preprocessing` | PATCH | 12-op pipeline: encode, scale, fill, bin, log-transform, date parts |
+| 1 | `run_preprocessing` | PATCH | 14-op pipeline: encode, scale, fill, bin, log, date parts, drop nulls, clip |
 | 2 | `detect_outliers` | INSPECT | IQR and std-dev outlier report per column |
 | 3 | `train_with_cv` | PATCH | K-fold cross-validation training |
 | 4 | `compare_models` | PATCH | Train multiple algorithms, return sorted table |
-| 5 | `run_clustering` | PATCH | K-Means / Mean-Shift / DBSCAN with optional PCA/ICA |
+| 5 | `run_clustering` | PATCH | K-Means / Mean-Shift / DBSCAN — returns silhouette score |
 | 6 | `read_receipt` | CONTROL | Read operation history for a file |
 | 7 | `generate_eda_report` | ANALYZE | Interactive HTML EDA with quality score + alerts |
 | 8 | `filter_rows` | PATCH | Filter rows by column condition, save CSV |
 | 9 | `merge_datasets` | PATCH | Merge two CSVs on a key column |
 | 10 | `find_optimal_clusters` | ANALYZE | Elbow + silhouette chart to find best K |
 | 11 | `anomaly_detection` | INSPECT | Isolation Forest or LOF anomaly detection |
+| 12 | `check_data_quality` | INSPECT | JSON quality score 0-100 with typed alerts (model-readable) |
+| 13 | `evaluate_model` | VERIFY | Score saved model on external labeled test CSV |
+| 14 | `batch_predict` | PATCH | Predict all rows, save predictions CSV — no row limit |
 
 ### Tier 3 — ml-advanced
 
@@ -110,7 +113,9 @@ Pass an `ops` array to apply a pipeline in one call:
   {"op": "convert_dtype",  "column": "date", "to": "datetime"},
   {"op": "bin_numeric",    "column": "age",  "bins": 5, "new_column": "age_group"},
   {"op": "add_date_parts", "column": "date", "parts": ["year", "month", "dayofweek"]},
-  {"op": "log_transform",  "column": "revenue", "base": "natural"}
+  {"op": "log_transform",  "column": "revenue", "base": "natural"},
+  {"op": "drop_null_rows", "column": "critical_field"},
+  {"op": "clip_column",    "column": "age", "lower": 0, "upper": 120}
 ]
 ```
 
