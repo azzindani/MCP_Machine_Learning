@@ -177,9 +177,22 @@ uv sync
 
 ## MCP Configuration
 
-### Option A — Local Clone (recommended)
+Copy the JSON config for your platform into your MCP client config file. Each server auto-clones the repo on first launch and auto-updates on every subsequent launch — no manual install steps.
 
-Clone the repo first, then point your MCP client to the local directory. Replace `/path/to/MCP_Machine_Learning` with your actual clone path.
+### Where to add this configuration
+
+| Client | Config file location |
+|---|---|
+| **LM Studio** (Windows) | `%APPDATA%\LM-Studio\mcp-config.json` |
+| **LM Studio** (macOS/Linux) | `~/.lmstudio/mcp-config.json` |
+| **Claude Desktop** (Windows) | `%APPDATA%\Claude\claude_desktop_config.json` |
+| **Claude Desktop** (macOS) | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| **Cursor** | `~/.cursor/mcp.json` |
+| **Windsurf** | `~/.codeium/windsurf/mcp_config.json` |
+
+### Windows (PowerShell)
+
+Each server entry auto-clones to `%USERPROFILE%\.mcp_servers\MCP_Machine_Learning`, pulls latest, syncs dependencies, and runs. Set `MCP_CONSTRAINED_MODE` to `1` for 8 GB VRAM or less.
 
 <details>
 <summary><strong>All Three Servers</strong></summary>
@@ -188,19 +201,46 @@ Clone the repo first, then point your MCP client to the local directory. Replace
 {
   "mcpServers": {
     "ml-basic": {
-      "command": "uv",
-      "args": ["run", "--directory", "/path/to/MCP_Machine_Learning", "ml-basic"],
-      "env": { "PYTHONPATH": "/path/to/MCP_Machine_Learning" }
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d } else { Set-Location $d; git pull --quiet }; Set-Location $d; uv sync --all-packages --quiet; uv run --directory (Join-Path $d 'servers\\ml_basic') ml-basic"
+      ],
+      "env": {
+        "MCP_CONSTRAINED_MODE": "0"
+      },
+      "timeout": 600000
     },
     "ml-medium": {
-      "command": "uv",
-      "args": ["run", "--directory", "/path/to/MCP_Machine_Learning", "ml-medium"],
-      "env": { "PYTHONPATH": "/path/to/MCP_Machine_Learning" }
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d } else { Set-Location $d; git pull --quiet }; Set-Location $d; uv sync --all-packages --quiet; uv run --directory (Join-Path $d 'servers\\ml_medium') ml-medium"
+      ],
+      "env": {
+        "MCP_CONSTRAINED_MODE": "0"
+      },
+      "timeout": 600000
     },
     "ml-advanced": {
-      "command": "uv",
-      "args": ["run", "--directory", "/path/to/MCP_Machine_Learning", "ml-advanced"],
-      "env": { "PYTHONPATH": "/path/to/MCP_Machine_Learning" }
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d } else { Set-Location $d; git pull --quiet }; Set-Location $d; uv sync --all-packages --quiet; uv run --directory (Join-Path $d 'servers\\ml_advanced') ml-advanced"
+      ],
+      "env": {
+        "MCP_CONSTRAINED_MODE": "0"
+      },
+      "timeout": 600000
     }
   }
 }
@@ -215,9 +255,18 @@ Clone the repo first, then point your MCP client to the local directory. Replace
 {
   "mcpServers": {
     "ml-basic": {
-      "command": "uv",
-      "args": ["run", "--directory", "/path/to/MCP_Machine_Learning", "ml-basic"],
-      "env": { "PYTHONPATH": "/path/to/MCP_Machine_Learning" }
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d } else { Set-Location $d; git pull --quiet }; Set-Location $d; uv sync --all-packages --quiet; uv run --directory (Join-Path $d 'servers\\ml_basic') ml-basic"
+      ],
+      "env": {
+        "MCP_CONSTRAINED_MODE": "1"
+      },
+      "timeout": 600000
     }
   }
 }
@@ -232,14 +281,32 @@ Clone the repo first, then point your MCP client to the local directory. Replace
 {
   "mcpServers": {
     "ml-basic": {
-      "command": "uv",
-      "args": ["run", "--directory", "/path/to/MCP_Machine_Learning", "ml-basic"],
-      "env": { "PYTHONPATH": "/path/to/MCP_Machine_Learning" }
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d } else { Set-Location $d; git pull --quiet }; Set-Location $d; uv sync --all-packages --quiet; uv run --directory (Join-Path $d 'servers\\ml_basic') ml-basic"
+      ],
+      "env": {
+        "MCP_CONSTRAINED_MODE": "1"
+      },
+      "timeout": 600000
     },
     "ml-medium": {
-      "command": "uv",
-      "args": ["run", "--directory", "/path/to/MCP_Machine_Learning", "ml-medium"],
-      "env": { "PYTHONPATH": "/path/to/MCP_Machine_Learning" }
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d } else { Set-Location $d; git pull --quiet }; Set-Location $d; uv sync --all-packages --quiet; uv run --directory (Join-Path $d 'servers\\ml_medium') ml-medium"
+      ],
+      "env": {
+        "MCP_CONSTRAINED_MODE": "1"
+      },
+      "timeout": 600000
     }
   }
 }
@@ -247,9 +314,9 @@ Clone the repo first, then point your MCP client to the local directory. Replace
 
 </details>
 
-### Option B — Pull from Repository (no clone needed)
+### macOS / Linux (bash)
 
-Run directly from the GitHub repository. uv downloads and caches the code automatically.
+Each server entry auto-clones to `~/.mcp_servers/MCP_Machine_Learning`, pulls latest, syncs dependencies, and runs.
 
 <details>
 <summary><strong>All Three Servers</strong></summary>
@@ -258,25 +325,37 @@ Run directly from the GitHub repository. uv downloads and caches the code automa
 {
   "mcpServers": {
     "ml-basic": {
-      "command": "uvx",
+      "command": "bash",
       "args": [
-        "--from", "git+https://github.com/azzindani/MCP_Machine_Learning.git#subdirectory=servers/ml_basic",
-        "ml-basic"
-      ]
+        "-c",
+        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; [ -d \"$d\" ] && (cd \"$d\" && git pull -q) || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\"; cd \"$d\" && uv sync --all-packages -q && uv run --directory \"$d/servers/ml_basic\" ml-basic"
+      ],
+      "env": {
+        "MCP_CONSTRAINED_MODE": "0"
+      },
+      "timeout": 600000
     },
     "ml-medium": {
-      "command": "uvx",
+      "command": "bash",
       "args": [
-        "--from", "git+https://github.com/azzindani/MCP_Machine_Learning.git#subdirectory=servers/ml_medium",
-        "ml-medium"
-      ]
+        "-c",
+        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; [ -d \"$d\" ] && (cd \"$d\" && git pull -q) || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\"; cd \"$d\" && uv sync --all-packages -q && uv run --directory \"$d/servers/ml_medium\" ml-medium"
+      ],
+      "env": {
+        "MCP_CONSTRAINED_MODE": "0"
+      },
+      "timeout": 600000
     },
     "ml-advanced": {
-      "command": "uvx",
+      "command": "bash",
       "args": [
-        "--from", "git+https://github.com/azzindani/MCP_Machine_Learning.git#subdirectory=servers/ml_advanced",
-        "ml-advanced"
-      ]
+        "-c",
+        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; [ -d \"$d\" ] && (cd \"$d\" && git pull -q) || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\"; cd \"$d\" && uv sync --all-packages -q && uv run --directory \"$d/servers/ml_advanced\" ml-advanced"
+      ],
+      "env": {
+        "MCP_CONSTRAINED_MODE": "0"
+      },
+      "timeout": 600000
     }
   }
 }
@@ -285,17 +364,21 @@ Run directly from the GitHub repository. uv downloads and caches the code automa
 </details>
 
 <details>
-<summary><strong>ml-basic only</strong></summary>
+<summary><strong>ml-basic only (4–6 GB VRAM)</strong></summary>
 
 ```json
 {
   "mcpServers": {
     "ml-basic": {
-      "command": "uvx",
+      "command": "bash",
       "args": [
-        "--from", "git+https://github.com/azzindani/MCP_Machine_Learning.git#subdirectory=servers/ml_basic",
-        "ml-basic"
-      ]
+        "-c",
+        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; [ -d \"$d\" ] && (cd \"$d\" && git pull -q) || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\"; cd \"$d\" && uv sync --all-packages -q && uv run --directory \"$d/servers/ml_basic\" ml-basic"
+      ],
+      "env": {
+        "MCP_CONSTRAINED_MODE": "1"
+      },
+      "timeout": 600000
     }
   }
 }
@@ -304,24 +387,32 @@ Run directly from the GitHub repository. uv downloads and caches the code automa
 </details>
 
 <details>
-<summary><strong>ml-basic + ml-medium</strong></summary>
+<summary><strong>ml-basic + ml-medium (8 GB VRAM)</strong></summary>
 
 ```json
 {
   "mcpServers": {
     "ml-basic": {
-      "command": "uvx",
+      "command": "bash",
       "args": [
-        "--from", "git+https://github.com/azzindani/MCP_Machine_Learning.git#subdirectory=servers/ml_basic",
-        "ml-basic"
-      ]
+        "-c",
+        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; [ -d \"$d\" ] && (cd \"$d\" && git pull -q) || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\"; cd \"$d\" && uv sync --all-packages -q && uv run --directory \"$d/servers/ml_basic\" ml-basic"
+      ],
+      "env": {
+        "MCP_CONSTRAINED_MODE": "1"
+      },
+      "timeout": 600000
     },
     "ml-medium": {
-      "command": "uvx",
+      "command": "bash",
       "args": [
-        "--from", "git+https://github.com/azzindani/MCP_Machine_Learning.git#subdirectory=servers/ml_medium",
-        "ml-medium"
-      ]
+        "-c",
+        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; [ -d \"$d\" ] && (cd \"$d\" && git pull -q) || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\"; cd \"$d\" && uv sync --all-packages -q && uv run --directory \"$d/servers/ml_medium\" ml-medium"
+      ],
+      "env": {
+        "MCP_CONSTRAINED_MODE": "1"
+      },
+      "timeout": 600000
     }
   }
 }
@@ -329,31 +420,9 @@ Run directly from the GitHub repository. uv downloads and caches the code automa
 
 </details>
 
-### Where to add this configuration
+### Constrained Mode
 
-| Client | Config file location |
-|---|---|
-| **LM Studio** | `%APPDATA%\LM-Studio\mcp-config.json` (Win) / `~/.lmstudio/mcp-config.json` (Mac/Linux) |
-| **Claude Desktop** | `%APPDATA%\Claude\claude_desktop_config.json` (Win) / `~/Library/Application Support/Claude/claude_desktop_config.json` (Mac) |
-| **Cursor** | `~/.cursor/mcp.json` |
-| **Windsurf** | `~/.codeium/windsurf/mcp_config.json` |
-
-### Constrained Mode (8 GB VRAM)
-
-Add `MCP_CONSTRAINED_MODE` to the `env` block of any server config:
-
-```json
-{
-  "command": "uv",
-  "args": ["run", "--directory", "/path/to/MCP_Machine_Learning", "ml-basic"],
-  "env": {
-    "PYTHONPATH": "/path/to/MCP_Machine_Learning",
-    "MCP_CONSTRAINED_MODE": "1"
-  }
-}
-```
-
-In constrained mode, row limits, search results, CV folds, and model comparison counts are automatically reduced to fit within 8 GB VRAM.
+Set `MCP_CONSTRAINED_MODE` to `"1"` in the `env` block for machines with 8 GB VRAM or less. This automatically reduces row limits, search results, CV folds, and model comparison counts.
 
 ---
 
