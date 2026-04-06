@@ -271,6 +271,18 @@ dependencies = [
 ]
 ```
 
+Configure `ruff` in the root `pyproject.toml` for consistent linting and formatting:
+
+```toml
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+exclude = ["*.ipynb"]      # exclude notebooks from linting
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP"]
+```
+
 ### TypeScript setup
 
 Use Node.js 20 LTS. Use `npm` with `package-lock.json` committed. Pin the
@@ -307,13 +319,16 @@ pipeline, one install script.
 │   ├── file_utils.py               # path resolution, atomic writes, JSON helpers
 │   ├── platform_utils.py           # OS detection, hardware mode flags
 │   ├── progress.py                 # ok/fail/info/warn/undo progress helpers
-│   └── receipt.py                  # operation receipt log
+│   ├── receipt.py                  # operation receipt log
+│   └── html_theme.py              # shared HTML/CSS/Plotly theme for reports
 │
 ├── servers/
 │   ├── {domain}_{tier}/            # e.g. data_basic, ml_basic, office_basic
 │   │   ├── __init__.py
 │   │   ├── server.py               # FastMCP setup + tool definitions (thin)
 │   │   ├── engine.py               # pure domain logic (no MCP imports)
+│   │   ├── _{tier}_helpers.py      # sub-module: shared imports + constants + helpers
+│   │   ├── _{tier}_*.py            # sub-modules: grouped by function (see §15)
 │   │   └── pyproject.toml
 │   │
 │   ├── {domain}_medium/
@@ -331,6 +346,11 @@ pipeline, one install script.
 │   ├── install.sh                  # Linux / macOS — POSIX sh compatible
 │   ├── install.bat                 # Windows CMD
 │   └── mcp_config_writer.py        # writes to AI client config files
+│
+├── .github/
+│   └── workflows/
+│       ├── ci.yml                  # lint + test on push/PR (all platforms)
+│       └── release.yml             # build + publish on tag push
 │
 ├── pyproject.toml                  # root workspace
 ├── uv.lock
@@ -901,7 +921,8 @@ is more than two lines, it has logic that belongs in `engine.py`.
 ## 15. Engine Sub-Module Pattern
 
 When `engine.py` grows beyond ~400–500 lines, split it into focused sub-modules.
-The engine entry point becomes a thin router.
+The engine entry point becomes a thin router. **No single file should exceed
+1,000 lines.** This is a hard limit enforced during code review.
 
 ### Sub-module layout
 
@@ -909,6 +930,7 @@ The engine entry point becomes a thin router.
 servers/data_advanced/
 ├── server.py              ← MCP wrapper (unchanged)
 ├── engine.py              ← thin router: imports from sub-modules, re-exports
+├── _adv_helpers.py        ← shared imports, constants, utility functions
 ├── _adv_io.py             ← file loading, export, format conversion
 ├── _adv_transform.py      ← data cleaning, patching, aggregations
 ├── _adv_analysis.py       ← statistics, outlier detection, profiling
@@ -919,43 +941,112 @@ servers/data_advanced/
 
 ### Sub-module naming rules
 
-- Prefix with `_{domain_abbr}_` to avoid name collisions
+- Prefix with `_{tier_abbr}_` to avoid name collisions (e.g. `_basic_`, `_medium_`,
+  `_adv_`)
 - Group by what the code does, not by what tool calls it
 - Sub-modules have zero MCP imports (same rule as `engine.py`)
-- `engine.py` re-exports all public functions:
+- Use relative imports within the package: `from ._adv_helpers import _error`
+
+### The helpers sub-module pattern
+
+Every server package should have a `_{tier}_helpers.py` that centralizes:
+- All third-party and shared imports used across sub-modules
+- Constants (allowed algorithm sets, directory names, limits)
+- Private utility functions (_error, _check_memory, _auto_preprocess, etc.)
+- An `__all__` list re-exporting everything sub-modules need
 
 ```python
-# engine.py — thin router
-from ._adv_io import load_file, export_data
-from ._adv_transform import apply_patch, run_cleaning_pipeline
-from ._adv_analysis import run_eda, check_outliers
-from ._adv_charts import generate_chart, generate_multi_chart
-from ._adv_dashboard import generate_dashboard
+# _basic_helpers.py — centralized imports and helpers
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import psutil
+
+from shared.file_utils import resolve_path
+from shared.progress import ok, fail, info, warn
+
+logger = logging.getLogger(__name__)
+
+MODELS_DIR = ".mcp_models"
+ALLOWED_CLASSIFIERS = {"lr", "svm", "rf", "dtc", "knn", "nb", "xgb"}
+
+def _error(error: str, hint: str, backup: str | None = None) -> dict:
+    base: dict = {"success": False, "error": error, "hint": hint}
+    if backup:
+        base["backup"] = backup
+    base["token_estimate"] = len(str(base)) // 4
+    return base
+
+# ... other shared helpers ...
 
 __all__ = [
-    "load_file", "export_data",
-    "apply_patch", "run_cleaning_pipeline",
-    "run_eda", "check_outliers",
-    "generate_chart", "generate_multi_chart",
-    "generate_dashboard",
+    "resolve_path", "ok", "fail", "info", "warn",
+    "np", "pd", "Path", "logger",
+    "MODELS_DIR", "ALLOWED_CLASSIFIERS",
+    "_error",
 ]
 ```
+
+### The thin router pattern
+
+When `engine.py` is fully split, it becomes a thin router — just imports and
+`__all__`:
+
+```python
+# engine.py — thin router (~30–50 lines)
+"""my_server engine — domain logic. Zero MCP imports."""
+
+from ._basic_helpers import _error          # only if used directly
+from ._basic_train import train_classifier, train_regressor
+from ._basic_predict import get_predictions, restore_version
+from ._basic_inspect import inspect_dataset, read_column_profile
+
+__all__ = [
+    "inspect_dataset", "read_column_profile",
+    "train_classifier", "train_regressor",
+    "get_predictions", "restore_version",
+]
+```
+
+Alternatively, `engine.py` can be a **partial router** — keeping small inline
+functions (e.g., read-only inspect tools under ~50 lines each) while importing
+larger functions from sub-modules. This is acceptable when it keeps engine.py
+under 1,000 lines and avoids creating sub-modules with only one small function.
+
+### File size guidelines
+
+| File | Target lines | Hard limit |
+|---|---|---|
+| `engine.py` (thin router) | 30–50 | 1,000 |
+| `engine.py` (partial router) | 200–400 | 1,000 |
+| `_{tier}_helpers.py` | 150–500 | 1,000 |
+| Other sub-modules | 150–800 | 1,000 |
+| `server.py` | 50–150 | 300 |
 
 Tests still import from `engine.py` — sub-module structure is invisible to tests.
 
 ### Lazy imports for heavy dependencies
 
-Sub-modules that depend on large libraries (torch, sklearn, transformers) should
-import those libraries inside the function, not at module level. This avoids paying
-the import cost when `engine.py` is loaded for a function that does not need that
-library.
+Sub-modules that depend on large libraries (torch, sklearn, transformers, plotly,
+ydata_profiling) should import those libraries **inside** the function, not at
+module level. This avoids paying the full import cost when the server loads for
+tools that don't need those libraries.
 
 ```python
-# _adv_ml.py — import torch only when the function is called
-def run_inference(model_path: str, input_path: str) -> dict:
-    import torch   # lazy import — only loaded when this function runs
+# _adv_report.py — import plotly only when the function is called
+def generate_report(model_path: str, theme: str = "light") -> dict:
+    import plotly.express as px        # lazy import
+    import plotly.graph_objects as go   # lazy import
+    from shared.html_theme import build_html_report, get_theme
     ...
 ```
+
+Exception: lightweight, always-needed libraries (numpy, pandas, pathlib) can be
+imported at module level in the helpers sub-module.
 
 ---
 
@@ -1657,9 +1748,31 @@ Required fixture categories:
 
 ```yaml
 strategy:
+  fail-fast: false
   matrix:
-    os: [ubuntu-22.04, windows-latest, macos-13]
+    os: [ubuntu-22.04, macos-latest, windows-latest]
 ```
+
+Use `macos-latest` (not `macos-13`). Set `fail-fast: false` so all platforms run
+even if one fails — you need to see all failures, not just the first.
+
+### Cross-platform test pitfalls
+
+**Windows `tmp_path` is under home:** On Windows CI, pytest's `tmp_path` resolves
+to a directory under the user's home (e.g., `C:\Users\runneradmin\AppData\Local\Temp\...`).
+This means `resolve_path()` will NOT reject it as "outside home directory". Tests
+that check path-traversal rejection must use a truly outside-home path:
+
+```python
+def test_path_outside_home(self):
+    import sys
+    outside = "/etc/outside.csv" if sys.platform != "win32" else "C:\\outside.csv"
+    r = some_tool(outside)
+    assert r["success"] is False
+```
+
+**macOS native libraries:** Tests that import XGBoost, LightGBM, or other C++
+libraries will fail on macOS unless `libomp` is installed. See §34 for the CI fix.
 
 ---
 
@@ -1709,6 +1822,20 @@ Configure in `server.py`:
 import sys, logging
 logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
 ```
+
+### Windows temp directory is under home
+
+On Windows, `tempfile.gettempdir()` and pytest's `tmp_path` return paths under
+`C:\Users\{user}\AppData\Local\Temp\`. This is inside `Path.home()`. Code that
+uses `resolve_path()` for security validation will NOT reject these paths. Write
+tests accordingly — see §27 for the fix.
+
+### macOS native library dependencies
+
+C++ libraries that use OpenMP (XGBoost, LightGBM, etc.) require `libomp` on
+macOS. This is installed via `brew install libomp`. Without it, Python `import`
+fails with `Library not loaded: @rpath/libomp.dylib`. The CI workflow must
+include this step for macOS runners — see §34.
 
 ### Windows long paths
 
@@ -1891,6 +2018,21 @@ test(ml_basic): add OOM failure test for large datasets
 - No existing approved alternative
 - Pinned in `pyproject.toml` with minimum version (`>=x.y.z`)
 
+### Required dev dependencies
+
+Every project must include these in `[dependency-groups] dev`:
+
+```toml
+[dependency-groups]
+dev = [
+    "pytest>=9.0",
+    "ruff>=0.9",
+]
+```
+
+`ruff` handles both linting and formatting. No need for `black`, `isort`, `flake8`,
+or `pylint` — ruff replaces all of them.
+
 ### Prohibited libraries
 
 ```
@@ -1904,33 +2046,189 @@ Any cloud SDK used as primary execution engine (boto3 for ML, google-cloud-*, et
 
 ## 34. CI/CD Requirements
 
-### Required checks on every PR
+### CI workflow (`ci.yml`)
+
+Name the file `ci.yml` (not `test.yml`). Trigger on all pushes and PRs.
 
 ```yaml
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
 jobs:
   test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-22.04, windows-latest, macos-13]
+        os: [ubuntu-22.04, macos-latest, windows-latest]
+
     env:
       MCP_CONSTRAINED_MODE: "1"
       PYTHONPATH: "."
+
     steps:
-      - uv sync --frozen
-      - uv run ruff check .
-      - uv run ruff format --check .
-      - uv run pyright servers/ shared/
-      - uv run pytest tests/ --cov=servers --cov=shared --cov-fail-under=90
-      - python verify_tool_docstrings.py
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Install native dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install libomp
+        # Required for XGBoost, LightGBM, and other C++ libraries
+        # that depend on OpenMP. Without this, import fails with
+        # "Library not loaded: @rpath/libomp.dylib"
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Format check
+        run: uv run ruff format --check .
+
+      - name: Run tests
+        run: uv run python -m pytest tests/ -q --tb=short
 ```
 
-Setting `PYTHONPATH: "."` is required so that `shared/` imports resolve correctly
+### Critical CI lessons learned
+
+**`PYTHONPATH: "."`** is required so that `shared/` imports resolve correctly
 when tests are run from the repo root. Without it, `from shared.progress import ok`
 fails on CI even when it works locally.
 
-`pyright` must be run on engine sub-modules too, not just the top-level `engine.py`.
-When using the sub-module pattern (§15), ensure `pyright` covers the full
-`servers/{name}/` directory, which includes `_adv_io.py`, `_adv_charts.py`, etc.
+**macOS runner names:** Use `macos-latest` — not `macos-13`. GitHub Actions
+deprecated specific macOS version tags. Using `macos-13` causes the error
+`The configuration 'macos-13-us-default' is not supported`.
+
+**macOS native libraries:** XGBoost, LightGBM, and other C++ libraries that use
+OpenMP require `brew install libomp` on macOS runners. Add this as a conditional
+step (`if: runner.os == 'macOS'`).
+
+**Notebook exclusion:** If the repo contains Jupyter notebooks (`.ipynb`), exclude
+them from ruff in `pyproject.toml`:
+
+```toml
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+exclude = ["*.ipynb"]
+```
+
+Without this, ruff treats notebook cells as Python source and reports hundreds of
+false-positive import ordering errors. Do **not** rely on a CLI flag (`--exclude`);
+configure it in `pyproject.toml` so it applies to both local and CI runs.
+
+**`pyright` on sub-modules:** When using the sub-module pattern (§15), ensure
+`pyright` covers the full `servers/{name}/` directory, which includes
+`_adv_helpers.py`, `_adv_charts.py`, etc.
+
+### Release workflow (`release.yml`)
+
+Trigger on version tags (`v*`). Run the full CI matrix first, then create a
+GitHub release with auto-generated changelog.
+
+```yaml
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  ci:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-latest, windows-latest]
+
+    env:
+      MCP_CONSTRAINED_MODE: "1"
+      PYTHONPATH: "."
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+      - name: Install native dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install libomp
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run python -m pytest tests/ -q --tb=short
+
+  release:
+    name: Create Release
+    needs: ci
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Extract tag
+        id: tag
+        run: echo "version=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+      - name: Generate changelog
+        id: changelog
+        run: |
+          PREV_TAG=$(git tag --sort=-creatordate | head -2 | tail -1)
+          if [ -z "$PREV_TAG" ] || [ "$PREV_TAG" = "${{ steps.tag.outputs.version }}" ]; then
+            LOG=$(git log --oneline --no-decorate | head -50)
+          else
+            LOG=$(git log --oneline --no-decorate "${PREV_TAG}..HEAD" | head -50)
+          fi
+          echo "$LOG" > /tmp/changelog.txt
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.version }}
+          name: ${{ steps.tag.outputs.version }}
+          body_path: /tmp/changelog.txt
+          draft: false
+          prerelease: ${{ contains(steps.tag.outputs.version, '-rc') || contains(steps.tag.outputs.version, '-beta') || contains(steps.tag.outputs.version, '-alpha') }}
+          generate_release_notes: true
+```
+
+Supports prerelease tags automatically: `v1.0.0-rc1`, `v1.0.0-beta`, etc.
+
+### Ruff configuration in `pyproject.toml`
+
+```toml
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+exclude = ["*.ipynb"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP"]
+```
+
+Include `ruff>=0.9` as a dev dependency so all contributors use the same version.
 
 ### verify_tool_docstrings.py
 
@@ -2250,9 +2548,20 @@ These are absolute prohibitions. Any code that violates them is a defect.
 - [ ] Test every bounded read: truncation at limit
 - [ ] Test `restore_version`: file reverts correctly
 - [ ] Run with `MCP_CONSTRAINED_MODE=1`: limits enforced
+- [ ] Path-outside-home tests use cross-platform paths (see §27)
 - [ ] `uv run pytest` — all pass
 - [ ] `uv run pyright servers/{name}/` — no errors (covers sub-modules too)
-- [ ] `uv run ruff check servers/{name}/` — no errors
+- [ ] `uv run ruff check .` — no errors
+- [ ] `uv run ruff format --check .` — no reformatting needed
+
+### CI/CD
+- [ ] `.github/workflows/ci.yml` — lint + format + test (all 3 platforms)
+- [ ] `.github/workflows/release.yml` — CI + release on tag push
+- [ ] macOS step: `brew install libomp` (if using XGBoost/LightGBM)
+- [ ] `PYTHONPATH: "."` set in CI env
+- [ ] `MCP_CONSTRAINED_MODE: "1"` set in CI env
+- [ ] `pyproject.toml` ruff config excludes notebooks if present
+- [ ] CI passes on all three platforms (Ubuntu, macOS, Windows)
 
 ### Distribution
 - [ ] Add to `install/install.sh` menu
@@ -2262,6 +2571,7 @@ These are absolute prohibitions. Any code that violates them is a defect.
 
 ### Review
 - [ ] `verify_tool_docstrings.py` — all ≤ 80 chars
+- [ ] No file exceeds 1,000 lines (engine sub-module split if needed)
 - [ ] Manual test in LM Studio (9B model) — four-tool loop works
 - [ ] Manual test in Claude Desktop — tools appear and execute
 - [ ] 10-step task test — context window not exceeded
@@ -2342,9 +2652,9 @@ for building new servers that comply with the self-hosted execution principle.
 
 ---
 
-*Version: 3.0*
-*Derived from: MCP_Microsoft_Office STANDARDS.md v1.1, expanded for general-purpose
-self-hosted MCP server development.*
+*Version: 4.0*
+*Derived from: MCP_Microsoft_Office STANDARDS.md v1.1, expanded and battle-tested
+through MCP_Data_Analyst and MCP_Machine_Learning development.*
 *This document should be linked from every MCP server project's README and CLAUDE.md.*
 *When these standards conflict with a specific project's CLAUDE.md, the project's
 CLAUDE.md takes precedence for that project. These are the defaults.*
