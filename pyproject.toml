@@ -16,6 +16,7 @@ shared = { path = "shared" }
 [tool.ruff]
 line-length = 120
 target-version = "py312"
+exclude = ["*.ipynb", "ML_Lookup.ipynb"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP"]
