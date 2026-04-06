@@ -1,0 +1,767 @@
+"""ml_medium report tools — generate_eda_report, check_data_quality."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pandas as pd
+
+from ._medium_helpers import (
+    _error,
+    append_receipt,
+    ok,
+    resolve_path,
+)
+
+
+def _compute_quality_score(df: pd.DataFrame, alerts: list[dict]) -> float:
+    """Score 0–100. Start at 100, deduct for each alert by severity."""
+    severity_weights = {"high": 15, "medium": 8, "low": 3}
+    deductions = sum(severity_weights.get(a.get("severity", "low"), 3) for a in alerts)
+    # Additional structural deductions
+    miss_pct = df.isnull().sum().sum() / max(len(df) * len(df.columns), 1) * 100
+    dup_pct = df.duplicated().sum() / max(len(df), 1) * 100
+    deductions += min(miss_pct * 0.5, 20)  # up to 20 pts for missingness
+    deductions += min(dup_pct * 0.3, 10)  # up to 10 pts for duplicates
+    return round(max(0.0, min(100.0, 100.0 - deductions)), 1)
+
+
+def _run_quality_alerts(df: pd.DataFrame, target_column: str = "") -> list[dict]:
+    """Run 8 quality checks. Returns list of alert dicts."""
+    alerts: list[dict] = []
+    numeric_cols = df.select_dtypes(include="number").columns.tolist()
+
+    # 1. Constant columns (single unique value)
+    for col in df.columns:
+        if df[col].nunique(dropna=False) <= 1:
+            alerts.append(
+                {
+                    "type": "constant_column",
+                    "severity": "high",
+                    "column": col,
+                    "message": f"Column '{col}' has only 1 unique value — provides no information.",
+                    "recommendation": f"Drop '{col}' with run_preprocessing op 'drop_column'.",
+                }
+            )
+
+    # 2. High missing data (>20%)
+    for col in df.columns:
+        miss_pct = df[col].isnull().mean() * 100
+        if miss_pct > 20:
+            alerts.append(
+                {
+                    "type": "high_missing",
+                    "severity": "high",
+                    "column": col,
+                    "missing_pct": round(miss_pct, 1),
+                    "message": f"Column '{col}' is {miss_pct:.1f}% missing.",
+                    "recommendation": "Fill with run_preprocessing fill_nulls or drop if >50%.",
+                }
+            )
+
+    # 3. Zero-inflated distributions
+    for col in numeric_cols:
+        if col == target_column:
+            continue
+        zero_pct = (df[col] == 0).mean() * 100
+        if zero_pct > 50:
+            alerts.append(
+                {
+                    "type": "zero_inflated",
+                    "severity": "medium",
+                    "column": col,
+                    "zero_pct": round(zero_pct, 1),
+                    "message": f"Column '{col}' is {zero_pct:.1f}% zeros — may need log transform.",
+                    "recommendation": "Consider log1p transform or treat zeros as a separate indicator.",
+                }
+            )
+
+    # 4. High cardinality in categoricals
+    cat_cols = [c for c in df.columns if c not in numeric_cols and c != target_column]
+    for col in cat_cols:
+        n_unique = df[col].nunique()
+        ratio = n_unique / max(len(df), 1)
+        if ratio > 0.5 and n_unique > 20:
+            alerts.append(
+                {
+                    "type": "high_cardinality",
+                    "severity": "medium",
+                    "column": col,
+                    "unique_count": n_unique,
+                    "message": f"Column '{col}' has {n_unique} unique values ({ratio * 100:.1f}% of rows) — likely an ID or free-text field.",  # noqa: E501
+                    "recommendation": f"Drop '{col}' or encode only top-N categories before training.",
+                }
+            )
+
+    # 5. Class imbalance (>90% dominance) — only for target or low-cardinality cols
+    check_imbal = [target_column] if target_column and target_column in df.columns else []
+    check_imbal += [c for c in cat_cols if df[c].nunique() <= 10]
+    for col in check_imbal[:5]:  # cap to 5
+        vc = df[col].value_counts(normalize=True)
+        if len(vc) > 0 and vc.iloc[0] > 0.90:
+            alerts.append(
+                {
+                    "type": "class_imbalance",
+                    "severity": "high" if col == target_column else "medium",
+                    "column": col,
+                    "dominant_class": str(vc.index[0]),
+                    "dominant_pct": round(float(vc.iloc[0]) * 100, 1),
+                    "message": f"'{col}' is {vc.iloc[0] * 100:.1f}% '{vc.index[0]}' — severe class imbalance.",
+                    "recommendation": "Use stratify=y in train split. Consider SMOTE or class_weight='balanced'.",
+                }
+            )
+
+    # 6. Extreme skewness (|skew| > 2)
+    for col in numeric_cols:
+        if col == target_column:
+            continue
+        try:
+            skew = float(df[col].skew())
+        except Exception:
+            continue
+        if abs(skew) > 2:
+            direction = "right" if skew > 0 else "left"
+            alerts.append(
+                {
+                    "type": "extreme_skewness",
+                    "severity": "medium",
+                    "column": col,
+                    "skewness": round(skew, 2),
+                    "message": f"Column '{col}' is {direction}-skewed (skew={skew:.2f}) — may hurt linear models.",
+                    "recommendation": "Apply log transform or use run_preprocessing 'cap_outliers' to reduce skew.",
+                }
+            )
+
+    # 7. Multicollinearity (|r| > 0.9 between feature pairs)
+    if len(numeric_cols) >= 2:
+        feat_cols = [c for c in numeric_cols if c != target_column]
+        if len(feat_cols) >= 2:
+            corr = df[feat_cols].corr().abs()
+            seen: set[tuple] = set()
+            for i, c1 in enumerate(feat_cols):
+                for c2 in feat_cols[i + 1 :]:
+                    r = corr.loc[c1, c2]
+                    if r > 0.9 and (c1, c2) not in seen:
+                        seen.add((c1, c2))
+                        alerts.append(
+                            {
+                                "type": "multicollinearity",
+                                "severity": "medium",
+                                "columns": [c1, c2],
+                                "correlation": round(float(r), 3),
+                                "message": f"'{c1}' and '{c2}' are highly correlated (r={r:.3f}).",
+                                "recommendation": "Consider dropping one of them, or use PCA via apply_dimensionality_reduction.",  # noqa: E501
+                            }
+                        )
+
+    # 8. Duplicate rows
+    dup_count = int(df.duplicated().sum())
+    if dup_count > 0:
+        dup_pct = round(dup_count / len(df) * 100, 1)
+        alerts.append(
+            {
+                "type": "duplicate_rows",
+                "severity": "medium" if dup_pct > 5 else "low",
+                "count": dup_count,
+                "pct": dup_pct,
+                "message": f"{dup_count} duplicate rows found ({dup_pct}% of data).",
+                "recommendation": "Remove with run_preprocessing op 'drop_duplicates'.",
+            }
+        )
+
+    return alerts
+
+
+def _alerts_html(alerts: list[dict], t: dict) -> str:
+    """Render alerts as styled HTML cards."""
+    if not alerts:
+        return '<div class="alert alert-success">✔ No quality issues detected.</div>'
+    sev_class = {"high": "alert-danger", "medium": "alert-warning", "low": "alert-success"}
+    sev_icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}
+    parts = []
+    for a in alerts:
+        sev = a.get("severity", "low")
+        cls = sev_class.get(sev, "alert-warning")
+        icon = sev_icon.get(sev, "●")
+        msg = a.get("message", "")
+        rec = a.get("recommendation", "")
+        parts.append(
+            f'<div class="alert {cls}">'
+            f"<strong>{icon} {a['type'].replace('_', ' ').title()}</strong> — {msg}"
+            f"{'<br><em>💡 ' + rec + '</em>' if rec else ''}"
+            f"</div>"
+        )
+    return "\n".join(parts)
+
+
+def _quality_score_html(score: float, alerts: list[dict], t: dict) -> str:
+    """Render quality score gauge + alert summary cards."""
+    high = sum(1 for a in alerts if a.get("severity") == "high")
+    med = sum(1 for a in alerts if a.get("severity") == "medium")
+    low = sum(1 for a in alerts if a.get("severity") == "low")
+
+    color = t["success"] if score >= 80 else (t["warning"] if score >= 60 else t["danger"])
+    score_card = (
+        f'<div class="cards">'
+        f'<div class="card" style="border-left:4px solid {color}">'
+        f'  <div class="label">Quality Score</div>'
+        f'  <div class="value" style="color:{color}">{score}</div>'
+        f'  <div class="sub">out of 100</div>'
+        f"</div>"
+        f'<div class="card" style="border-left:4px solid {t["danger"]}">'
+        f'  <div class="label">High Severity</div>'
+        f'  <div class="value" style="color:{t["danger"]}">{high}</div>'
+        f'  <div class="sub">critical issues</div>'
+        f"</div>"
+        f'<div class="card" style="border-left:4px solid {t["warning"]}">'
+        f'  <div class="label">Medium Severity</div>'
+        f'  <div class="value" style="color:{t["warning"]}">{med}</div>'
+        f'  <div class="sub">warnings</div>'
+        f"</div>"
+        f'<div class="card" style="border-left:4px solid {t["success"]}">'
+        f'  <div class="label">Low Severity</div>'
+        f'  <div class="value" style="color:{t["success"]}">{low}</div>'
+        f'  <div class="sub">minor notes</div>'
+        f"</div>"
+        f"</div>"
+    )
+    return score_card + _alerts_html(alerts, t)
+
+
+def generate_eda_report(
+    file_path: str,
+    target_column: str = "",
+    theme: str = "light",
+    output_path: str = "",
+    open_browser: bool = True,
+    dry_run: bool = False,
+) -> dict:
+    """Generate interactive HTML EDA report with Plotly charts."""
+    import plotly.express as px
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+
+    from shared.html_theme import (
+        _open_file,
+        build_html_report,
+        data_table_html,
+        get_theme,
+        metrics_cards_html,
+        plotly_div,
+    )
+
+    progress: list[dict] = []
+    try:
+        path = resolve_path(file_path)
+    except ValueError as exc:
+        return _error(str(exc), "Check that file_path is inside your home directory.")
+    if not path.exists():
+        return _error(f"File not found: {file_path}", "Check that file_path is absolute and the CSV file exists.")
+    if path.suffix.lower() != ".csv":
+        return _error(f"Expected .csv file, got {path.suffix!r}", "Provide a CSV file path.")
+
+    out_path_str = output_path or str(path.parent / f"{path.stem}_eda_report.html")
+    try:
+        out_path = resolve_path(out_path_str)
+    except ValueError:
+        out_path = Path(out_path_str)
+
+    try:
+        df = pd.read_csv(path, low_memory=False)
+    except Exception as exc:
+        return _error(f"Failed to read CSV: {exc}", "Check the file is a valid CSV.")
+    progress.append(ok(f"Loaded {path.name}", f"{len(df):,} rows × {len(df.columns)} cols"))
+
+    if dry_run:
+        resp: dict = {
+            "success": True,
+            "op": "generate_eda_report",
+            "dry_run": True,
+            "output_path": str(out_path),
+            "progress": progress,
+            "token_estimate": 0,
+        }
+        resp["token_estimate"] = len(str(resp)) // 4
+        return resp
+
+    t = get_theme(theme)
+    numeric_cols = df.select_dtypes(include="number").columns.tolist()
+    cat_cols = [c for c in df.columns if c not in numeric_cols]
+    sections: list[dict] = []
+
+    # ── 1. Quality Alerts + Score ──────────────────────────────────────────
+    alerts = _run_quality_alerts(df, target_column)
+    quality_score = _compute_quality_score(df, alerts)
+    progress.append(ok("Quality analysis", f"score={quality_score}/100, {len(alerts)} alerts"))
+
+    missing_total = int(df.isnull().sum().sum())
+    missing_pct = round(missing_total / max(len(df) * len(df.columns), 1) * 100, 2)
+    dup_rows = int(df.duplicated().sum())
+
+    overview_html = metrics_cards_html(
+        {
+            "quality_score": f"{quality_score}/100",
+            "rows": f"{len(df):,}",
+            "columns": len(df.columns),
+            "numeric": len(numeric_cols),
+            "categorical": len(cat_cols),
+            "missing_cells": f"{missing_pct}%",
+            "duplicate_rows": dup_rows,
+        }
+    )
+    sections.append(
+        {
+            "id": "quality",
+            "heading": "Data Quality",
+            "html": overview_html + _quality_score_html(quality_score, alerts, t),
+        }
+    )
+
+    # ── 2. Missing values pattern ──────────────────────────────────────────
+    if missing_total > 0:
+        null_series = df.isnull().sum().sort_values(ascending=False)
+        null_series = null_series[null_series > 0]
+
+        fig_miss = px.bar(
+            x=null_series.values,
+            y=null_series.index,
+            orientation="h",
+            title="Missing Values per Column",
+            labels={"x": "Missing Count", "y": "Column"},
+            template=t["plotly_template"],
+            color=null_series.values / len(df) * 100,
+            color_continuous_scale="Reds",
+        )
+        fig_miss.update_coloraxes(colorbar_title="% Missing")
+        fig_miss.update_layout(
+            paper_bgcolor=t["paper_color"],
+            plot_bgcolor=t["bg_color"],
+            font_color=t["text_color"],
+            height=max(300, len(null_series) * 30 + 80),
+            margin=dict(l=10, r=10, t=40, b=10),
+        )
+        sections.append(
+            {
+                "id": "missing",
+                "heading": "Missing Values",
+                "html": plotly_div(fig_miss, height=max(300, len(null_series) * 30 + 80)),
+            }
+        )
+        progress.append(ok("Missing values chart", f"{len(null_series)} cols affected"))
+
+    # ── 3. Distributions — histogram + box plot side by side ──────────────
+    if numeric_cols:
+        show_nums = numeric_cols[:12]
+        n = len(show_nums)
+        # 2 charts per col: histogram left, box right
+        rows_n = n
+
+        fig_dist = make_subplots(
+            rows=rows_n,
+            cols=2,
+            subplot_titles=[f"{c} — histogram" if i % 2 == 0 else f"{c} — box" for c in show_nums for i in range(2)],
+            horizontal_spacing=0.08,
+            vertical_spacing=0.05,
+        )
+        for i, col in enumerate(show_nums):
+            r = i + 1
+            clean = df[col].dropna()
+            # histogram
+            fig_dist.add_trace(
+                go.Histogram(x=clean, name=col, showlegend=False, marker_color=t["accent"]),
+                row=r,
+                col=1,
+            )
+            # box plot
+            fig_dist.add_trace(
+                go.Box(x=clean, name=col, showlegend=False, marker_color=t["accent"], boxpoints="outliers"),
+                row=r,
+                col=2,
+            )
+        fig_dist.update_layout(
+            title="Numeric Distributions (Histogram + Box Plot)",
+            template=t["plotly_template"],
+            paper_bgcolor=t["paper_color"],
+            plot_bgcolor=t["bg_color"],
+            font_color=t["text_color"],
+            height=220 * rows_n + 60,
+            margin=dict(l=10, r=10, t=50, b=10),
+        )
+        sections.append(
+            {
+                "id": "distributions",
+                "heading": "Numeric Distributions",
+                "html": plotly_div(fig_dist, height=220 * rows_n + 100),
+            }
+        )
+        progress.append(ok("Distribution charts", f"{len(show_nums)} cols (histogram + box)"))
+
+    # ── 4. Correlation — Pearson AND Spearman ─────────────────────────────
+    if len(numeric_cols) >= 2:
+        feat_cols = [c for c in numeric_cols if c != target_column] or numeric_cols
+
+        fig_corr = make_subplots(
+            rows=1,
+            cols=2,
+            subplot_titles=["Pearson Correlation", "Spearman Correlation"],
+            horizontal_spacing=0.12,
+        )
+        for col_idx, method in enumerate(["pearson", "spearman"], start=1):
+            corr = df[feat_cols].corr(method=method)
+            fig_corr.add_trace(
+                go.Heatmap(
+                    z=corr.values,
+                    x=corr.columns.tolist(),
+                    y=corr.index.tolist(),
+                    colorscale="RdBu_r",
+                    zmid=0,
+                    text=[[f"{v:.2f}" for v in row] for row in corr.values],
+                    texttemplate="%{text}",
+                    showscale=(col_idx == 1),
+                    name=method,
+                ),
+                row=1,
+                col=col_idx,
+            )
+        fig_corr.update_layout(
+            template=t["plotly_template"],
+            paper_bgcolor=t["paper_color"],
+            plot_bgcolor=t["bg_color"],
+            font_color=t["text_color"],
+            height=max(450, len(feat_cols) * 28 + 100),
+            margin=dict(l=10, r=10, t=50, b=10),
+        )
+        sections.append(
+            {
+                "id": "correlation",
+                "heading": "Correlation (Pearson + Spearman)",
+                "html": plotly_div(fig_corr, height=max(450, len(feat_cols) * 28 + 140)),
+            }
+        )
+        progress.append(ok("Correlation heatmaps", f"Pearson + Spearman, {len(feat_cols)} features"))
+
+    # ── 5. Categorical columns ─────────────────────────────────────────────
+    show_cats = [c for c in cat_cols if c != target_column][:6]
+    if show_cats:
+        cat_html = ""
+        for col in show_cats:
+            vc = df[col].value_counts().head(15)
+            fig_cat = px.bar(
+                x=vc.values,
+                y=vc.index.astype(str),
+                orientation="h",
+                title=f"{col} — Top Values",
+                labels={"x": "Count", "y": col},
+                template=t["plotly_template"],
+                color=vc.values,
+                color_continuous_scale="Blues",
+            )
+            fig_cat.update_layout(
+                paper_bgcolor=t["paper_color"],
+                plot_bgcolor=t["bg_color"],
+                font_color=t["text_color"],
+                height=max(250, len(vc) * 25 + 80),
+                margin=dict(l=10, r=10, t=40, b=10),
+                showlegend=False,
+            )
+            cat_html += plotly_div(fig_cat, height=max(250, len(vc) * 25 + 80))
+        sections.append({"id": "categorical", "heading": "Categorical Columns", "html": cat_html})
+        progress.append(ok("Categorical charts", f"{len(show_cats)} cols"))
+
+    # ── 6. Target column analysis ──────────────────────────────────────────
+    if target_column and target_column in df.columns:
+        tgt = df[target_column]
+        if tgt.nunique() <= 20:
+            vc = tgt.value_counts()
+            fig_tgt = px.pie(
+                names=vc.index.astype(str),
+                values=vc.values,
+                title=f"Target Distribution: {target_column}",
+                template=t["plotly_template"],
+                color_discrete_sequence=px.colors.qualitative.Set2,
+            )
+        else:
+            fig_tgt = px.histogram(
+                df,
+                x=target_column,
+                nbins=40,
+                title=f"Target Distribution: {target_column}",
+                template=t["plotly_template"],
+            )
+        fig_tgt.update_layout(
+            paper_bgcolor=t["paper_color"],
+            plot_bgcolor=t["bg_color"],
+            font_color=t["text_color"],
+            height=380,
+            margin=dict(l=10, r=10, t=50, b=10),
+        )
+        sections.append(
+            {
+                "id": "target",
+                "heading": f"Target Column: {target_column}",
+                "html": plotly_div(fig_tgt, height=420),
+            }
+        )
+        progress.append(ok("Target distribution", f"{tgt.nunique()} unique values"))
+
+    # ── 7. Summary statistics table ────────────────────────────────────────
+    if numeric_cols:
+        desc = df[numeric_cols[:12]].describe().T.round(3)
+        desc["skewness"] = df[numeric_cols[:12]].skew().round(3)
+        desc.index.name = "column"
+        rows_data = [{"column": idx, **row.to_dict()} for idx, row in desc.iterrows()]
+        sections.append(
+            {
+                "id": "stats",
+                "heading": "Summary Statistics",
+                "html": data_table_html(rows_data),
+            }
+        )
+
+    # ── Build and write report ─────────────────────────────────────────────
+    from datetime import datetime
+
+    plotly_cdn = '<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>'
+    subtitle = (
+        f"Generated {datetime.now().strftime('%Y-%m-%d %H:%M')} · "
+        f"{len(df):,} rows · {len(df.columns)} columns · "
+        f"Quality score: {quality_score}/100"
+    )
+    html = build_html_report(
+        title=f"EDA Report — {path.name}",
+        subtitle=subtitle,
+        sections=sections,
+        theme=theme,
+        open_browser=False,
+        output_path="",
+    )
+    html = html.replace("</head>", f"  {plotly_cdn}\n</head>")
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(html, encoding="utf-8")
+    progress.append(ok("Saved HTML report", out_path.name))
+
+    if open_browser:
+        _open_file(out_path)
+
+    file_size_kb = out_path.stat().st_size // 1024
+    append_receipt(str(path), "generate_eda_report", {"theme": theme, "target_column": target_column}, "success", "")
+
+    resp = {
+        "success": True,
+        "op": "generate_eda_report",
+        "output_path": str(out_path),
+        "file_size_kb": file_size_kb,
+        "quality_score": quality_score,
+        "alerts_count": len(alerts),
+        "alerts_high": sum(1 for a in alerts if a.get("severity") == "high"),
+        "alerts_medium": sum(1 for a in alerts if a.get("severity") == "medium"),
+        "alerts_low": sum(1 for a in alerts if a.get("severity") == "low"),
+        "alerts": alerts,
+        "charts_generated": len(sections),
+        "progress": progress,
+        "token_estimate": 0,
+    }
+    resp["token_estimate"] = len(str(resp)) // 4
+    return resp
+
+
+# ---------------------------------------------------------------------------
+# Tool: filter_rows
+# ---------------------------------------------------------------------------
+
+FILTER_OPS = {
+    "eq",
+    "ne",
+    "gt",
+    "lt",
+    "gte",
+    "lte",
+    "contains",
+    "not_contains",
+    "is_null",
+    "not_null",
+    "starts_with",
+    "ends_with",
+}
+
+
+def check_data_quality(file_path: str) -> dict:
+    """Return JSON data quality summary with score 0-100. No HTML."""
+    from shared.file_utils import resolve_path
+    from shared.progress import ok
+
+    progress = []
+    try:
+        path = resolve_path(file_path, (".csv",))
+    except ValueError as exc:
+        return {"success": False, "error": str(exc), "hint": "Check file path.", "token_estimate": 30}
+    if not path.exists():
+        return {
+            "success": False,
+            "error": f"File not found: {file_path}",
+            "hint": "Check that file_path is absolute.",
+            "token_estimate": 30,
+        }
+
+    try:
+        df = pd.read_csv(path, low_memory=False)
+    except Exception as exc:
+        return {"success": False, "error": str(exc), "hint": "Check the file is a valid CSV.", "token_estimate": 30}
+    progress.append(ok(f"Loaded {path.name}", f"{len(df):,} rows × {len(df.columns)} cols"))
+
+    n_rows, n_cols = len(df), len(df.columns)
+    alerts = []
+    score = 100.0
+
+    # 1. Constant columns
+    for col in df.columns:
+        if df[col].nunique(dropna=True) <= 1:
+            alerts.append(
+                {
+                    "type": "constant_column",
+                    "severity": "high",
+                    "column": col,
+                    "message": f"Column '{col}' has only 1 unique value.",
+                    "recommendation": f"Drop column '{col}' — it contains no information.",
+                }
+            )
+            score -= 15
+
+    # 2. High missing
+    null_summary = []
+    for col in df.columns:
+        null_count = int(df[col].isnull().sum())
+        null_pct = null_count / n_rows * 100 if n_rows > 0 else 0
+        if null_pct > 0:
+            null_summary.append({"column": col, "null_count": null_count, "null_pct": round(null_pct, 2)})
+        if null_pct > 20:
+            alerts.append(
+                {
+                    "type": "high_missing",
+                    "severity": "high",
+                    "column": col,
+                    "message": f"Column '{col}' is {null_pct:.1f}% null.",
+                    "recommendation": f"Use run_preprocessing fill_nulls or drop column '{col}'.",
+                }
+            )
+            score -= 15
+
+    # 3. Duplicate rows
+    dup_count = int(df.duplicated().sum())
+    dup_pct = dup_count / n_rows * 100 if n_rows > 0 else 0
+    if dup_count > 0:
+        alerts.append(
+            {
+                "type": "duplicate_rows",
+                "severity": "medium",
+                "message": f"{dup_count} duplicate rows ({dup_pct:.1f}%).",
+                "recommendation": "Use run_preprocessing op 'drop_duplicates' to remove them.",
+            }
+        )
+        score -= min(10, dup_pct * 0.3)
+
+    # 4. Zero-inflated numeric
+    for col in df.select_dtypes(include="number").columns:
+        zero_pct = (df[col] == 0).sum() / n_rows * 100 if n_rows > 0 else 0
+        if zero_pct > 50:
+            alerts.append(
+                {
+                    "type": "zero_inflated",
+                    "severity": "medium",
+                    "column": col,
+                    "message": f"Column '{col}' is {zero_pct:.1f}% zeros.",
+                    "recommendation": f"Consider log_transform or separate zero/nonzero modeling for '{col}'.",
+                }
+            )
+            score -= 8
+
+    # 5. High cardinality
+    for col in df.select_dtypes(include=["object", "string"]).columns:
+        n_unique = df[col].nunique()
+        ratio = n_unique / n_rows if n_rows > 0 else 0
+        if ratio > 0.5 and n_unique > 20:
+            alerts.append(
+                {
+                    "type": "high_cardinality",
+                    "severity": "medium",
+                    "column": col,
+                    "message": f"Column '{col}' has {n_unique} unique values ({ratio * 100:.1f}% of rows).",
+                    "recommendation": f"Consider drop_column or target-encoding for '{col}'.",
+                }
+            )
+            score -= 8
+
+    # 6. Extreme skewness
+    for col in df.select_dtypes(include="number").columns:
+        try:
+            skew = float(df[col].skew())
+        except Exception:
+            continue
+        if abs(skew) > 2:
+            alerts.append(
+                {
+                    "type": "extreme_skewness",
+                    "severity": "medium",
+                    "column": col,
+                    "message": f"Column '{col}' skewness = {skew:.2f}.",
+                    "recommendation": f"Apply log_transform to column '{col}' before training.",
+                }
+            )
+            score -= 8
+
+    # 7. Multicollinearity
+    num_cols = df.select_dtypes(include="number").columns.tolist()
+    if len(num_cols) >= 2:
+        try:
+            corr_matrix = df[num_cols].corr(method="pearson").abs()
+            for i in range(len(num_cols)):
+                for j in range(i + 1, len(num_cols)):
+                    if corr_matrix.iloc[i, j] > 0.9:
+                        c1, c2 = num_cols[i], num_cols[j]
+                        alerts.append(
+                            {
+                                "type": "multicollinearity",
+                                "severity": "high",
+                                "column_pair": [c1, c2],
+                                "message": f"Columns '{c1}' and '{c2}' have |r|={corr_matrix.iloc[i, j]:.2f}.",
+                                "recommendation": f"Drop one of '{c1}' or '{c2}' to reduce multicollinearity.",
+                            }
+                        )
+                        score -= 15
+        except Exception:
+            pass
+
+    # Cap score
+    score = max(0.0, min(100.0, score))
+
+    # Summarize null cols with high missing
+    high_missing_cols = [c["column"] for c in alerts if c.get("type") == "high_missing"]
+    constant_cols = [c["column"] for c in alerts if c.get("type") == "constant_column"]
+
+    resp = {
+        "success": True,
+        "op": "check_data_quality",
+        "file": path.name,
+        "row_count": n_rows,
+        "column_count": n_cols,
+        "quality_score": round(score, 1),
+        "alerts_count": len(alerts),
+        "alerts_high": sum(1 for a in alerts if a.get("severity") == "high"),
+        "alerts_medium": sum(1 for a in alerts if a.get("severity") == "medium"),
+        "duplicate_rows": dup_count,
+        "duplicate_pct": round(dup_pct, 2),
+        "null_summary": null_summary[:20],
+        "high_missing_columns": high_missing_cols,
+        "constant_columns": constant_cols,
+        "alerts": alerts[:30],
+        "progress": progress,
+        "token_estimate": 0,
+    }
+    resp["token_estimate"] = len(str(resp)) // 4
+    return resp
+
+
+# ---------------------------------------------------------------------------
+# Tool: evaluate_model (score saved model on external labeled test file)
+# ---------------------------------------------------------------------------
