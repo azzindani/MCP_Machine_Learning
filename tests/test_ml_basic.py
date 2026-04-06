@@ -1,7 +1,5 @@
 """Tests for ml_basic engine — all tests call engine directly, no MCP server."""
 
-import os
-import shutil
 from pathlib import Path
 
 import pytest
@@ -20,6 +18,7 @@ from servers.ml_basic.engine import (
 # ============================================================
 # inspect_dataset
 # ============================================================
+
 
 def test_inspect_dataset_success(classification_simple):
     r = inspect_dataset(classification_simple)
@@ -66,6 +65,7 @@ def test_inspect_dataset_constrained_mode(classification_simple, constrained_mod
 # read_column_profile
 # ============================================================
 
+
 def test_read_column_profile_numeric(regression_simple):
     r = read_column_profile(regression_simple, "salary")
     assert r["success"] is True
@@ -108,6 +108,7 @@ def test_read_column_profile_progress_present(regression_simple):
 # search_columns
 # ============================================================
 
+
 def test_search_columns_has_nulls(classification_messy):
     r = search_columns(classification_messy, has_nulls=True)
     assert r["success"] is True
@@ -145,6 +146,7 @@ def test_search_columns_constrained_mode(large_10k, constrained_mode):
 # read_rows
 # ============================================================
 
+
 def test_read_rows_success(classification_simple):
     r = read_rows(classification_simple, 0, 5)
     assert r["success"] is True
@@ -178,7 +180,6 @@ def test_read_rows_token_estimate_present(classification_simple):
 def test_read_rows_progress_present(classification_simple):
     r = read_rows(classification_simple, 0, 5)
     assert "progress" in r
-
 
 
 # ============================================================
@@ -217,6 +218,7 @@ def test_train_classifier_bad_target(classification_simple):
 
 def test_train_classifier_single_class_target(classification_simple, tmp_path):
     import pandas as pd
+
     df = pd.read_csv(classification_simple)
     df["constant"] = 1
     p = tmp_path / "constant.csv"
@@ -228,6 +230,7 @@ def test_train_classifier_single_class_target(classification_simple, tmp_path):
 
 def test_train_classifier_insufficient_rows(tmp_path):
     import pandas as pd
+
     df = pd.DataFrame({"a": range(5), "b": range(5), "target": [0, 1, 0, 1, 0]})
     p = tmp_path / "tiny.csv"
     df.to_csv(p, index=False)
@@ -343,6 +346,7 @@ def test_train_all_regressor_algorithms(regression_simple, algo):
 # get_predictions
 # ============================================================
 
+
 def test_get_predictions_success(classification_simple):
     train_r = train_classifier(classification_simple, "churned", "rf")
     assert train_r["success"] is True
@@ -381,6 +385,7 @@ def test_get_predictions_progress_present(classification_simple):
 # restore_version
 # ============================================================
 
+
 def test_restore_version_list_when_no_timestamp(classification_simple):
     r = restore_version(classification_simple)
     assert r["success"] is True
@@ -402,3 +407,59 @@ def test_restore_version_progress_present(classification_simple):
     r = restore_version(classification_simple)
     assert "progress" in r
 
+
+# ---------------------------------------------------------------------------
+# train_classifier — new params: class_weight, return_train_score, AUC-ROC
+# ---------------------------------------------------------------------------
+
+
+def test_train_classifier_class_weight_balanced(classification_simple):
+    r = train_classifier(classification_simple, "churned", "rf", class_weight="balanced")
+    assert r["success"] is True
+    assert r["model_class"] == "RandomForestClassifier"
+
+
+def test_train_classifier_return_train_score(classification_simple):
+    r = train_classifier(classification_simple, "churned", "lr", return_train_score=True)
+    assert r["success"] is True
+    assert "train_accuracy" in r["metrics"]
+    assert "train_f1_weighted" in r["metrics"]
+    assert "overfit_gap" in r["metrics"]
+
+
+def test_train_classifier_auc_roc_binary(classification_simple):
+    """AUC-ROC is auto-computed for binary classifiers that support predict_proba."""
+    r = train_classifier(classification_simple, "churned", "lr")
+    assert r["success"] is True
+    # LR supports predict_proba → auc_roc should appear for binary target
+    assert "auc_roc" in r["metrics"]
+    assert 0.0 <= r["metrics"]["auc_roc"] <= 1.0
+
+
+def test_train_classifier_auc_roc_rf(classification_simple):
+    r = train_classifier(classification_simple, "churned", "rf")
+    assert r["success"] is True
+    assert "auc_roc" in r["metrics"]
+
+
+# ---------------------------------------------------------------------------
+# get_predictions — return_proba
+# ---------------------------------------------------------------------------
+
+
+def test_get_predictions_return_proba_lr(classification_simple):
+    tr = train_classifier(classification_simple, "churned", "lr")
+    assert tr["success"] is True
+    r = get_predictions(tr["model_path"], classification_simple, max_rows=10, return_proba=True)
+    assert r["success"] is True
+    assert "probabilities" in r["predictions"][0]
+    assert len(r["predictions"][0]["probabilities"]) == 2
+
+
+def test_get_predictions_return_proba_false(classification_simple):
+    tr = train_classifier(classification_simple, "churned", "rf")
+    assert tr["success"] is True
+    r = get_predictions(tr["model_path"], classification_simple, max_rows=5)
+    assert r["success"] is True
+    # No probabilities when return_proba=False (default)
+    assert "probabilities" not in r["predictions"][0]

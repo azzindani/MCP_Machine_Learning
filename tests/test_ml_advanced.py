@@ -6,7 +6,6 @@ Fixture column names:
   clustering_simple:     x, y
 """
 
-import pickle
 import shutil
 from pathlib import Path
 
@@ -25,10 +24,10 @@ from servers.ml_advanced.engine import (
 # ---------------------------------------------------------------------------
 
 
-def _train_basic_model(file_path: str, target: str = "churned",
-                       model: str = "rf", task: str = "classification") -> str:
+def _train_basic_model(file_path: str, target: str = "churned", model: str = "rf", task: str = "classification") -> str:
     """Train a model via ml_basic and return model_path."""
     from servers.ml_basic.engine import train_classifier, train_regressor
+
     if task == "classification":
         r = train_classifier(file_path, target, model)
     else:
@@ -44,15 +43,13 @@ def _train_basic_model(file_path: str, target: str = "churned",
 
 class TestTuneHyperparameters:
     def test_success_grid_classification(self, classification_simple):
-        r = tune_hyperparameters(classification_simple, "churned", "rf", "classification",
-                                  search="grid")
+        r = tune_hyperparameters(classification_simple, "churned", "rf", "classification", search="grid")
         assert r["success"] is True
         assert r["op"] == "tune_hyperparameters"
         assert "best_params" in r
 
     def test_success_random_regression(self, regression_simple):
-        r = tune_hyperparameters(regression_simple, "salary", "rfr", "regression",
-                                  search="random", n_iter=5)
+        r = tune_hyperparameters(regression_simple, "salary", "rfr", "regression", search="random", n_iter=5)
         assert r["success"] is True
         assert "best_score" in r
 
@@ -79,14 +76,12 @@ class TestTuneHyperparameters:
         assert "backup" in r
 
     def test_dry_run(self, classification_simple):
-        r = tune_hyperparameters(classification_simple, "churned", "rf", "classification",
-                                  dry_run=True)
+        r = tune_hyperparameters(classification_simple, "churned", "rf", "classification", dry_run=True)
         assert r["success"] is True
         assert r.get("dry_run") is True
 
     def test_constrained_mode(self, classification_simple, constrained_mode):
-        r = tune_hyperparameters(classification_simple, "churned", "lr", "classification",
-                                  cv=5, n_iter=10)
+        r = tune_hyperparameters(classification_simple, "churned", "lr", "classification", cv=5, n_iter=10)
         # In constrained mode n_iter capped at 5, cv at 3
         assert r.get("success") in (True, False)  # may fail on data size, not constraint
 
@@ -99,13 +94,13 @@ class TestTuneHyperparameters:
         assert r["success"] is False
 
     def test_invalid_search(self, classification_simple):
-        r = tune_hyperparameters(classification_simple, "churned", "rf", "classification",
-                                  search="badsearch")
+        r = tune_hyperparameters(classification_simple, "churned", "rf", "classification", search="badsearch")
         assert r["success"] is False
 
     def test_invalid_param_grid_json(self, classification_simple):
-        r = tune_hyperparameters(classification_simple, "churned", "rf", "classification",
-                                  param_grid="{not valid json}")
+        r = tune_hyperparameters(
+            classification_simple, "churned", "rf", "classification", param_grid="{not valid json}"
+        )
         assert r["success"] is False
 
     def test_top_results_capped(self, classification_simple):
@@ -188,6 +183,7 @@ class TestExportModel:
         r = export_model(mp)
         assert r["success"] is True
         import json
+
         manifest = json.loads(Path(r["manifest_path"]).read_text())
         for field in ("model_type", "task", "trained_on", "feature_columns", "sklearn_version"):
             assert field in manifest
@@ -237,8 +233,7 @@ class TestReadModelReport:
         assert "metrics" in r
 
     def test_regression_report(self, regression_simple):
-        mp = _train_basic_model(regression_simple, target="salary",
-                                 model="rfr", task="regression")
+        mp = _train_basic_model(regression_simple, target="salary", model="rfr", task="regression")
         r = read_model_report(mp)
         assert r["success"] is True
 
@@ -299,24 +294,18 @@ class TestRunProfilingReport:
 class TestApplyDimensionalityReduction:
     def test_success_pca(self, clustering_simple, home_tmp):
         out = str(home_tmp / "pca_out.csv")
-        r = apply_dimensionality_reduction(
-            clustering_simple, ["x", "y"], "pca", n_components=2, output_path=out
-        )
+        r = apply_dimensionality_reduction(clustering_simple, ["x", "y"], "pca", n_components=2, output_path=out)
         assert r["success"] is True
         assert r["op"] == "apply_dimensionality_reduction"
         assert Path(out).exists()
 
     def test_success_ica(self, clustering_simple, home_tmp):
         out = str(home_tmp / "ica_out.csv")
-        r = apply_dimensionality_reduction(
-            clustering_simple, ["x", "y"], "ica", n_components=2, output_path=out
-        )
+        r = apply_dimensionality_reduction(clustering_simple, ["x", "y"], "ica", n_components=2, output_path=out)
         assert r["success"] is True
 
     def test_file_not_found(self, home_tmp):
-        r = apply_dimensionality_reduction(
-            str(home_tmp / "nope.csv"), ["x"], "pca"
-        )
+        r = apply_dimensionality_reduction(str(home_tmp / "nope.csv"), ["x"], "pca")
         assert r["success"] is False
         assert "hint" in r
 
@@ -345,9 +334,7 @@ class TestApplyDimensionalityReduction:
 
     def test_dry_run(self, clustering_simple, home_tmp):
         out = str(home_tmp / "dr_dry.csv")
-        r = apply_dimensionality_reduction(
-            clustering_simple, ["x", "y"], "pca", output_path=out, dry_run=True
-        )
+        r = apply_dimensionality_reduction(clustering_simple, ["x", "y"], "pca", output_path=out, dry_run=True)
         assert r["success"] is True
         assert r.get("dry_run") is True
         assert not Path(out).exists()
@@ -363,9 +350,7 @@ class TestApplyDimensionalityReduction:
 
     def test_missing_column(self, clustering_simple, home_tmp):
         out = str(home_tmp / "dr_mc.csv")
-        r = apply_dimensionality_reduction(
-            clustering_simple, ["x", "nonexistent"], "pca", output_path=out
-        )
+        r = apply_dimensionality_reduction(clustering_simple, ["x", "nonexistent"], "pca", output_path=out)
         assert r["success"] is False
 
     def test_variance_explained_for_pca(self, clustering_simple, home_tmp):
@@ -377,9 +362,9 @@ class TestApplyDimensionalityReduction:
 
     def test_component_columns_in_output(self, clustering_simple, home_tmp):
         import pandas as pd
+
         out = str(home_tmp / "dr_cols.csv")
-        r = apply_dimensionality_reduction(clustering_simple, ["x", "y"], "pca",
-                                            n_components=2, output_path=out)
+        r = apply_dimensionality_reduction(clustering_simple, ["x", "y"], "pca", n_components=2, output_path=out)
         assert r["success"] is True
         df_out = pd.read_csv(out)
         assert "component_1" in df_out.columns

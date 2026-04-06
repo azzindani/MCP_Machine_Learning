@@ -6,7 +6,7 @@ import pickle
 import shutil
 import sys
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 import psutil
 import sklearn
+import xgboost as xgb
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.linear_model import Lasso, LinearRegression, LogisticRegression, Ridge
 from sklearn.metrics import (
@@ -34,14 +35,12 @@ from sklearn.preprocessing import (
 )
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
-import xgboost as xgb
 
 from shared.file_utils import resolve_path
 from shared.platform_utils import get_max_columns, get_max_results, get_max_rows
-from shared.progress import fail, info, ok, warn
+from shared.progress import info, ok
 from shared.progress import name as pname
 from shared.receipt import append_receipt
-from shared.version_control import list_snapshots
 from shared.version_control import restore_version as _restore_version
 from shared.version_control import snapshot
 
@@ -94,11 +93,7 @@ def _auto_preprocess(df: pd.DataFrame, target_column: str) -> tuple[pd.DataFrame
     for col in df.columns:
         if col == target_column:
             continue
-        if (
-            pd.api.types.is_string_dtype(df[col])
-            or df[col].dtype == object
-            or str(df[col].dtype) == "category"
-        ):
+        if pd.api.types.is_string_dtype(df[col]) or df[col].dtype == object or str(df[col].dtype) == "category":
             le = LabelEncoder()
             df[col] = le.fit_transform(df[col].fillna("nan").astype(str))
             encoding_map[col] = {str(cls): int(idx) for idx, cls in enumerate(le.classes_)}
@@ -156,7 +151,6 @@ def _load_model(model_path: str) -> tuple[Any, dict]:
     return payload["model"], payload["metadata"]
 
 
-
 # ---------------------------------------------------------------------------
 # 1. inspect_dataset
 # ---------------------------------------------------------------------------
@@ -179,18 +173,17 @@ def inspect_dataset(file_path: str) -> dict:
         col_info = []
         for col in display_cols:
             null_count = int(df[col].isnull().sum())
-            col_info.append({
-                "name": col,
-                "dtype": str(df[col].dtype),
-                "null_count": null_count,
-                "null_pct": round(null_count / len(df) * 100, 2) if len(df) else 0.0,
-            })
+            col_info.append(
+                {
+                    "name": col,
+                    "dtype": str(df[col].dtype),
+                    "null_count": null_count,
+                    "null_pct": round(null_count / len(df) * 100, 2) if len(df) else 0.0,
+                }
+            )
 
         # target candidates: ≤20 unique values or bool dtype
-        target_candidates = [
-            c for c in all_columns
-            if df[c].dtype == bool or df[c].nunique() <= 20
-        ]
+        target_candidates = [c for c in all_columns if df[c].dtype == bool or df[c].nunique() <= 20]
 
         response = {
             "success": True,
@@ -200,7 +193,7 @@ def inspect_dataset(file_path: str) -> dict:
             "column_count": len(all_columns),
             "file_size_kb": round(path.stat().st_size / 1024, 1),
             "columns": col_info,
-            "target_candidates": target_candidates[:get_max_results()],
+            "target_candidates": target_candidates[: get_max_results()],
             "truncated": truncated,
             "progress": progress,
         }
@@ -327,7 +320,9 @@ def search_columns(
             if dtype:
                 if dtype == "numeric" and not pd.api.types.is_numeric_dtype(series):
                     continue
-                elif dtype == "categorical" and (pd.api.types.is_numeric_dtype(series) or pd.api.types.is_bool_dtype(series)):
+                elif dtype == "categorical" and (
+                    pd.api.types.is_numeric_dtype(series) or pd.api.types.is_bool_dtype(series)
+                ):  # noqa: E501
                     continue
                 elif dtype == "bool" and not pd.api.types.is_bool_dtype(series):
                     continue
@@ -358,7 +353,6 @@ def search_columns(
         return _error(str(exc), "Use inspect_dataset() to verify the file path.")
 
 
-
 # ---------------------------------------------------------------------------
 # 4. read_rows
 # ---------------------------------------------------------------------------
@@ -379,7 +373,7 @@ def read_rows(file_path: str, start: int, end: int) -> dict:
         actual = min(requested, cap)
         truncated = requested > actual
 
-        slice_df = df.iloc[start: start + actual]
+        slice_df = df.iloc[start : start + actual]
         rows = slice_df.where(slice_df.notna(), other=None).to_dict(orient="records")
 
         response = {
@@ -507,8 +501,7 @@ def train_classifier(
             scaler = StandardScaler()
             x_train_s = scaler.fit_transform(x_train)
             x_test_s = scaler.transform(x_test)
-            clf = SVC(kernel="rbf", gamma="auto", random_state=42,
-                      class_weight=cw, probability=True)
+            clf = SVC(kernel="rbf", gamma="auto", random_state=42, class_weight=cw, probability=True)
             clf.fit(x_train_s, y_train)
             y_pred = clf.predict(x_test_s)
             model_class_name = "SVC"
@@ -550,7 +543,9 @@ def train_classifier(
             dtrain = xgb.DMatrix(x_train, label=y_train)
             dtest = xgb.DMatrix(x_test, label=y_test)
             params: dict = {
-                "max_depth": 3, "eta": 0.3, "verbosity": 0,
+                "max_depth": 3,
+                "eta": 0.3,
+                "verbosity": 0,
                 "objective": "multi:softprob" if nc > 2 else "binary:logistic",
             }
             if nc > 2:
@@ -573,6 +568,7 @@ def train_classifier(
         if int(n_classes) == 2:
             try:
                 from sklearn.metrics import roc_auc_score
+
                 if hasattr(trained, "predict_proba"):
                     y_prob = trained.predict_proba(x_test_s if model in ("svm", "knn") else x_test)[:, 1]
                     metrics["auc_roc"] = round(float(roc_auc_score(y_test, y_prob)), 4)
@@ -581,9 +577,15 @@ def train_classifier(
 
         # Train score for overfit diagnosis
         if return_train_score:
-            y_train_pred = trained.predict(x_train_s if model in ("svm", "knn") else x_train) if model != "xgb" else \
-                (np.asarray([np.argmax(l) for l in trained.predict(xgb.DMatrix(x_train))]) if int(n_classes) > 2
-                 else (trained.predict(xgb.DMatrix(x_train)) > 0.5).astype(int))
+            y_train_pred = (
+                trained.predict(x_train_s if model in ("svm", "knn") else x_train)
+                if model != "xgb"
+                else (
+                    np.asarray([np.argmax(row) for row in trained.predict(xgb.DMatrix(x_train))])
+                    if int(n_classes) > 2
+                    else (trained.predict(xgb.DMatrix(x_train)) > 0.5).astype(int)
+                )
+            )
             train_acc = float(accuracy_score(y_train, y_train_pred))
             train_f1 = float(f1_score(y_train, y_train_pred, average="weighted", zero_division=0))
             metrics["train_accuracy"] = round(train_acc, 4)
@@ -593,7 +595,7 @@ def train_classifier(
         progress.append(ok(f"Trained {model_class_name}", f"accuracy={acc:.3f}, f1={f1:.3f}"))
 
         # --- save model ---
-        ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
+        ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
         models_dir = path.parent / MODELS_DIR
         models_dir.mkdir(exist_ok=True)
         model_filename = f"{path.stem}_{model}_{ts}.pkl"
@@ -608,7 +610,7 @@ def train_classifier(
             "task": "classification",
             "model_key": model,
             "trained_on": path.name,
-            "training_date": datetime.now(timezone.utc).isoformat(),
+            "training_date": datetime.now(UTC).isoformat(),
             "feature_columns": feature_cols,
             "target_column": target_column,
             "encoding_map": encoding_map,
@@ -621,7 +623,9 @@ def train_classifier(
         _save_model(trained, model_path, metadata)
         progress.append(ok("Saved model", pname(str(model_path))))
 
-        append_receipt(file_path, "train_classifier", {"target": target_column, "model": model}, f"accuracy={acc:.3f}", backup)
+        append_receipt(
+            file_path, "train_classifier", {"target": target_column, "model": model}, f"accuracy={acc:.3f}", backup
+        )  # noqa: E501
 
         response: dict = {
             "success": True,
@@ -645,7 +649,6 @@ def train_classifier(
     except Exception as exc:
         logger.debug("train_classifier error: %s", exc)
         return _error(str(exc), "Use inspect_dataset() and read_column_profile() to verify your data first.", backup)
-
 
 
 # ---------------------------------------------------------------------------
@@ -719,9 +722,7 @@ def train_regressor(
                 "token_estimate": 80,
             }
 
-        x_train, x_test, y_train, y_test = train_test_split(
-            x, y, test_size=test_size, random_state=random_state
-        )
+        x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=test_size, random_state=random_state)
         progress.append(ok("Split dataset", f"{len(x_train):,} train / {len(x_test):,} test"))
 
         poly: PolynomialFeatures | None = None
@@ -788,7 +789,7 @@ def train_regressor(
         metrics = {"mse": round(mse, 4), "rmse": round(rmse, 4), "r2": round(r2, 4)}
         progress.append(ok(f"Trained {model_class_name}", f"r2={r2:.3f}, rmse={rmse:.2f}"))
 
-        ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
+        ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
         models_dir = path.parent / MODELS_DIR
         models_dir.mkdir(exist_ok=True)
         model_path = models_dir / f"{path.stem}_{model}_{ts}.pkl"
@@ -801,7 +802,7 @@ def train_regressor(
             "task": "regression",
             "model_key": model,
             "trained_on": path.name,
-            "training_date": datetime.now(timezone.utc).isoformat(),
+            "training_date": datetime.now(UTC).isoformat(),
             "feature_columns": feature_cols,
             "target_column": target_column,
             "encoding_map": encoding_map,
@@ -840,7 +841,6 @@ def train_regressor(
         return _error(str(exc), "Use inspect_dataset() and read_column_profile() to verify your data first.", backup)
 
 
-
 # ---------------------------------------------------------------------------
 # 7. get_predictions
 # ---------------------------------------------------------------------------
@@ -869,9 +869,7 @@ def get_predictions(model_path: str, file_path: str, max_rows: int = 20, return_
         encoding_map: dict = metadata.get("encoding_map", {})
         for col, mapping in encoding_map.items():
             if col in df.columns:
-                df[col] = df[col].astype(str).map(
-                    {str(k): v for k, v in mapping.items()}
-                ).fillna(-1).astype(int)
+                df[col] = df[col].astype(str).map({str(k): v for k, v in mapping.items()}).fillna(-1).astype(int)
 
         feature_cols: list[str] = metadata.get("feature_columns", [])
         missing = [c for c in feature_cols if c not in df.columns]
@@ -965,7 +963,9 @@ def restore_version(file_path: str, timestamp: str = "") -> dict:
             if timestamp:
                 progress.append(ok(f"Restored {pname(file_path)}", result.get("restored_from", "")))
             else:
-                progress.append(info(f"Listed snapshots for {pname(file_path)}", f"{len(result.get('snapshots', []))} available"))
+                progress.append(
+                    info(f"Listed snapshots for {pname(file_path)}", f"{len(result.get('snapshots', []))} available")
+                )  # noqa: E501
         result["progress"] = progress
         result["token_estimate"] = len(str(result)) // 4
         return result
@@ -977,6 +977,7 @@ def restore_version(file_path: str, timestamp: str = "") -> dict:
 # ---------------------------------------------------------------------------
 # Tool: predict_single
 # ---------------------------------------------------------------------------
+
 
 def predict_single(model_path: str, input_data: str) -> dict:
     """Predict on one record from a JSON dict string. No CSV required."""
@@ -991,13 +992,13 @@ def predict_single(model_path: str, input_data: str) -> dict:
     # Parse input JSON
     try:
         import json as _json
+
         if isinstance(input_data, dict):
             record = input_data
         else:
             record = _json.loads(input_data)
     except Exception as exc:
-        return _error(f"Invalid input_data JSON: {exc}",
-                      'Pass a JSON string like: {"age": 30, "tenure": 5}')
+        return _error(f"Invalid input_data JSON: {exc}", 'Pass a JSON string like: {"age": 30, "tenure": 5}')
 
     try:
         model, metadata = _load_model(str(mp))
@@ -1017,6 +1018,7 @@ def predict_single(model_path: str, input_data: str) -> dict:
 
     # Build single-row DataFrame and apply encoding
     import pandas as _pd
+
     row_df = _pd.DataFrame([{c: record[c] for c in feature_columns}])
     encoding_map: dict = metadata.get("encoding_map", {})
     for col, mapping in encoding_map.items():
@@ -1034,8 +1036,9 @@ def predict_single(model_path: str, input_data: str) -> dict:
         x = scaler.transform(x)
 
     try:
-        if hasattr(model, "predict") and not (hasattr(model, "predict_proba") is False and
-                                               type(model).__name__ == "Booster"):
+        if hasattr(model, "predict") and not (
+            hasattr(model, "predict_proba") is False and type(model).__name__ == "Booster"
+        ):
             prediction = model.predict(x)[0]
             prob = None
             if task == "classification" and hasattr(model, "predict_proba"):
@@ -1044,11 +1047,13 @@ def predict_single(model_path: str, input_data: str) -> dict:
         else:
             # XGBoost Booster
             import xgboost as xgb
+
             dmat = xgb.DMatrix(x)
             raw = model.predict(dmat)
             n_classes = int(metadata.get("n_classes", 2))
             if n_classes > 2:
                 import numpy as _np
+
                 prediction = int(_np.argmax(raw[0]))
                 prob = {str(i): round(float(p), 4) for i, p in enumerate(raw[0])}
             else:
@@ -1080,6 +1085,7 @@ def predict_single(model_path: str, input_data: str) -> dict:
 # Tool: list_models
 # ---------------------------------------------------------------------------
 
+
 def list_models(directory: str = "") -> dict:
     """List all saved .pkl models with their metadata summaries."""
     progress: list[dict] = []
@@ -1105,15 +1111,18 @@ def list_models(directory: str = "") -> dict:
         if manifest.exists():
             try:
                 import json as _json
+
                 meta = _json.loads(manifest.read_text())
-                entry.update({
-                    "model_type": meta.get("model_type", ""),
-                    "task": meta.get("task", ""),
-                    "trained_on": meta.get("trained_on", ""),
-                    "training_date": meta.get("training_date", "")[:10],
-                    "target_column": meta.get("target_column", ""),
-                    "metrics": meta.get("metrics", {}),
-                })
+                entry.update(
+                    {
+                        "model_type": meta.get("model_type", ""),
+                        "task": meta.get("task", ""),
+                        "trained_on": meta.get("trained_on", ""),
+                        "training_date": meta.get("training_date", "")[:10],
+                        "target_column": meta.get("target_column", ""),
+                        "metrics": meta.get("metrics", {}),
+                    }
+                )
             except Exception:
                 pass
         models.append(entry)
@@ -1137,6 +1146,7 @@ def list_models(directory: str = "") -> dict:
 # Tool: split_dataset
 # ---------------------------------------------------------------------------
 
+
 def split_dataset(
     file_path: str,
     test_size: float = 0.2,
@@ -1146,6 +1156,7 @@ def split_dataset(
 ) -> dict:
     """Split CSV into train/test files. Saves both to disk."""
     from sklearn.model_selection import train_test_split as _tts
+
     progress: list[dict] = []
     try:
         path = resolve_path(file_path)
@@ -1177,7 +1188,7 @@ def split_dataset(
     df_train, df_test = _tts(df, test_size=test_size, random_state=random_state, stratify=stratify)
 
     train_path = out_dir / f"{path.stem}_train.csv"
-    test_path  = out_dir / f"{path.stem}_test.csv"
+    test_path = out_dir / f"{path.stem}_test.csv"
 
     # Snapshot if they already exist
     backup_train = backup_test = ""
@@ -1198,9 +1209,13 @@ def split_dataset(
     progress.append(ok("Saved train", train_path.name))
     progress.append(ok("Saved test", test_path.name))
 
-    append_receipt(file_path, "split_dataset",
-                   {"test_size": test_size, "stratify_column": stratify_column},
-                   "success", backup_train or backup_test)
+    append_receipt(
+        file_path,
+        "split_dataset",
+        {"test_size": test_size, "stratify_column": stratify_column},
+        "success",
+        backup_train or backup_test,
+    )
 
     resp: dict = {
         "success": True,

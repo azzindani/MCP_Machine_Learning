@@ -91,8 +91,7 @@ def train_classifier(
 ) -> dict:
     """Train classifier on CSV. model: lr svm rf dtc knn nb xgb."""
     return engine.train_classifier(
-        file_path, target_column, model, test_size, random_state,
-        class_weight, return_train_score, dry_run
+        file_path, target_column, model, test_size, random_state, class_weight, return_train_score, dry_run
     )
 
 
@@ -147,27 +146,20 @@ def restore_version(file_path: str, timestamp: str = "") -> dict:
     return engine.restore_version(file_path, timestamp)
 
 
-@mcp.tool(
-    annotations={"readOnlyHint": True, "destructiveHint": False,
-                 "idempotentHint": True, "openWorldHint": False}
-)
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False})
 def predict_single(model_path: str, input_data: str) -> dict:
     """Predict on one JSON record. No CSV file needed."""
     return engine.predict_single(model_path, input_data)
 
 
-@mcp.tool(
-    annotations={"readOnlyHint": True, "destructiveHint": False,
-                 "idempotentHint": True, "openWorldHint": False}
-)
+@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False})
 def list_models(directory: str = "") -> dict:
     """List all saved .pkl models with metadata. Empty = home dir."""
     return engine.list_models(directory)
 
 
 @mcp.tool(
-    annotations={"readOnlyHint": False, "destructiveHint": False,
-                 "idempotentHint": False, "openWorldHint": False}
+    annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False}
 )
 def split_dataset(
     file_path: str,

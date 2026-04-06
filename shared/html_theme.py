@@ -112,9 +112,7 @@ def save_chart(
     # Inject viewport meta for mobile responsiveness
     viewport = '<meta name="viewport" content="width=device-width, initial-scale=1">'
     if title:
-        html_str = html_str.replace(
-            "<head>", f"<head>\n  {viewport}\n  <title>{title}</title>"
-        )
+        html_str = html_str.replace("<head>", f"<head>\n  {viewport}\n  <title>{title}</title>")
     else:
         html_str = html_str.replace("<head>", f"<head>\n  {viewport}")
 
@@ -130,31 +128,32 @@ def save_chart(
 # Multi-section HTML report builder
 # ---------------------------------------------------------------------------
 
+
 def _build_css(t: dict) -> str:
     """Build CSS string with theme values substituted (avoids .format() brace conflicts)."""
     rules = [
         "* { box-sizing: border-box; margin: 0; padding: 0; }",
-        f"body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: {t['bg_color']}; color: {t['text_color']}; }}",
-        f".layout {{ display: flex; min-height: 100vh; }}",
-        f".sidebar {{ width: 220px; min-height: 100vh; background: {t['sidebar_bg']}; color: {t['sidebar_text']}; padding: 1.5rem 1rem; position: sticky; top: 0; flex-shrink: 0; }}",
-        f".sidebar h2 {{ font-size: 0.9rem; text-transform: uppercase; letter-spacing: .05em; color: {t['accent']}; margin-bottom: 1rem; }}",
-        f".sidebar a {{ display: block; padding: 0.4rem 0.6rem; border-radius: 4px; color: {t['sidebar_text']}; text-decoration: none; font-size: 0.85rem; margin-bottom: 0.2rem; }}",
+        f"body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: {t['bg_color']}; color: {t['text_color']}; }}",  # noqa: E501
+        ".layout { display: flex; min-height: 100vh; }",
+        f".sidebar {{ width: 220px; min-height: 100vh; background: {t['sidebar_bg']}; color: {t['sidebar_text']}; padding: 1.5rem 1rem; position: sticky; top: 0; flex-shrink: 0; }}",  # noqa: E501
+        f".sidebar h2 {{ font-size: 0.9rem; text-transform: uppercase; letter-spacing: .05em; color: {t['accent']}; margin-bottom: 1rem; }}",  # noqa: E501
+        f".sidebar a {{ display: block; padding: 0.4rem 0.6rem; border-radius: 4px; color: {t['sidebar_text']}; text-decoration: none; font-size: 0.85rem; margin-bottom: 0.2rem; }}",  # noqa: E501
         f".sidebar a:hover {{ background: {t['accent']}; color: #fff; }}",
         ".content { flex: 1; padding: 2rem; max-width: 1200px; }",
         f"h1 {{ font-size: 1.6rem; margin-bottom: 0.25rem; color: {t['text_color']}; }}",
         f".subtitle {{ font-size: 0.9rem; color: {t['grid_color']}; margin-bottom: 2rem; }}",
         ".section { margin-bottom: 2.5rem; }",
-        f".section h2 {{ font-size: 1.1rem; border-bottom: 2px solid {t['accent']}; padding-bottom: 0.4rem; margin-bottom: 1rem; color: {t['text_color']}; }}",
+        f".section h2 {{ font-size: 1.1rem; border-bottom: 2px solid {t['accent']}; padding-bottom: 0.4rem; margin-bottom: 1rem; color: {t['text_color']}; }}",  # noqa: E501
         ".cards { display: flex; flex-wrap: wrap; gap: 1rem; margin-bottom: 1rem; }",
-        f".card {{ background: {t['card_bg']}; border: 1px solid {t['border_color']}; border-radius: 8px; padding: 1rem 1.25rem; min-width: 140px; flex: 1; }}",
-        f".card .label {{ font-size: 0.75rem; text-transform: uppercase; color: {t['grid_color']}; letter-spacing: .05em; }}",
+        f".card {{ background: {t['card_bg']}; border: 1px solid {t['border_color']}; border-radius: 8px; padding: 1rem 1.25rem; min-width: 140px; flex: 1; }}",  # noqa: E501
+        f".card .label {{ font-size: 0.75rem; text-transform: uppercase; color: {t['grid_color']}; letter-spacing: .05em; }}",  # noqa: E501
         f".card .value {{ font-size: 1.5rem; font-weight: 700; color: {t['accent']}; }}",
         f".card .sub {{ font-size: 0.8rem; color: {t['grid_color']}; margin-top: 0.2rem; }}",
         "table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 0.5rem; }",
-        f"th {{ background: {t['paper_color']}; color: {t['text_color']}; padding: 0.5rem 0.75rem; text-align: left; border-bottom: 2px solid {t['border_color']}; }}",
+        f"th {{ background: {t['paper_color']}; color: {t['text_color']}; padding: 0.5rem 0.75rem; text-align: left; border-bottom: 2px solid {t['border_color']}; }}",  # noqa: E501
         f"td {{ padding: 0.4rem 0.75rem; border-bottom: 1px solid {t['border_color']}; color: {t['text_color']}; }}",
         f"tr:hover td {{ background: {t['paper_color']}; }}",
-        f".chart-container {{ width: 100%; overflow: hidden; border-radius: 8px; border: 1px solid {t['border_color']}; margin-top: 0.5rem; }}",
+        f".chart-container {{ width: 100%; overflow: hidden; border-radius: 8px; border: 1px solid {t['border_color']}; margin-top: 0.5rem; }}",  # noqa: E501
         ".alert { padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 0.5rem; font-size: 0.85rem; }",
         f".alert-warning {{ background: {t['warning']}22; border-left: 3px solid {t['warning']}; }}",
         f".alert-success {{ background: {t['success']}22; border-left: 3px solid {t['success']}; }}",
@@ -182,12 +181,9 @@ def build_html_report(
     t = get_theme(theme)
     css = _build_css(t)
 
-    nav_links = "\n".join(
-        f'<a href="#{s["id"]}">{s["heading"]}</a>' for s in sections
-    )
+    nav_links = "\n".join(f'<a href="#{s["id"]}">{s["heading"]}</a>' for s in sections)
     sections_html = "\n".join(
-        f'<div class="section" id="{s["id"]}"><h2>{s["heading"]}</h2>{s["html"]}</div>'
-        for s in sections
+        f'<div class="section" id="{s["id"]}"><h2>{s["heading"]}</h2>{s["html"]}</div>' for s in sections
     )
 
     html = f"""<!DOCTYPE html>
@@ -237,10 +233,7 @@ def metrics_cards_html(metrics: dict) -> str:
             val = f"{v:.4f}" if abs(v) < 10 else f"{v:,.2f}"
         else:
             val = str(v)
-        cards.append(
-            f'<div class="card"><div class="label">{label}</div>'
-            f'<div class="value">{val}</div></div>'
-        )
+        cards.append(f'<div class="card"><div class="label">{label}</div><div class="value">{val}</div></div>')
     return f'<div class="cards">{"".join(cards)}</div>'
 
 
@@ -260,7 +253,9 @@ def data_table_html(rows: list[dict], max_rows: int = 50) -> str:
 def plotly_div(fig: object, height: int = 450) -> str:
     """Embed a Plotly figure as an inline div (no full HTML wrapper)."""
     import plotly.io as pio  # lazy
-    return f'<div class="chart-container" style="height:{height}px">' + \
-           pio.to_html(fig, full_html=False, include_plotlyjs=False,
-                       config={"responsive": True, "displayModeBar": True}) + \
-           "</div>"
+
+    return (
+        f'<div class="chart-container" style="height:{height}px">'
+        + pio.to_html(fig, full_html=False, include_plotlyjs=False, config={"responsive": True, "displayModeBar": True})
+        + "</div>"
+    )

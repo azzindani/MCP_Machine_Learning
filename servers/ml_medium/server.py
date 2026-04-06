@@ -68,9 +68,7 @@ def train_with_cv(
     dry_run: bool = False,
 ) -> dict:
     """Train with K-fold CV. Returns per-fold and mean scores."""
-    return engine.train_with_cv(
-        file_path, target_column, model, task, n_splits, random_state, dry_run
-    )
+    return engine.train_with_cv(file_path, target_column, model, task, n_splits, random_state, dry_run)
 
 
 @mcp.tool(
@@ -91,9 +89,7 @@ def compare_models(
     dry_run: bool = False,
 ) -> dict:
     """Train multiple models, return sorted comparison table."""
-    return engine.compare_models(
-        file_path, target_column, task, models, test_size, random_state, dry_run
-    )
+    return engine.compare_models(file_path, target_column, task, models, test_size, random_state, dry_run)
 
 
 @mcp.tool(
@@ -118,8 +114,16 @@ def run_clustering(
 ) -> dict:
     """Cluster dataset. algorithm: kmeans meanshift dbscan."""
     return engine.run_clustering(
-        file_path, feature_columns, algorithm, n_clusters, eps,
-        min_samples, reduce_dims, n_components, save_labels, dry_run
+        file_path,
+        feature_columns,
+        algorithm,
+        n_clusters,
+        eps,
+        min_samples,
+        reduce_dims,
+        n_components,
+        save_labels,
+        dry_run,
     )
 
 
@@ -153,9 +157,7 @@ def generate_eda_report(
     dry_run: bool = False,
 ) -> dict:
     """Generate interactive HTML EDA report. theme: light dark."""
-    return engine.generate_eda_report(
-        file_path, target_column, theme, output_path, open_browser, dry_run
-    )
+    return engine.generate_eda_report(file_path, target_column, theme, output_path, open_browser, dry_run)
 
 
 @mcp.tool(
@@ -215,9 +217,7 @@ def find_optimal_clusters(
     open_browser: bool = True,
 ) -> dict:
     """Find optimal K via elbow + silhouette. Saves HTML chart."""
-    return engine.find_optimal_clusters(
-        file_path, feature_columns, max_k, theme, output_path, open_browser
-    )
+    return engine.find_optimal_clusters(file_path, feature_columns, max_k, theme, output_path, open_browser)
 
 
 @mcp.tool(
@@ -237,9 +237,7 @@ def anomaly_detection(
     dry_run: bool = False,
 ) -> dict:
     """Detect anomalies. method: isolation_forest lof."""
-    return engine.anomaly_detection(
-        file_path, feature_columns, method, contamination, save_labels, dry_run
-    )
+    return engine.anomaly_detection(file_path, feature_columns, method, contamination, save_labels, dry_run)
 
 
 @mcp.tool(

@@ -5,7 +5,7 @@ Backups are stored in .mcp_versions/ next to the source file.
 """
 
 import shutil
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -22,7 +22,7 @@ def snapshot(file_path: str) -> str:
     versions_dir = source.parent / ".mcp_versions"
     versions_dir.mkdir(exist_ok=True)
 
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
+    ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
     backup = versions_dir / f"{source.stem}_{ts}{source.suffix}.bak"
     shutil.copy2(source, backup)
     return str(backup)
@@ -36,8 +36,6 @@ def restore_version(file_path: str, timestamp: str = "") -> dict:
         dict with success + restored_from path (when timestamp provided)
     """
     source = Path(file_path).resolve()
-    versions_dir = source.parent / ".mcp_versions"
-
     snapshots = list_snapshots(file_path)
 
     if not timestamp:
@@ -94,10 +92,12 @@ def list_snapshots(file_path: str) -> list[dict]:
         name_no_bak = bak.stem  # e.g. customer_churn_2026-04-06T10-30-00Z.csv
         parts = name_no_bak.rsplit("_", 1)
         ts = parts[-1] if len(parts) > 1 else name_no_bak
-        results.append({
-            "timestamp": ts,
-            "path": str(bak),
-            "size_kb": round(bak.stat().st_size / 1024, 1),
-        })
+        results.append(
+            {
+                "timestamp": ts,
+                "path": str(bak),
+                "size_kb": round(bak.stat().st_size / 1024, 1),
+            }
+        )
 
     return results

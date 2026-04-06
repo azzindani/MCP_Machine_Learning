@@ -18,15 +18,15 @@ ALLOWED_PREPROCESSING_OPS: set[str] = {
 
 # Required fields per op type
 _REQUIRED_FIELDS: dict[str, list[str]] = {
-    "fill_nulls":      ["column", "strategy"],
-    "drop_outliers":   ["column", "method"],
-    "label_encode":    ["column"],
-    "onehot_encode":   ["column"],
-    "scale":           ["columns", "method"],
+    "fill_nulls": ["column", "strategy"],
+    "drop_outliers": ["column", "method"],
+    "label_encode": ["column"],
+    "onehot_encode": ["column"],
+    "scale": ["columns", "method"],
     "drop_duplicates": [],
-    "drop_column":     ["column"],
-    "rename_column":   ["from", "to"],
-    "convert_dtype":   ["column", "to"],
+    "drop_column": ["column"],
+    "rename_column": ["from", "to"],
+    "convert_dtype": ["column", "to"],
 }
 
 ALLOWED_FILL_STRATEGIES: set[str] = {"mean", "median", "mode", "ffill", "bfill", "zero"}
@@ -72,10 +72,7 @@ def validate_ops(
             return False, f"Op {i}: missing 'op' key."
 
         if op_name not in allowed:
-            return False, (
-                f"Op {i}: unknown op '{op_name}'. "
-                f"Allowed: {', '.join(sorted(allowed))}"
-            )
+            return False, (f"Op {i}: unknown op '{op_name}'. Allowed: {', '.join(sorted(allowed))}")
 
         for field in _REQUIRED_FIELDS.get(op_name, []):
             if field not in op:
@@ -94,8 +91,7 @@ def validate_ops(
             method = op.get("method", "")
             if method not in ALLOWED_SCALE_METHODS:
                 return False, (
-                    f"Op {i}: invalid scale method '{method}'. "
-                    f"Allowed: {', '.join(sorted(ALLOWED_SCALE_METHODS))}"
+                    f"Op {i}: invalid scale method '{method}'. Allowed: {', '.join(sorted(ALLOWED_SCALE_METHODS))}"
                 )
             if not isinstance(op.get("columns"), list):
                 return False, f"Op {i} (scale): 'columns' must be a list of column names."
@@ -111,9 +107,6 @@ def validate_ops(
         if op_name == "convert_dtype":
             dtype = op.get("to", "")
             if dtype not in ALLOWED_DTYPES:
-                return False, (
-                    f"Op {i}: invalid dtype '{dtype}'. "
-                    f"Allowed: {', '.join(sorted(ALLOWED_DTYPES))}"
-                )
+                return False, (f"Op {i}: invalid dtype '{dtype}'. Allowed: {', '.join(sorted(ALLOWED_DTYPES))}")
 
     return True, ""
