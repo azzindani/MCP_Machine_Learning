@@ -242,6 +242,54 @@ def anomaly_detection(
     )
 
 
+@mcp.tool(
+    annotations={
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    }
+)
+def check_data_quality(file_path: str) -> dict:
+    """Return JSON quality score 0-100 with typed alerts per column."""
+    return engine.check_data_quality(file_path)
+
+
+@mcp.tool(
+    annotations={
+        "readOnlyHint": True,
+        "destructiveHint": False,
+        "idempotentHint": True,
+        "openWorldHint": False,
+    }
+)
+def evaluate_model(
+    model_path: str,
+    test_file_path: str,
+    target_column: str,
+) -> dict:
+    """Score saved model on labeled test CSV. Returns metrics dict."""
+    return engine.evaluate_model(model_path, test_file_path, target_column)
+
+
+@mcp.tool(
+    annotations={
+        "readOnlyHint": False,
+        "destructiveHint": False,
+        "idempotentHint": False,
+        "openWorldHint": False,
+    }
+)
+def batch_predict(
+    model_path: str,
+    file_path: str,
+    output_path: str = "",
+    dry_run: bool = False,
+) -> dict:
+    """Predict all rows, save to CSV. No row limit. Returns output path."""
+    return engine.batch_predict(model_path, file_path, output_path, dry_run)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="ml-medium MCP server")
     parser.add_argument("--transport", choices=["stdio", "http"], default="stdio")

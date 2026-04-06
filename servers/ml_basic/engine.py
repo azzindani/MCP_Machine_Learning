@@ -415,6 +415,8 @@ def train_classifier(
     model: str,
     test_size: float = 0.2,
     random_state: int = 42,
+    class_weight: str = "",
+    return_train_score: bool = False,
     dry_run: bool = False,
 ) -> dict:
     """Train classifier on CSV. model: lr svm rf dtc knn nb xgb."""
@@ -492,8 +494,10 @@ def train_classifier(
         scaler: StandardScaler | None = None
         model_class_name = ""
 
+        cw = class_weight if class_weight in ("balanced",) else None
+
         if model == "lr":
-            clf = LogisticRegression(random_state=42, max_iter=200)
+            clf = LogisticRegression(random_state=42, max_iter=200, class_weight=cw)
             clf.fit(x_train, y_train)
             y_pred = clf.predict(x_test)
             model_class_name = "LogisticRegression"
@@ -503,21 +507,22 @@ def train_classifier(
             scaler = StandardScaler()
             x_train_s = scaler.fit_transform(x_train)
             x_test_s = scaler.transform(x_test)
-            clf = SVC(kernel="rbf", gamma="auto", random_state=42)
+            clf = SVC(kernel="rbf", gamma="auto", random_state=42,
+                      class_weight=cw, probability=True)
             clf.fit(x_train_s, y_train)
             y_pred = clf.predict(x_test_s)
             model_class_name = "SVC"
             trained = clf
 
         elif model == "rf":
-            clf = RandomForestClassifier(n_estimators=100, random_state=42)
+            clf = RandomForestClassifier(n_estimators=100, random_state=42, class_weight=cw)
             clf.fit(x_train, y_train)
             y_pred = clf.predict(x_test)
             model_class_name = "RandomForestClassifier"
             trained = clf
 
         elif model == "dtc":
-            clf = DecisionTreeClassifier(random_state=42)
+            clf = DecisionTreeClassifier(random_state=42, class_weight=cw)
             clf.fit(x_train, y_train)
             y_pred = clf.predict(x_test)
             model_class_name = "DecisionTreeClassifier"
@@ -562,7 +567,29 @@ def train_classifier(
         acc = float(accuracy_score(y_test, y_pred))
         f1 = float(f1_score(y_test, y_pred, average="weighted", zero_division=0))
         cm = _confusion_dict(y_test, y_pred)
-        metrics = {"accuracy": round(acc, 4), "f1_weighted": round(f1, 4), "confusion_matrix": cm}
+        metrics: dict = {"accuracy": round(acc, 4), "f1_weighted": round(f1, 4), "confusion_matrix": cm}
+
+        # AUC-ROC for binary classification
+        if int(n_classes) == 2:
+            try:
+                from sklearn.metrics import roc_auc_score
+                if hasattr(trained, "predict_proba"):
+                    y_prob = trained.predict_proba(x_test_s if model in ("svm", "knn") else x_test)[:, 1]
+                    metrics["auc_roc"] = round(float(roc_auc_score(y_test, y_prob)), 4)
+            except Exception:
+                pass
+
+        # Train score for overfit diagnosis
+        if return_train_score:
+            y_train_pred = trained.predict(x_train_s if model in ("svm", "knn") else x_train) if model != "xgb" else \
+                (np.asarray([np.argmax(l) for l in trained.predict(xgb.DMatrix(x_train))]) if int(n_classes) > 2
+                 else (trained.predict(xgb.DMatrix(x_train)) > 0.5).astype(int))
+            train_acc = float(accuracy_score(y_train, y_train_pred))
+            train_f1 = float(f1_score(y_train, y_train_pred, average="weighted", zero_division=0))
+            metrics["train_accuracy"] = round(train_acc, 4)
+            metrics["train_f1_weighted"] = round(train_f1, 4)
+            metrics["overfit_gap"] = round(train_acc - acc, 4)
+
         progress.append(ok(f"Trained {model_class_name}", f"accuracy={acc:.3f}, f1={f1:.3f}"))
 
         # --- save model ---
@@ -817,7 +844,7 @@ def train_regressor(
 # ---------------------------------------------------------------------------
 # 7. get_predictions
 # ---------------------------------------------------------------------------
-def get_predictions(model_path: str, file_path: str, max_rows: int = 20) -> dict:
+def get_predictions(model_path: str, file_path: str, max_rows: int = 20, return_proba: bool = False) -> dict:
     """Run predictions with saved model. Returns bounded prediction list."""
     progress: list[dict] = []
     try:
@@ -873,6 +900,7 @@ def get_predictions(model_path: str, file_path: str, max_rows: int = 20) -> dict
         task = metadata.get("task", "classification")
         model_key = metadata.get("model_key", "")
 
+        proba_list: list | None = None
         if model_key == "xgb":
             dmat = xgb.DMatrix(x_slice)
             raw_preds = model_obj.predict(dmat)
@@ -880,18 +908,28 @@ def get_predictions(model_path: str, file_path: str, max_rows: int = 20) -> dict
                 n_classes = metadata.get("n_classes", 2)
                 if n_classes > 2:
                     preds_list = [int(np.argmax(line)) for line in raw_preds]
+                    if return_proba:
+                        proba_list = [raw_preds[i].tolist() for i in range(len(raw_preds))]
                 else:
                     preds_list = [int(p > 0.5) for p in raw_preds]
+                    if return_proba:
+                        proba_list = [[round(1 - float(p), 4), round(float(p), 4)] for p in raw_preds]
             else:
                 preds_list = [float(p) for p in raw_preds]
         else:
             raw = model_obj.predict(x_slice)
             if task == "classification":
                 preds_list = [int(p) for p in raw]
+                if return_proba and hasattr(model_obj, "predict_proba"):
+                    proba_raw = model_obj.predict_proba(x_slice)
+                    proba_list = [[round(float(v), 4) for v in row] for row in proba_raw]
             else:
                 preds_list = [float(p) for p in raw]
 
         predictions = [{"row": i, "prediction": preds_list[i]} for i in range(len(preds_list))]
+        if proba_list:
+            for i, entry in enumerate(predictions):
+                entry["probabilities"] = proba_list[i]
         progress.append(ok("Generated predictions", f"{len(predictions)} rows"))
 
         response: dict = {
