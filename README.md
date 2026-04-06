@@ -205,7 +205,7 @@ Each server entry auto-clones to `%USERPROFILE%\.mcp_servers\MCP_Machine_Learnin
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
-        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d }; Set-Location $d; git checkout main --quiet 2>$null; git pull --quiet; uv sync --all-packages --quiet; uv run --package ml-basic ml-basic"
+        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d }; Set-Location $d; git fetch --quiet; git checkout main --quiet 2>$null; git reset --hard origin/main --quiet; uv sync --all-packages --quiet; uv run --package ml-basic ml-basic"
       ],
       "env": {
         "MCP_CONSTRAINED_MODE": "0"
@@ -219,7 +219,7 @@ Each server entry auto-clones to `%USERPROFILE%\.mcp_servers\MCP_Machine_Learnin
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
-        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d }; Set-Location $d; git checkout main --quiet 2>$null; git pull --quiet; uv sync --all-packages --quiet; uv run --package ml-medium ml-medium"
+        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d }; Set-Location $d; git fetch --quiet; git checkout main --quiet 2>$null; git reset --hard origin/main --quiet; uv sync --all-packages --quiet; uv run --package ml-medium ml-medium"
       ],
       "env": {
         "MCP_CONSTRAINED_MODE": "0"
@@ -233,7 +233,7 @@ Each server entry auto-clones to `%USERPROFILE%\.mcp_servers\MCP_Machine_Learnin
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
-        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d }; Set-Location $d; git checkout main --quiet 2>$null; git pull --quiet; uv sync --all-packages --quiet; uv run --package ml-advanced ml-advanced"
+        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d }; Set-Location $d; git fetch --quiet; git checkout main --quiet 2>$null; git reset --hard origin/main --quiet; uv sync --all-packages --quiet; uv run --package ml-advanced ml-advanced"
       ],
       "env": {
         "MCP_CONSTRAINED_MODE": "0"
@@ -256,7 +256,7 @@ Each server entry auto-clones to `%USERPROFILE%\.mcp_servers\MCP_Machine_Learnin
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
-        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d }; Set-Location $d; git checkout main --quiet 2>$null; git pull --quiet; uv sync --all-packages --quiet; uv run --package ml-basic ml-basic"
+        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d }; Set-Location $d; git fetch --quiet; git checkout main --quiet 2>$null; git reset --hard origin/main --quiet; uv sync --all-packages --quiet; uv run --package ml-basic ml-basic"
       ],
       "env": {
         "MCP_CONSTRAINED_MODE": "1"
@@ -279,7 +279,7 @@ Each server entry auto-clones to `%USERPROFILE%\.mcp_servers\MCP_Machine_Learnin
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
-        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d }; Set-Location $d; git checkout main --quiet 2>$null; git pull --quiet; uv sync --all-packages --quiet; uv run --package ml-basic ml-basic"
+        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d }; Set-Location $d; git fetch --quiet; git checkout main --quiet 2>$null; git reset --hard origin/main --quiet; uv sync --all-packages --quiet; uv run --package ml-basic ml-basic"
       ],
       "env": {
         "MCP_CONSTRAINED_MODE": "1"
@@ -293,7 +293,7 @@ Each server entry auto-clones to `%USERPROFILE%\.mcp_servers\MCP_Machine_Learnin
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
-        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d }; Set-Location $d; git checkout main --quiet 2>$null; git pull --quiet; uv sync --all-packages --quiet; uv run --package ml-medium ml-medium"
+        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d }; Set-Location $d; git fetch --quiet; git checkout main --quiet 2>$null; git reset --hard origin/main --quiet; uv sync --all-packages --quiet; uv run --package ml-medium ml-medium"
       ],
       "env": {
         "MCP_CONSTRAINED_MODE": "1"
@@ -317,7 +317,7 @@ Each server entry auto-clones to `~/.mcp_servers/MCP_Machine_Learning`, pulls la
       "command": "bash",
       "args": [
         "-c",
-        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; [ -d \"$d\" ] || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\"; cd \"$d\" && git checkout main -q 2>/dev/null; git pull -q; uv sync --all-packages -q && uv run --package ml-basic ml-basic"
+        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; [ -d \"$d\" ] || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\"; cd \"$d\" && git fetch -q && git checkout main -q 2>/dev/null; git reset --hard origin/main -q; uv sync --all-packages -q && uv run --package ml-basic ml-basic"
       ],
       "env": {
         "MCP_CONSTRAINED_MODE": "0"
@@ -328,7 +328,7 @@ Each server entry auto-clones to `~/.mcp_servers/MCP_Machine_Learning`, pulls la
       "command": "bash",
       "args": [
         "-c",
-        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; [ -d \"$d\" ] || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\"; cd \"$d\" && git checkout main -q 2>/dev/null; git pull -q; uv sync --all-packages -q && uv run --package ml-medium ml-medium"
+        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; [ -d \"$d\" ] || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\"; cd \"$d\" && git fetch -q && git checkout main -q 2>/dev/null; git reset --hard origin/main -q; uv sync --all-packages -q && uv run --package ml-medium ml-medium"
       ],
       "env": {
         "MCP_CONSTRAINED_MODE": "0"
@@ -339,7 +339,7 @@ Each server entry auto-clones to `~/.mcp_servers/MCP_Machine_Learning`, pulls la
       "command": "bash",
       "args": [
         "-c",
-        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; [ -d \"$d\" ] || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\"; cd \"$d\" && git checkout main -q 2>/dev/null; git pull -q; uv sync --all-packages -q && uv run --package ml-advanced ml-advanced"
+        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; [ -d \"$d\" ] || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\"; cd \"$d\" && git fetch -q && git checkout main -q 2>/dev/null; git reset --hard origin/main -q; uv sync --all-packages -q && uv run --package ml-advanced ml-advanced"
       ],
       "env": {
         "MCP_CONSTRAINED_MODE": "0"
@@ -359,7 +359,7 @@ Each server entry auto-clones to `~/.mcp_servers/MCP_Machine_Learning`, pulls la
       "command": "bash",
       "args": [
         "-c",
-        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; [ -d \"$d\" ] || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\"; cd \"$d\" && git checkout main -q 2>/dev/null; git pull -q; uv sync --all-packages -q && uv run --package ml-basic ml-basic"
+        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; [ -d \"$d\" ] || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\"; cd \"$d\" && git fetch -q && git checkout main -q 2>/dev/null; git reset --hard origin/main -q; uv sync --all-packages -q && uv run --package ml-basic ml-basic"
       ],
       "env": {
         "MCP_CONSTRAINED_MODE": "1"
@@ -379,7 +379,7 @@ Each server entry auto-clones to `~/.mcp_servers/MCP_Machine_Learning`, pulls la
       "command": "bash",
       "args": [
         "-c",
-        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; [ -d \"$d\" ] || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\"; cd \"$d\" && git checkout main -q 2>/dev/null; git pull -q; uv sync --all-packages -q && uv run --package ml-basic ml-basic"
+        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; [ -d \"$d\" ] || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\"; cd \"$d\" && git fetch -q && git checkout main -q 2>/dev/null; git reset --hard origin/main -q; uv sync --all-packages -q && uv run --package ml-basic ml-basic"
       ],
       "env": {
         "MCP_CONSTRAINED_MODE": "1"
@@ -390,7 +390,7 @@ Each server entry auto-clones to `~/.mcp_servers/MCP_Machine_Learning`, pulls la
       "command": "bash",
       "args": [
         "-c",
-        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; [ -d \"$d\" ] || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\"; cd \"$d\" && git checkout main -q 2>/dev/null; git pull -q; uv sync --all-packages -q && uv run --package ml-medium ml-medium"
+        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; [ -d \"$d\" ] || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\"; cd \"$d\" && git fetch -q && git checkout main -q 2>/dev/null; git reset --hard origin/main -q; uv sync --all-packages -q && uv run --package ml-medium ml-medium"
       ],
       "env": {
         "MCP_CONSTRAINED_MODE": "1"

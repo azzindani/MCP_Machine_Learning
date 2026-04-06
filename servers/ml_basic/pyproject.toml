@@ -18,3 +18,9 @@ ml-basic = "servers.ml_basic.server:main"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build]
+sources = ["../.."]
+
+[tool.hatch.build.targets.wheel]
+packages = ["servers/ml_basic", "shared"]

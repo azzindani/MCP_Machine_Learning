@@ -19,3 +19,9 @@ ml-advanced = "servers.ml_advanced.server:main"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build]
+sources = ["../.."]
+
+[tool.hatch.build.targets.wheel]
+packages = ["servers/ml_advanced", "shared"]
