@@ -8,14 +8,15 @@ import pickle
 import shutil
 import sys
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import psutil
 import sklearn
-from sklearn.decomposition import FastICA, PCA
+import xgboost as xgb
+from sklearn.decomposition import PCA, FastICA
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.linear_model import (
     Lasso,
@@ -23,26 +24,16 @@ from sklearn.linear_model import (
     LogisticRegression,
     Ridge,
 )
-from sklearn.metrics import (
-    accuracy_score,
-    classification_report,
-    confusion_matrix,
-    f1_score,
-    mean_squared_error,
-    r2_score,
-)
-from sklearn.model_selection import GridSearchCV, RandomizedSearchCV, train_test_split
+from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 from sklearn.naive_bayes import GaussianNB
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
-import xgboost as xgb
-
 from shared.file_utils import resolve_path
 from shared.platform_utils import get_cv_folds, is_constrained_mode
-from shared.progress import fail, info, ok, warn
+from shared.progress import info, ok, warn
 from shared.receipt import append_receipt
 from shared.version_control import snapshot
 
@@ -57,17 +48,17 @@ ALLOWED_REGRESSORS = {"lir", "pr", "lar", "rr", "dtr", "rfr", "xgb"}
 MODELS_DIR = ".mcp_models"
 
 DEFAULT_PARAMS: dict[str, dict] = {
-    "svm":  {"C": [0.1, 1, 10], "kernel": ["rbf", "linear"]},
-    "rf":   {"n_estimators": [10, 50, 100], "max_depth": [None, 5, 10]},
-    "xgb":  {"max_depth": [3, 5, 7], "eta": [0.1, 0.3], "n_estimators": [50, 100]},
-    "knn":  {"n_neighbors": [3, 5, 7, 11]},
-    "lr":   {"C": [0.01, 0.1, 1, 10]},
-    "dtc":  {"max_depth": [None, 3, 5, 10]},
-    "rfr":  {"n_estimators": [10, 50, 100], "max_depth": [None, 5, 10]},
-    "dtr":  {"max_depth": [None, 3, 5, 10]},
-    "lar":  {"alpha": [0.001, 0.01, 0.1, 1.0]},
-    "rr":   {"alpha": [0.001, 0.01, 0.1, 1.0]},
-    "lir":  {},
+    "svm": {"C": [0.1, 1, 10], "kernel": ["rbf", "linear"]},
+    "rf": {"n_estimators": [10, 50, 100], "max_depth": [None, 5, 10]},
+    "xgb": {"max_depth": [3, 5, 7], "eta": [0.1, 0.3], "n_estimators": [50, 100]},
+    "knn": {"n_neighbors": [3, 5, 7, 11]},
+    "lr": {"C": [0.01, 0.1, 1, 10]},
+    "dtc": {"max_depth": [None, 3, 5, 10]},
+    "rfr": {"n_estimators": [10, 50, 100], "max_depth": [None, 5, 10]},
+    "dtr": {"max_depth": [None, 3, 5, 10]},
+    "lar": {"alpha": [0.001, 0.01, 0.1, 1.0]},
+    "rr": {"alpha": [0.001, 0.01, 0.1, 1.0]},
+    "lir": {},
 }
 
 # ---------------------------------------------------------------------------
@@ -102,11 +93,7 @@ def _auto_preprocess(df: pd.DataFrame, target_column: str) -> tuple[pd.DataFrame
     for col in df.columns:
         if col == target_column:
             continue
-        if (
-            pd.api.types.is_string_dtype(df[col])
-            or df[col].dtype == object
-            or str(df[col].dtype) == "category"
-        ):
+        if pd.api.types.is_string_dtype(df[col]) or df[col].dtype == object or str(df[col].dtype) == "category":
             le = LabelEncoder()
             df[col] = le.fit_transform(df[col].fillna("nan").astype(str))
             encoding_map[col] = {str(cls): int(idx) for idx, cls in enumerate(le.classes_)}
@@ -277,8 +264,7 @@ def tune_hyperparameters(
         searcher = GridSearchCV(estimator, pg, cv=cv, scoring=scoring, return_train_score=False)
     else:
         searcher = RandomizedSearchCV(
-            estimator, pg, cv=cv, n_iter=n_iter, scoring=scoring,
-            random_state=42, return_train_score=False
+            estimator, pg, cv=cv, n_iter=n_iter, scoring=scoring, random_state=42, return_train_score=False
         )
 
     progress.append(info(f"Running {search} search", f"cv={cv}"))
@@ -291,7 +277,7 @@ def tune_hyperparameters(
     top_results = results_df[["mean_test_score", "std_test_score", "params"]].to_dict("records")
 
     # Save best model
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
+    ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
     models_dir = path.parent / MODELS_DIR
     models_dir.mkdir(exist_ok=True)
     mp = models_dir / f"{path.stem}_{model}_tuned_{ts}.pkl"
@@ -307,7 +293,7 @@ def tune_hyperparameters(
         "model_type": type(searcher.best_estimator_).__name__,
         "task": task,
         "trained_on": path.name,
-        "training_date": datetime.now(timezone.utc).isoformat(),
+        "training_date": datetime.now(UTC).isoformat(),
         "feature_columns": list(df.drop(columns=[target_column]).columns),
         "target_column": target_column,
         "encoding_map": encoding_map,
@@ -321,9 +307,9 @@ def tune_hyperparameters(
     _save_model(searcher.best_estimator_, mp, metadata)
     progress.append(ok("Saved best model", mp.name))
 
-    append_receipt(str(path), "tune_hyperparameters",
-                   {"model": model, "task": task, "search": search},
-                   "success", backup)
+    append_receipt(
+        str(path), "tune_hyperparameters", {"model": model, "task": task, "search": search}, "success", backup
+    )
 
     resp = {
         "success": True,
@@ -365,7 +351,9 @@ def export_model(
     except ValueError as exc:
         return _error(str(exc), "Check that model_path is inside your home directory.")
     if not src_path.exists():
-        return _error(f"Model file not found: {model_path}", "Use train_classifier() or train_regressor() to train a model first.")
+        return _error(
+            f"Model file not found: {model_path}", "Use train_classifier() or train_regressor() to train a model first."
+        )  # noqa: E501
     if src_path.suffix.lower() != ".pkl":
         return _error(f"Expected .pkl file, got {src_path.suffix!r}", "Provide a path to a .pkl model file.")
 
@@ -453,7 +441,9 @@ def read_model_report(model_path: str) -> dict:
     except ValueError as exc:
         return _error(str(exc), "Check that model_path is inside your home directory.")
     if not path.exists():
-        return _error(f"Model file not found: {model_path}", "Use train_classifier() or train_regressor() to train a model first.")
+        return _error(
+            f"Model file not found: {model_path}", "Use train_classifier() or train_regressor() to train a model first."
+        )  # noqa: E501
 
     try:
         model_obj, metadata = _load_model(str(path))
@@ -471,10 +461,7 @@ def read_model_report(model_path: str) -> dict:
     feature_importance: list[dict] = []
     if model_obj is not None and hasattr(model_obj, "feature_importances_"):
         importances = model_obj.feature_importances_
-        fi_pairs = sorted(
-            zip(feature_columns, importances.tolist()),
-            key=lambda x: x[1], reverse=True
-        )[:10]
+        fi_pairs = sorted(zip(feature_columns, importances.tolist()), key=lambda x: x[1], reverse=True)[:10]
         feature_importance = [{"feature": f, "importance": round(i, 4)} for f, i in fi_pairs]
 
     # Confusion matrix from metadata if stored
@@ -568,6 +555,7 @@ def run_profiling_report(
     # Try ydata-profiling first; fall back to built-in Plotly report
     try:
         from ydata_profiling import ProfileReport
+
         minimal = is_constrained_mode()
         profile = ProfileReport(df, minimal=minimal, title=path.name)
         out_path_resolved.parent.mkdir(parents=True, exist_ok=True)
@@ -580,16 +568,15 @@ def run_profiling_report(
 
     if not ydata_used:
         # Built-in Plotly-based profiling report
+        import plotly.graph_objects as go
+
         from shared.html_theme import (
-            _open_file as _of,
             build_html_report,
             data_table_html,
             get_theme,
             metrics_cards_html,
             plotly_div,
         )
-        import plotly.express as px
-        import plotly.graph_objects as go
 
         t = get_theme("light")
         sections: list[dict] = []
@@ -600,56 +587,89 @@ def run_profiling_report(
         total_cells = len(df) * len(df.columns)
         miss_pct = round(missing_total / total_cells * 100, 2) if total_cells else 0.0
         dup_rows_n = int(df.duplicated().sum())
-        sections.append({"id": "overview", "heading": "Overview", "html": metrics_cards_html({
-            "rows": f"{len(df):,}", "columns": len(df.columns),
-            "numeric_cols": len(numeric_cols),
-            "missing_cells": f"{miss_pct}%", "duplicate_rows": dup_rows_n,
-        })})
+        sections.append(
+            {
+                "id": "overview",
+                "heading": "Overview",
+                "html": metrics_cards_html(
+                    {
+                        "rows": f"{len(df):,}",
+                        "columns": len(df.columns),
+                        "numeric_cols": len(numeric_cols),
+                        "missing_cells": f"{miss_pct}%",
+                        "duplicate_rows": dup_rows_n,
+                    }
+                ),
+            }
+        )
 
         # Distributions
         if numeric_cols:
             from plotly.subplots import make_subplots
+
             show = numeric_cols[:12]
             cols_n = min(3, len(show))
             rows_n = (len(show) + cols_n - 1) // cols_n
             fig = make_subplots(rows=rows_n, cols=cols_n, subplot_titles=show)
             for i, col in enumerate(show):
-                fig.add_trace(go.Histogram(x=df[col].dropna(), name=col,
-                                           showlegend=False, marker_color=t["accent"]),
-                              row=i // cols_n + 1, col=i % cols_n + 1)
-            fig.update_layout(title="Distributions", template=t["plotly_template"],
-                              paper_bgcolor=t["paper_color"], plot_bgcolor=t["bg_color"],
-                              font_color=t["text_color"], height=280 * rows_n,
-                              margin=dict(l=10, r=10, t=50, b=10))
-            sections.append({"id": "dist", "heading": "Distributions",
-                              "html": plotly_div(fig, height=280 * rows_n + 60)})
+                fig.add_trace(
+                    go.Histogram(x=df[col].dropna(), name=col, showlegend=False, marker_color=t["accent"]),
+                    row=i // cols_n + 1,
+                    col=i % cols_n + 1,
+                )
+            fig.update_layout(
+                title="Distributions",
+                template=t["plotly_template"],
+                paper_bgcolor=t["paper_color"],
+                plot_bgcolor=t["bg_color"],
+                font_color=t["text_color"],
+                height=280 * rows_n,
+                margin=dict(l=10, r=10, t=50, b=10),
+            )
+            sections.append(
+                {"id": "dist", "heading": "Distributions", "html": plotly_div(fig, height=280 * rows_n + 60)}
+            )
 
         if len(numeric_cols) >= 2:
             corr = df[numeric_cols].corr()
-            fig_c = go.Figure(go.Heatmap(z=corr.values, x=corr.columns.tolist(),
-                                         y=corr.index.tolist(), colorscale="RdBu_r", zmid=0,
-                                         text=[[f"{v:.2f}" for v in row] for row in corr.values],
-                                         texttemplate="%{text}"))
-            fig_c.update_layout(title="Correlation", template=t["plotly_template"],
-                                paper_bgcolor=t["paper_color"], plot_bgcolor=t["bg_color"],
-                                font_color=t["text_color"], height=480,
-                                margin=dict(l=10, r=10, t=50, b=10))
-            sections.append({"id": "corr", "heading": "Correlation Heatmap",
-                              "html": plotly_div(fig_c, 520)})
+            fig_c = go.Figure(
+                go.Heatmap(
+                    z=corr.values,
+                    x=corr.columns.tolist(),
+                    y=corr.index.tolist(),
+                    colorscale="RdBu_r",
+                    zmid=0,
+                    text=[[f"{v:.2f}" for v in row] for row in corr.values],
+                    texttemplate="%{text}",
+                )
+            )
+            fig_c.update_layout(
+                title="Correlation",
+                template=t["plotly_template"],
+                paper_bgcolor=t["paper_color"],
+                plot_bgcolor=t["bg_color"],
+                font_color=t["text_color"],
+                height=480,
+                margin=dict(l=10, r=10, t=50, b=10),
+            )
+            sections.append({"id": "corr", "heading": "Correlation Heatmap", "html": plotly_div(fig_c, 520)})
 
         if numeric_cols:
             desc = df[numeric_cols[:12]].describe().round(3).transpose()
             desc.index.name = "column"
             rows_data = [{"column": idx, **row.to_dict()} for idx, row in desc.iterrows()]
-            sections.append({"id": "stats", "heading": "Summary Statistics",
-                              "html": data_table_html(rows_data)})
+            sections.append({"id": "stats", "heading": "Summary Statistics", "html": data_table_html(rows_data)})
 
         plotly_cdn = '<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>'
         from datetime import datetime as _dt
+
         html = build_html_report(
             title=f"Profile Report — {path.name}",
             subtitle=f"Generated {_dt.now().strftime('%Y-%m-%d %H:%M')} · {len(df):,} rows",
-            sections=sections, theme="light", open_browser=False, output_path="",
+            sections=sections,
+            theme="light",
+            open_browser=False,
+            output_path="",
         )
         html = html.replace("</head>", f"  {plotly_cdn}\n</head>")
         out_path_resolved.parent.mkdir(parents=True, exist_ok=True)
@@ -657,6 +677,7 @@ def run_profiling_report(
         progress.append(ok("Saved Plotly profile report", out_path_resolved.name))
 
     from shared.html_theme import _open_file
+
     _open_file(out_path_resolved)
 
     file_size_kb = out_path_resolved.stat().st_size // 1024 if out_path_resolved.exists() else 0
@@ -765,7 +786,7 @@ def apply_dimensionality_reduction(
     # Build output DataFrame: drop feature_columns, add component columns
     df_out = df.drop(columns=feature_columns).copy()
     for i in range(nc):
-        df_out[f"component_{i+1}"] = x_reduced[:, i]
+        df_out[f"component_{i + 1}"] = x_reduced[:, i]
 
     backup = ""
     if out_path.exists():
@@ -779,9 +800,13 @@ def apply_dimensionality_reduction(
     df_out.to_csv(out_path, index=False)
     progress.append(ok("Saved reduced dataset", out_path.name))
 
-    append_receipt(str(path), "apply_dimensionality_reduction",
-                   {"method": method, "n_components": nc, "feature_columns": feature_columns},
-                   "success", backup)
+    append_receipt(
+        str(path),
+        "apply_dimensionality_reduction",
+        {"method": method, "n_components": nc, "feature_columns": feature_columns},
+        "success",
+        backup,
+    )
 
     resp = {
         "success": True,
@@ -799,7 +824,6 @@ def apply_dimensionality_reduction(
     return resp
 
 
-
 # ---------------------------------------------------------------------------
 # Tool: generate_training_report
 # ---------------------------------------------------------------------------
@@ -815,6 +839,7 @@ def generate_training_report(
     """Generate HTML report with metrics, confusion matrix, feature importance."""
     import plotly.express as px
     import plotly.graph_objects as go
+
     from shared.html_theme import (
         _open_file,
         build_html_report,
@@ -830,7 +855,9 @@ def generate_training_report(
     except ValueError as exc:
         return _error(str(exc), "Check that model_path is inside your home directory.")
     if not mp.exists():
-        return _error(f"Model file not found: {model_path}", "Train a model first with train_classifier() or train_regressor().")
+        return _error(
+            f"Model file not found: {model_path}", "Train a model first with train_classifier() or train_regressor()."
+        )  # noqa: E501
     if mp.suffix.lower() != ".pkl":
         return _error(f"Expected .pkl file, got {mp.suffix!r}", "Provide a path to a .pkl model file.")
 
@@ -882,25 +909,33 @@ def generate_training_report(
         if k not in ("confusion_matrix", "classification_report") and not isinstance(v, dict):
             overview_cards[k] = v
 
-    sections.append({
-        "id": "overview",
-        "heading": "Model Overview",
-        "html": metrics_cards_html(overview_cards),
-    })
+    sections.append(
+        {
+            "id": "overview",
+            "heading": "Model Overview",
+            "html": metrics_cards_html(overview_cards),
+        }
+    )
     progress.append(ok("Overview section", model_type))
 
     # --- Metrics section ---
-    clean_metrics = {k: v for k, v in metrics.items()
-                     if k not in ("confusion_matrix", "classification_report")
-                     and not isinstance(v, dict)}
+    clean_metrics = {
+        k: v
+        for k, v in metrics.items()
+        if k not in ("confusion_matrix", "classification_report") and not isinstance(v, dict)
+    }
     if clean_metrics:
-        metric_rows = [{"metric": k.replace("_", " ").title(), "value": f"{v:.4f}" if isinstance(v, float) else str(v)}
-                       for k, v in clean_metrics.items()]
-        sections.append({
-            "id": "metrics",
-            "heading": "Performance Metrics",
-            "html": data_table_html(metric_rows),
-        })
+        metric_rows = [
+            {"metric": k.replace("_", " ").title(), "value": f"{v:.4f}" if isinstance(v, float) else str(v)}
+            for k, v in clean_metrics.items()
+        ]
+        sections.append(
+            {
+                "id": "metrics",
+                "heading": "Performance Metrics",
+                "html": data_table_html(metric_rows),
+            }
+        )
 
     # --- Confusion matrix heatmap ---
     cm_data = metrics.get("confusion_matrix", {})
@@ -913,15 +948,17 @@ def generate_training_report(
             tn = cm_data.get("TN", 0)
             z = [[tn, fp], [fn, tp]]
             labels = ["Negative", "Positive"]
-            fig_cm = go.Figure(data=go.Heatmap(
-                z=z,
-                x=labels,
-                y=labels,
-                colorscale="Blues",
-                text=[[str(v) for v in row] for row in z],
-                texttemplate="%{text}",
-                showscale=True,
-            ))
+            fig_cm = go.Figure(
+                data=go.Heatmap(
+                    z=z,
+                    x=labels,
+                    y=labels,
+                    colorscale="Blues",
+                    text=[[str(v) for v in row] for row in z],
+                    texttemplate="%{text}",
+                    showscale=True,
+                )
+            )
             fig_cm.update_layout(
                 title="Confusion Matrix",
                 xaxis_title="Predicted",
@@ -933,20 +970,19 @@ def generate_training_report(
                 height=380,
                 margin=dict(l=10, r=10, t=50, b=10),
             )
-            sections.append({
-                "id": "confusion",
-                "heading": "Confusion Matrix",
-                "html": plotly_div(fig_cm, height=420),
-            })
+            sections.append(
+                {
+                    "id": "confusion",
+                    "heading": "Confusion Matrix",
+                    "html": plotly_div(fig_cm, height=420),
+                }
+            )
             progress.append(ok("Confusion matrix chart", "binary classification"))
 
     # --- Feature importance ---
     if model_obj is not None and hasattr(model_obj, "feature_importances_"):
         importances = model_obj.feature_importances_
-        fi_pairs = sorted(
-            zip(feature_columns, importances.tolist()),
-            key=lambda x: x[1], reverse=True
-        )[:20]
+        fi_pairs = sorted(zip(feature_columns, importances.tolist()), key=lambda x: x[1], reverse=True)[:20]
         fi_features = [p[0] for p in fi_pairs]
         fi_values = [p[1] for p in fi_pairs]
 
@@ -967,24 +1003,27 @@ def generate_training_report(
             height=max(300, len(fi_pairs) * 28 + 80),
             margin=dict(l=10, r=10, t=50, b=10),
         )
-        sections.append({
-            "id": "features",
-            "heading": "Feature Importance",
-            "html": plotly_div(fig_fi, height=max(300, len(fi_pairs) * 28 + 120)),
-        })
+        sections.append(
+            {
+                "id": "features",
+                "heading": "Feature Importance",
+                "html": plotly_div(fig_fi, height=max(300, len(fi_pairs) * 28 + 120)),
+            }
+        )
         progress.append(ok("Feature importance chart", f"{len(fi_pairs)} features"))
 
     # --- Classification report table ---
     clf_report = metadata.get("classification_report", "")
     if clf_report:
-        sections.append({
-            "id": "clf_report",
-            "heading": "Classification Report",
-            "html": f"<pre style='font-size:0.85rem;overflow-x:auto;'>{clf_report[:2000]}</pre>",
-        })
+        sections.append(
+            {
+                "id": "clf_report",
+                "heading": "Classification Report",
+                "html": f"<pre style='font-size:0.85rem;overflow-x:auto;'>{clf_report[:2000]}</pre>",
+            }
+        )
 
     # --- Build report ---
-    from datetime import datetime
     subtitle = f"Model: {model_type} · Task: {task} · Trained: {training_date[:10] if training_date else 'unknown'}"
 
     plotly_cdn = '<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>'
@@ -1025,6 +1064,7 @@ def generate_training_report(
 # plot_roc_curve
 # ---------------------------------------------------------------------------
 
+
 def plot_roc_curve(
     model_path: str,
     file_path: str,
@@ -1035,12 +1075,12 @@ def plot_roc_curve(
 ) -> dict:
     """Plot ROC curve for a classifier model. Saves interactive HTML."""
     import pickle
-    import numpy as np
+
     import pandas as pd
 
     from shared.file_utils import resolve_path
-    from shared.progress import ok, fail, info
-    from shared.html_theme import save_chart, get_theme, _open_file
+    from shared.html_theme import get_theme, save_chart
+    from shared.progress import info, ok
 
     progress = []
     try:
@@ -1050,21 +1090,34 @@ def plot_roc_curve(
         return {"success": False, "error": str(exc), "hint": "Check file paths.", "token_estimate": 30}
 
     if not mp.exists():
-        return {"success": False, "error": f"Model not found: {model_path}",
-                "hint": "Train a classifier first.", "token_estimate": 30}
+        return {
+            "success": False,
+            "error": f"Model not found: {model_path}",
+            "hint": "Train a classifier first.",
+            "token_estimate": 30,
+        }
     if not dp.exists():
-        return {"success": False, "error": f"File not found: {file_path}",
-                "hint": "Check file path.", "token_estimate": 30}
+        return {
+            "success": False,
+            "error": f"File not found: {file_path}",
+            "hint": "Check file path.",
+            "token_estimate": 30,
+        }
 
     if dry_run:
-        return {"success": True, "op": "plot_roc_curve", "dry_run": True,
-                "model_path": str(mp), "file_path": str(dp),
-                "progress": [info("Dry run — no files written")],
-                "token_estimate": 40}
+        return {
+            "success": True,
+            "op": "plot_roc_curve",
+            "dry_run": True,
+            "model_path": str(mp),
+            "file_path": str(dp),
+            "progress": [info("Dry run — no files written")],
+            "token_estimate": 40,
+        }
 
     try:
         import plotly.graph_objects as go
-        from sklearn.metrics import roc_curve, auc
+        from sklearn.metrics import auc, roc_curve
         from sklearn.preprocessing import label_binarize
 
         with open(mp, "rb") as f:
@@ -1075,8 +1128,12 @@ def plot_roc_curve(
 
         task = metadata.get("task", "classification")
         if task != "classification":
-            return {"success": False, "error": "ROC curve is only for classifiers.",
-                    "hint": "Use plot_predictions_vs_actual for regression.", "token_estimate": 30}
+            return {
+                "success": False,
+                "error": "ROC curve is only for classifiers.",
+                "hint": "Use plot_predictions_vs_actual for regression.",
+                "token_estimate": 30,
+            }
 
         feature_columns = metadata.get("feature_columns", [])
         target_column = metadata.get("target_column", "")
@@ -1088,24 +1145,32 @@ def plot_roc_curve(
         # Encode
         for col, mapping in encoding_map.items():
             if col in df.columns and col != target_column:
-                inv = {v: k for k, v in mapping.items()}
                 df[col] = df[col].map(mapping).fillna(df[col])
 
         available = [c for c in feature_columns if c in df.columns]
         if not available:
-            return {"success": False, "error": "No feature columns found in dataset.",
-                    "hint": "Use the same dataset used for training.", "token_estimate": 30}
+            return {
+                "success": False,
+                "error": "No feature columns found in dataset.",
+                "hint": "Use the same dataset used for training.",
+                "token_estimate": 30,
+            }
 
         X = df[available].select_dtypes(include="number").fillna(0)
         y_true = df[target_column] if target_column in df.columns else None
 
         if y_true is None:
-            return {"success": False, "error": f"Target column '{target_column}' not found.",
-                    "hint": "Provide the same dataset used for training.", "token_estimate": 30}
+            return {
+                "success": False,
+                "error": f"Target column '{target_column}' not found.",
+                "hint": "Provide the same dataset used for training.",
+                "token_estimate": 30,
+            }
 
         # Encode target if needed
         if y_true.dtype == object or str(y_true.dtype) in ("string", "StringDtype"):
             from sklearn.preprocessing import LabelEncoder
+
             le = LabelEncoder()
             y_true = pd.Series(le.fit_transform(y_true))
 
@@ -1118,6 +1183,7 @@ def plot_roc_curve(
             # Try XGBoost Booster
             try:
                 import xgboost as xgb
+
                 if isinstance(model, xgb.Booster):
                     dmat = xgb.DMatrix(X)
                     raw_preds = model.predict(dmat)
@@ -1130,10 +1196,12 @@ def plot_roc_curve(
                 pass
 
         if not has_proba:
-            return {"success": False,
-                    "error": "Model does not support probability estimates for ROC curve.",
-                    "hint": "Use a classifier that supports predict_proba (lr, rf, xgb, nb, dtc).",
-                    "token_estimate": 40}
+            return {
+                "success": False,
+                "error": "Model does not support probability estimates for ROC curve.",
+                "hint": "Use a classifier that supports predict_proba (lr, rf, xgb, nb, dtc).",
+                "token_estimate": 40,
+            }
 
         if hasattr(model, "predict_proba"):
             y_prob = model.predict_proba(X)
@@ -1146,9 +1214,11 @@ def plot_roc_curve(
             fpr, tpr, _ = roc_curve(y_true, y_prob[:, 1])
             roc_auc = auc(fpr, tpr)
             auc_scores["binary"] = round(roc_auc, 4)
-            fig.add_trace(go.Scatter(x=fpr, y=tpr, mode="lines",
-                                     name=f"ROC (AUC = {roc_auc:.3f})",
-                                     line=dict(color=t["accent"], width=2)))
+            fig.add_trace(
+                go.Scatter(
+                    x=fpr, y=tpr, mode="lines", name=f"ROC (AUC = {roc_auc:.3f})", line=dict(color=t["accent"], width=2)
+                )
+            )
         else:
             y_bin = label_binarize(y_true, classes=classes)
             colors = [t["accent"], t["success"], t["warning"], t["danger"]]
@@ -1156,14 +1226,22 @@ def plot_roc_curve(
                 fpr, tpr, _ = roc_curve(y_bin[:, i], y_prob[:, i])
                 roc_auc = auc(fpr, tpr)
                 auc_scores[str(cls)] = round(roc_auc, 4)
-                fig.add_trace(go.Scatter(x=fpr, y=tpr, mode="lines",
-                                         name=f"Class {cls} (AUC={roc_auc:.3f})",
-                                         line=dict(color=colors[i % len(colors)], width=2)))
+                fig.add_trace(
+                    go.Scatter(
+                        x=fpr,
+                        y=tpr,
+                        mode="lines",
+                        name=f"Class {cls} (AUC={roc_auc:.3f})",
+                        line=dict(color=colors[i % len(colors)], width=2),
+                    )
+                )
 
         # Diagonal reference
-        fig.add_trace(go.Scatter(x=[0, 1], y=[0, 1], mode="lines",
-                                 name="Random (AUC=0.5)",
-                                 line=dict(color=t["grid_color"], dash="dash")))
+        fig.add_trace(
+            go.Scatter(
+                x=[0, 1], y=[0, 1], mode="lines", name="Random (AUC=0.5)", line=dict(color=t["grid_color"], dash="dash")
+            )
+        )
 
         fig.update_layout(
             title="ROC Curve",
@@ -1174,8 +1252,9 @@ def plot_roc_curve(
         )
 
         out_path_str = output_path or str(dp.parent / f"{dp.stem}_roc_curve.html")
-        out_abs, out_name = save_chart(fig, out_path_str, theme=theme, open_browser=open_browser,
-                                       title=f"ROC Curve — {mp.stem}")
+        out_abs, out_name = save_chart(
+            fig, out_path_str, theme=theme, open_browser=open_browser, title=f"ROC Curve — {mp.stem}"
+        )
         progress.append(ok("Saved ROC curve", out_name))
 
         resp = {
@@ -1191,13 +1270,18 @@ def plot_roc_curve(
         return resp
 
     except Exception as exc:
-        return {"success": False, "error": str(exc), "hint": "Check model and data compatibility.",
-                "token_estimate": 30}
+        return {
+            "success": False,
+            "error": str(exc),
+            "hint": "Check model and data compatibility.",
+            "token_estimate": 30,
+        }
 
 
 # ---------------------------------------------------------------------------
 # plot_learning_curve
 # ---------------------------------------------------------------------------
+
 
 def plot_learning_curve(
     file_path: str,
@@ -1211,12 +1295,11 @@ def plot_learning_curve(
     dry_run: bool = False,
 ) -> dict:
     """Plot learning curve (train vs val score vs training size). HTML output."""
-    import numpy as np
     import pandas as pd
 
     from shared.file_utils import resolve_path
-    from shared.progress import ok, fail, info
-    from shared.html_theme import save_chart, get_theme
+    from shared.html_theme import get_theme, save_chart
+    from shared.progress import info, ok
 
     progress = []
     try:
@@ -1225,13 +1308,22 @@ def plot_learning_curve(
         return {"success": False, "error": str(exc), "hint": "Check file path.", "token_estimate": 30}
 
     if not dp.exists():
-        return {"success": False, "error": f"File not found: {file_path}",
-                "hint": "Check file path.", "token_estimate": 30}
+        return {
+            "success": False,
+            "error": f"File not found: {file_path}",
+            "hint": "Check file path.",
+            "token_estimate": 30,
+        }
 
     if dry_run:
-        return {"success": True, "op": "plot_learning_curve", "dry_run": True,
-                "file_path": str(dp), "progress": [info("Dry run — no files written")],
-                "token_estimate": 40}
+        return {
+            "success": True,
+            "op": "plot_learning_curve",
+            "dry_run": True,
+            "file_path": str(dp),
+            "progress": [info("Dry run — no files written")],
+            "token_estimate": 40,
+        }
 
     try:
         import plotly.graph_objects as go
@@ -1242,8 +1334,12 @@ def plot_learning_curve(
         progress.append(ok("Loaded data", f"{len(df)} rows"))
 
         if target_column not in df.columns:
-            return {"success": False, "error": f"Target column '{target_column}' not found.",
-                    "hint": "Use inspect_dataset() to list column names.", "token_estimate": 30}
+            return {
+                "success": False,
+                "error": f"Target column '{target_column}' not found.",
+                "hint": "Use inspect_dataset() to list column names.",
+                "token_estimate": 30,
+            }
 
         df = df.dropna(subset=[target_column])
         y = df[target_column]
@@ -1269,11 +1365,16 @@ def plot_learning_curve(
         model_map = CLASSIFIERS if task == "classification" else REGRESSORS
         if model not in model_map:
             allowed = ", ".join(model_map.keys())
-            return {"success": False, "error": f"Unknown model '{model}'. Allowed: {allowed}",
-                    "hint": "Check model string.", "token_estimate": 30}
+            return {
+                "success": False,
+                "error": f"Unknown model '{model}'. Allowed: {allowed}",
+                "hint": "Check model string.",
+                "token_estimate": 30,
+            }
 
         mod_name, cls_name, kwargs = model_map[model]
         import importlib
+
         cls = getattr(importlib.import_module(mod_name), cls_name)
         estimator = cls(**kwargs)
 
@@ -1293,18 +1394,26 @@ def plot_learning_curve(
         t = get_theme(theme)
         fig = go.Figure()
 
-        fig.add_trace(go.Scatter(
-            x=train_sizes_abs.tolist(), y=train_mean.tolist(),
-            mode="lines+markers", name="Train score",
-            line=dict(color=t["accent"], width=2),
-            error_y=dict(type="data", array=train_std.tolist(), visible=True, color=t["accent"]),
-        ))
-        fig.add_trace(go.Scatter(
-            x=train_sizes_abs.tolist(), y=val_mean.tolist(),
-            mode="lines+markers", name="Validation score",
-            line=dict(color=t["success"], width=2),
-            error_y=dict(type="data", array=val_std.tolist(), visible=True, color=t["success"]),
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=train_sizes_abs.tolist(),
+                y=train_mean.tolist(),
+                mode="lines+markers",
+                name="Train score",
+                line=dict(color=t["accent"], width=2),
+                error_y=dict(type="data", array=train_std.tolist(), visible=True, color=t["accent"]),
+            )
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=train_sizes_abs.tolist(),
+                y=val_mean.tolist(),
+                mode="lines+markers",
+                name="Validation score",
+                line=dict(color=t["success"], width=2),
+                error_y=dict(type="data", array=val_std.tolist(), visible=True, color=t["success"]),
+            )
+        )
 
         fig.update_layout(
             title=f"Learning Curve — {model} ({task})",
@@ -1314,8 +1423,9 @@ def plot_learning_curve(
         )
 
         out_path_str = output_path or str(dp.parent / f"{dp.stem}_{model}_learning_curve.html")
-        out_abs, out_name = save_chart(fig, out_path_str, theme=theme, open_browser=open_browser,
-                                       title=f"Learning Curve — {model}")
+        out_abs, out_name = save_chart(
+            fig, out_path_str, theme=theme, open_browser=open_browser, title=f"Learning Curve — {model}"
+        )
         progress.append(ok("Saved learning curve", out_name))
 
         resp = {
@@ -1332,13 +1442,18 @@ def plot_learning_curve(
         return resp
 
     except Exception as exc:
-        return {"success": False, "error": str(exc),
-                "hint": "Check data and model compatibility.", "token_estimate": 30}
+        return {
+            "success": False,
+            "error": str(exc),
+            "hint": "Check data and model compatibility.",
+            "token_estimate": 30,
+        }
 
 
 # ---------------------------------------------------------------------------
 # plot_predictions_vs_actual
 # ---------------------------------------------------------------------------
+
 
 def plot_predictions_vs_actual(
     model_path: str,
@@ -1350,12 +1465,12 @@ def plot_predictions_vs_actual(
 ) -> dict:
     """Scatter plot of predicted vs actual values for regression. HTML."""
     import pickle
-    import numpy as np
+
     import pandas as pd
 
     from shared.file_utils import resolve_path
-    from shared.progress import ok, fail, info
-    from shared.html_theme import save_chart, get_theme
+    from shared.html_theme import get_theme, save_chart
+    from shared.progress import info, ok
 
     progress = []
     try:
@@ -1365,15 +1480,28 @@ def plot_predictions_vs_actual(
         return {"success": False, "error": str(exc), "hint": "Check file paths.", "token_estimate": 30}
 
     if not mp.exists():
-        return {"success": False, "error": f"Model not found: {model_path}",
-                "hint": "Train a regressor first.", "token_estimate": 30}
+        return {
+            "success": False,
+            "error": f"Model not found: {model_path}",
+            "hint": "Train a regressor first.",
+            "token_estimate": 30,
+        }
     if not dp.exists():
-        return {"success": False, "error": f"File not found: {file_path}",
-                "hint": "Check file path.", "token_estimate": 30}
+        return {
+            "success": False,
+            "error": f"File not found: {file_path}",
+            "hint": "Check file path.",
+            "token_estimate": 30,
+        }
 
     if dry_run:
-        return {"success": True, "op": "plot_predictions_vs_actual", "dry_run": True,
-                "progress": [info("Dry run — no files written")], "token_estimate": 40}
+        return {
+            "success": True,
+            "op": "plot_predictions_vs_actual",
+            "dry_run": True,
+            "progress": [info("Dry run — no files written")],
+            "token_estimate": 40,
+        }
 
     try:
         import plotly.graph_objects as go
@@ -1387,8 +1515,12 @@ def plot_predictions_vs_actual(
 
         task = metadata.get("task", "regression")
         if task != "regression":
-            return {"success": False, "error": "This chart is only for regression models.",
-                    "hint": "Use plot_roc_curve for classifiers.", "token_estimate": 30}
+            return {
+                "success": False,
+                "error": "This chart is only for regression models.",
+                "hint": "Use plot_roc_curve for classifiers.",
+                "token_estimate": 30,
+            }
 
         feature_columns = metadata.get("feature_columns", [])
         target_column = metadata.get("target_column", "")
@@ -1406,11 +1538,16 @@ def plot_predictions_vs_actual(
         y_true = df[target_column].values if target_column in df.columns else None
 
         if y_true is None:
-            return {"success": False, "error": f"Target '{target_column}' not found.",
-                    "hint": "Provide the same dataset used for training.", "token_estimate": 30}
+            return {
+                "success": False,
+                "error": f"Target '{target_column}' not found.",
+                "hint": "Provide the same dataset used for training.",
+                "token_estimate": 30,
+            }
 
         try:
             import xgboost as xgb
+
             if isinstance(model, xgb.Booster):
                 dmat = xgb.DMatrix(X)
                 y_pred = model.predict(dmat)
@@ -1425,17 +1562,26 @@ def plot_predictions_vs_actual(
 
         t = get_theme(theme)
         fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=y_true.tolist(), y=y_pred.tolist(),
-            mode="markers", name="Predictions",
-            marker=dict(color=t["accent"], opacity=0.6, size=6),
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=y_true.tolist(),
+                y=y_pred.tolist(),
+                mode="markers",
+                name="Predictions",
+                marker=dict(color=t["accent"], opacity=0.6, size=6),
+            )
+        )
         # Perfect prediction line
         mn, mx = float(min(y_true.min(), y_pred.min())), float(max(y_true.max(), y_pred.max()))
-        fig.add_trace(go.Scatter(
-            x=[mn, mx], y=[mn, mx], mode="lines",
-            name="Perfect fit", line=dict(color=t["danger"], dash="dash"),
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=[mn, mx],
+                y=[mn, mx],
+                mode="lines",
+                name="Perfect fit",
+                line=dict(color=t["danger"], dash="dash"),
+            )
+        )
 
         fig.update_layout(
             title=f"Predictions vs Actual — R²={r2:.3f}",
@@ -1445,8 +1591,9 @@ def plot_predictions_vs_actual(
         )
 
         out_path_str = output_path or str(dp.parent / f"{dp.stem}_pred_vs_actual.html")
-        out_abs, out_name = save_chart(fig, out_path_str, theme=theme, open_browser=open_browser,
-                                       title="Predictions vs Actual")
+        out_abs, out_name = save_chart(
+            fig, out_path_str, theme=theme, open_browser=open_browser, title="Predictions vs Actual"
+        )
         progress.append(ok("Saved chart", out_name))
 
         resp = {
@@ -1462,13 +1609,18 @@ def plot_predictions_vs_actual(
         return resp
 
     except Exception as exc:
-        return {"success": False, "error": str(exc),
-                "hint": "Check model and data compatibility.", "token_estimate": 30}
+        return {
+            "success": False,
+            "error": str(exc),
+            "hint": "Check model and data compatibility.",
+            "token_estimate": 30,
+        }
 
 
 # ---------------------------------------------------------------------------
 # generate_cluster_report
 # ---------------------------------------------------------------------------
+
 
 def generate_cluster_report(
     file_path: str,
@@ -1480,12 +1632,18 @@ def generate_cluster_report(
     dry_run: bool = False,
 ) -> dict:
     """Generate HTML cluster visualization report with scatter and profile."""
-    import numpy as np
     import pandas as pd
 
     from shared.file_utils import resolve_path
-    from shared.progress import ok, fail, info
-    from shared.html_theme import build_html_report, plotly_div, metrics_cards_html, data_table_html, get_theme, _open_file
+    from shared.html_theme import (
+        _open_file,
+        build_html_report,
+        data_table_html,
+        get_theme,
+        metrics_cards_html,
+        plotly_div,
+    )
+    from shared.progress import info, ok
 
     progress = []
     try:
@@ -1494,12 +1652,21 @@ def generate_cluster_report(
         return {"success": False, "error": str(exc), "hint": "Check file path.", "token_estimate": 30}
 
     if not dp.exists():
-        return {"success": False, "error": f"File not found: {file_path}",
-                "hint": "Check file path.", "token_estimate": 30}
+        return {
+            "success": False,
+            "error": f"File not found: {file_path}",
+            "hint": "Check file path.",
+            "token_estimate": 30,
+        }
 
     if dry_run:
-        return {"success": True, "op": "generate_cluster_report", "dry_run": True,
-                "progress": [info("Dry run — no files written")], "token_estimate": 40}
+        return {
+            "success": True,
+            "op": "generate_cluster_report",
+            "dry_run": True,
+            "progress": [info("Dry run — no files written")],
+            "token_estimate": 40,
+        }
 
     try:
         import plotly.express as px
@@ -1511,14 +1678,21 @@ def generate_cluster_report(
         progress.append(ok("Loaded data", f"{len(df)} rows"))
 
         if label_column not in df.columns:
-            return {"success": False, "error": f"Label column '{label_column}' not found.",
-                    "hint": "Use run_clustering(save_labels=True) first.", "token_estimate": 30}
+            return {
+                "success": False,
+                "error": f"Label column '{label_column}' not found.",
+                "hint": "Use run_clustering(save_labels=True) first.",
+                "token_estimate": 30,
+            }
 
         missing_feats = [c for c in feature_columns if c not in df.columns]
         if missing_feats:
-            return {"success": False,
-                    "error": f"Feature columns not found: {', '.join(missing_feats[:5])}",
-                    "hint": "Use inspect_dataset() to list column names.", "token_estimate": 30}
+            return {
+                "success": False,
+                "error": f"Feature columns not found: {', '.join(missing_feats[:5])}",
+                "hint": "Use inspect_dataset() to list column names.",
+                "token_estimate": 30,
+            }
 
         X = df[feature_columns].select_dtypes(include="number").fillna(0)
         labels = df[label_column].astype(str)
@@ -1533,20 +1707,25 @@ def generate_cluster_report(
             "n_samples": len(df),
             "n_features": len(X.columns),
         }
-        sections.append({
-            "id": "summary",
-            "heading": "Summary",
-            "html": metrics_cards_html(summary),
-        })
+        sections.append(
+            {
+                "id": "summary",
+                "heading": "Summary",
+                "html": metrics_cards_html(summary),
+            }
+        )
 
         # --- Cluster size table ---
-        size_rows = [{"cluster": str(k), "count": int(v),
-                      "pct": f"{v/len(df)*100:.1f}%"} for k, v in label_counts.items()]
-        sections.append({
-            "id": "cluster_sizes",
-            "heading": "Cluster Sizes",
-            "html": data_table_html(size_rows),
-        })
+        size_rows = [
+            {"cluster": str(k), "count": int(v), "pct": f"{v / len(df) * 100:.1f}%"} for k, v in label_counts.items()
+        ]
+        sections.append(
+            {
+                "id": "cluster_sizes",
+                "heading": "Cluster Sizes",
+                "html": data_table_html(size_rows),
+            }
+        )
 
         # --- PCA scatter (2D) ---
         scaler = StandardScaler()
@@ -1557,21 +1736,29 @@ def generate_cluster_report(
             coords = pca.fit_transform(X_scaled)
             explained = [round(float(v), 3) for v in pca.explained_variance_ratio_]
 
-            scatter_df = pd.DataFrame({
-                "PC1": coords[:, 0], "PC2": coords[:, 1],
-                "cluster": labels.values,
-            })
+            scatter_df = pd.DataFrame(
+                {
+                    "PC1": coords[:, 0],
+                    "PC2": coords[:, 1],
+                    "cluster": labels.values,
+                }
+            )
             fig_scatter = px.scatter(
-                scatter_df, x="PC1", y="PC2", color="cluster",
-                title=f"PCA Scatter — {explained[0]*100:.1f}%/{explained[1]*100:.1f}% variance",
+                scatter_df,
+                x="PC1",
+                y="PC2",
+                color="cluster",
+                title=f"PCA Scatter — {explained[0] * 100:.1f}%/{explained[1] * 100:.1f}% variance",
                 template=t["plotly_template"],
             )
-            sections.append({
-                "id": "scatter",
-                "heading": "PCA Cluster Scatter",
-                "html": plotly_div(fig_scatter, height=450),
-            })
-            progress.append(ok("PCA scatter", f"var explained: {sum(explained)*100:.1f}%"))
+            sections.append(
+                {
+                    "id": "scatter",
+                    "heading": "PCA Cluster Scatter",
+                    "html": plotly_div(fig_scatter, height=450),
+                }
+            )
+            progress.append(ok("PCA scatter", f"var explained: {sum(explained) * 100:.1f}%"))
 
         # --- Feature means per cluster ---
         df_feat = X.copy()
@@ -1583,29 +1770,35 @@ def generate_cluster_report(
             r.update({col: round(float(val), 3) for col, val in row.items()})
             profile_rows.append(r)
 
-        sections.append({
-            "id": "feature_profile",
-            "heading": "Feature Means by Cluster",
-            "html": data_table_html(profile_rows),
-        })
+        sections.append(
+            {
+                "id": "feature_profile",
+                "heading": "Feature Means by Cluster",
+                "html": data_table_html(profile_rows),
+            }
+        )
 
         # --- Bar chart: cluster sizes ---
-        fig_bar = go.Figure(go.Bar(
-            x=list(label_counts.keys()),
-            y=list(label_counts.values()),
-            marker_color=t["accent"],
-        ))
+        fig_bar = go.Figure(
+            go.Bar(
+                x=list(label_counts.keys()),
+                y=list(label_counts.values()),
+                marker_color=t["accent"],
+            )
+        )
         fig_bar.update_layout(
             title="Cluster Sizes",
             xaxis_title="Cluster",
             yaxis_title="Count",
             template=t["plotly_template"],
         )
-        sections.append({
-            "id": "size_chart",
-            "heading": "Cluster Size Chart",
-            "html": plotly_div(fig_bar, height=300),
-        })
+        sections.append(
+            {
+                "id": "size_chart",
+                "heading": "Cluster Size Chart",
+                "html": plotly_div(fig_bar, height=300),
+            }
+        )
 
         out_path_str = output_path or str(dp.parent / f"{dp.stem}_cluster_report.html")
         plotly_cdn = '<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>'
@@ -1620,6 +1813,7 @@ def generate_cluster_report(
         html = html.replace("</head>", f"  {plotly_cdn}\n</head>")
 
         from pathlib import Path
+
         out = Path(out_path_str).resolve()
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(html, encoding="utf-8")
@@ -1642,5 +1836,4 @@ def generate_cluster_report(
         return resp
 
     except Exception as exc:
-        return {"success": False, "error": str(exc),
-                "hint": "Check data and label column.", "token_estimate": 30}
+        return {"success": False, "error": str(exc), "hint": "Check data and label column.", "token_estimate": 30}

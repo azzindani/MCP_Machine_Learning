@@ -14,7 +14,7 @@ members = [
 shared = { path = "shared" }
 
 [tool.ruff]
-line-length = 100
+line-length = 120
 target-version = "py312"
 
 [tool.ruff.lint]
@@ -34,6 +34,7 @@ dev = [
     "plotly>=6.6.0",
     "psutil>=7.2.2",
     "pytest>=9.0.2",
+    "ruff>=0.9",
     "scikit-learn>=1.8.0",
     "xgboost>=3.2.0",
 ]

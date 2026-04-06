@@ -6,7 +6,7 @@ Receipt is stored as {file}.mcp_receipt.json alongside the data file.
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -34,7 +34,7 @@ def append_receipt(
                 records = []
 
         record: dict = {
-            "ts": datetime.now(timezone.utc).isoformat(),
+            "ts": datetime.now(UTC).isoformat(),
             "tool": tool,
             "args": args,
             "result": result,

@@ -33,9 +33,7 @@ def tune_hyperparameters(
     dry_run: bool = False,
 ) -> dict:
     """Tune hyperparameters via grid or random search. search: grid random."""
-    return engine.tune_hyperparameters(
-        file_path, target_column, model, task, search, param_grid, cv, n_iter, dry_run
-    )
+    return engine.tune_hyperparameters(file_path, target_column, model, task, search, param_grid, cv, n_iter, dry_run)
 
 
 @mcp.tool(
@@ -104,9 +102,7 @@ def apply_dimensionality_reduction(
     dry_run: bool = False,
 ) -> dict:
     """Reduce dimensions with PCA or ICA. Saves reduced dataset."""
-    return engine.apply_dimensionality_reduction(
-        file_path, feature_columns, method, n_components, output_path, dry_run
-    )
+    return engine.apply_dimensionality_reduction(file_path, feature_columns, method, n_components, output_path, dry_run)
 
 
 @mcp.tool(
@@ -125,9 +121,7 @@ def generate_training_report(
     dry_run: bool = False,
 ) -> dict:
     """Generate HTML report: metrics, confusion matrix, feature importance."""
-    return engine.generate_training_report(
-        model_path, theme, output_path, open_browser, dry_run
-    )
+    return engine.generate_training_report(model_path, theme, output_path, open_browser, dry_run)
 
 
 @mcp.tool(
@@ -147,9 +141,7 @@ def plot_roc_curve(
     dry_run: bool = False,
 ) -> dict:
     """Plot ROC curve for classifier. Saves interactive HTML."""
-    return engine.plot_roc_curve(
-        model_path, file_path, theme, output_path, open_browser, dry_run
-    )
+    return engine.plot_roc_curve(model_path, file_path, theme, output_path, open_browser, dry_run)
 
 
 @mcp.tool(
@@ -194,9 +186,7 @@ def plot_predictions_vs_actual(
     dry_run: bool = False,
 ) -> dict:
     """Scatter predicted vs actual for regression. HTML output."""
-    return engine.plot_predictions_vs_actual(
-        model_path, file_path, theme, output_path, open_browser, dry_run
-    )
+    return engine.plot_predictions_vs_actual(model_path, file_path, theme, output_path, open_browser, dry_run)
 
 
 @mcp.tool(

@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import sys
+from datetime import UTC
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import psutil
+import xgboost as xgb
 from sklearn.cluster import DBSCAN, KMeans, MeanShift
-from sklearn.decomposition import FastICA, PCA
+from sklearn.decomposition import PCA, FastICA
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.linear_model import (
     Lasso,
@@ -32,12 +33,10 @@ from sklearn.preprocessing import LabelEncoder, MinMaxScaler, StandardScaler
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
-import xgboost as xgb
-
 from shared.file_utils import resolve_path
-from shared.platform_utils import get_cv_folds, get_max_models, get_max_results
+from shared.platform_utils import get_cv_folds, get_max_models
 from shared.progress import fail, info, ok, warn
-from shared.receipt import append_receipt
+from shared.receipt import append_receipt, read_receipt_log
 from shared.version_control import snapshot
 
 logger = logging.getLogger(__name__)
@@ -105,11 +104,7 @@ def _auto_preprocess(df: pd.DataFrame, target_column: str) -> tuple[pd.DataFrame
     for col in df.columns:
         if col == target_column:
             continue
-        if (
-            pd.api.types.is_string_dtype(df[col])
-            or df[col].dtype == object
-            or str(df[col].dtype) == "category"
-        ):
+        if pd.api.types.is_string_dtype(df[col]) or df[col].dtype == object or str(df[col].dtype) == "category":
             le = LabelEncoder()
             df[col] = le.fit_transform(df[col].fillna("nan").astype(str))
             encoding_map[col] = {str(cls): int(idx) for idx, cls in enumerate(le.classes_)}
@@ -142,10 +137,9 @@ def _build_classifier(model: str, **kw: object) -> object:
     raise ValueError(f"Unknown classifier: {model!r}")
 
 
-def _build_regressor(model: str, degree: int = 5, alpha: float = 0.01,
-                     n_estimators: int = 10) -> object:
-    from sklearn.preprocessing import PolynomialFeatures
+def _build_regressor(model: str, degree: int = 5, alpha: float = 0.01, n_estimators: int = 10) -> object:
     from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import PolynomialFeatures
 
     if model == "lir":
         return LinearRegression()
@@ -164,23 +158,21 @@ def _build_regressor(model: str, degree: int = 5, alpha: float = 0.01,
     raise ValueError(f"Unknown regressor: {model!r}")
 
 
-def _fit_predict_classifier(
-    model_str: str, x_train: np.ndarray, x_test: np.ndarray,
-    y_train: np.ndarray
-) -> np.ndarray:
+def _fit_predict_classifier(model_str: str, x_train: np.ndarray, x_test: np.ndarray, y_train: np.ndarray) -> np.ndarray:
     """Fit classifier and return predictions on x_test."""
     if model_str == "xgb":
         nc = len(np.unique(y_train))
         dtrain = xgb.DMatrix(x_train, label=y_train)
         dtest = xgb.DMatrix(x_test)
         params: dict = {
-            "max_depth": 3, "eta": 0.3, "verbosity": 0,
+            "max_depth": 3,
+            "eta": 0.3,
+            "verbosity": 0,
             "objective": "multi:softprob" if nc > 2 else "binary:logistic",
         }
         if nc > 2:
             params["num_class"] = nc
-        bst = xgb.train(params, dtrain, num_boost_round=10,
-                        evals=[], verbose_eval=False)
+        bst = xgb.train(params, dtrain, num_boost_round=10, evals=[], verbose_eval=False)
         preds = bst.predict(dtest)
         if nc > 2:
             return np.asarray([np.argmax(row) for row in preds])
@@ -198,9 +190,13 @@ def _fit_predict_classifier(
 
 
 def _fit_predict_regressor(
-    model_str: str, x_train: np.ndarray, x_test: np.ndarray,
-    y_train: np.ndarray, degree: int = 5, alpha: float = 0.01,
-    n_estimators: int = 10
+    model_str: str,
+    x_train: np.ndarray,
+    x_test: np.ndarray,
+    y_train: np.ndarray,
+    degree: int = 5,
+    alpha: float = 0.01,
+    n_estimators: int = 10,
 ) -> np.ndarray:
     if model_str == "xgb":
         dtrain = xgb.DMatrix(x_train, label=y_train)
@@ -238,8 +234,7 @@ def _validate_ops(ops: list[dict]) -> tuple[bool, str]:
             strategy = op.get("strategy", "median")
             if strategy not in FILL_STRATEGIES:
                 return False, (
-                    f"Strategy '{strategy}' not valid for fill_nulls. "
-                    f"Allowed: {' '.join(sorted(FILL_STRATEGIES))}"
+                    f"Strategy '{strategy}' not valid for fill_nulls. Allowed: {' '.join(sorted(FILL_STRATEGIES))}"
                 )
         elif op_name == "scale":
             if "columns" not in op:
@@ -488,9 +483,13 @@ def run_preprocessing(
     df.to_csv(out_path_resolved, index=False)
     progress.append(ok("Saved output", out_path_resolved.name))
 
-    append_receipt(str(path), "run_preprocessing",
-                   {"ops_count": len(ops), "output_path": str(out_path_resolved)},
-                   "success", backup)
+    append_receipt(
+        str(path),
+        "run_preprocessing",
+        {"ops_count": len(ops), "output_path": str(out_path_resolved)},
+        "success",
+        backup,
+    )
 
     resp = {
         "success": True,
@@ -558,14 +557,16 @@ def detect_outliers(
 
         mask = (series < lower) | (series > upper)
         outlier_vals = series[mask].head(5).tolist()
-        results.append({
-            "column": col,
-            "method": method,
-            "lower_bound": lower,
-            "upper_bound": upper,
-            "outlier_count": int(mask.sum()),
-            "sample_outliers": outlier_vals,
-        })
+        results.append(
+            {
+                "column": col,
+                "method": method,
+                "lower_bound": lower,
+                "upper_bound": upper,
+                "outlier_count": int(mask.sum()),
+                "sample_outliers": outlier_vals,
+            }
+        )
         progress.append(ok(f"Analyzed {col}", f"{int(mask.sum())} outliers"))
 
     resp: dict = {
@@ -668,7 +669,7 @@ def train_with_cv(
         kf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
         fold_scores: list[dict] = []
         best_score = -1.0
-        best_fold_idx = 0
+        _best_fold_idx = 0  # noqa: F841
 
         for i, (tr_idx, te_idx) in enumerate(kf.split(x, y)):
             x_tr, x_te = x[tr_idx], x[te_idx]
@@ -677,10 +678,10 @@ def train_with_cv(
             acc = float(accuracy_score(y_te, y_pred))
             f1 = float(f1_score(y_te, y_pred, average="weighted", zero_division=0))
             fold_scores.append({"fold": i + 1, "accuracy": acc, "f1_weighted": f1})
-            progress.append(ok(f"Fold {i+1}/{n_splits}", f"acc={acc:.3f} f1={f1:.3f}"))
+            progress.append(ok(f"Fold {i + 1}/{n_splits}", f"acc={acc:.3f} f1={f1:.3f}"))
             if f1 > best_score:
                 best_score = f1
-                best_fold_idx = i
+                _best_fold_idx = i
 
         accs = [s["accuracy"] for s in fold_scores]
         f1s = [s["f1_weighted"] for s in fold_scores]
@@ -694,7 +695,7 @@ def train_with_cv(
         kf2 = KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
         fold_scores = []
         best_score = -1e9
-        best_fold_idx = 0
+        _best_fold_idx = 0  # noqa: F841
 
         for i, (tr_idx, te_idx) in enumerate(kf2.split(x)):
             x_tr, x_te = x[tr_idx], x[te_idx]
@@ -703,10 +704,9 @@ def train_with_cv(
             r2 = float(r2_score(y_te, y_pred))
             rmse = float(np.sqrt(mean_squared_error(y_te, y_pred)))
             fold_scores.append({"fold": i + 1, "r2": r2, "rmse": rmse})
-            progress.append(ok(f"Fold {i+1}/{n_splits}", f"r2={r2:.3f} rmse={rmse:.3f}"))
+            progress.append(ok(f"Fold {i + 1}/{n_splits}", f"r2={r2:.3f} rmse={rmse:.3f}"))
             if r2 > best_score:
                 best_score = r2
-                best_fold_idx = i
 
         r2s = [s["r2"] for s in fold_scores]
         rmses = [s["rmse"] for s in fold_scores]
@@ -718,10 +718,13 @@ def train_with_cv(
         }
 
     # Save best-fold model (retrain on full data for best params)
-    import pickle, tempfile, shutil, json as json_module
-    from datetime import datetime, timezone
+    import json as json_module
+    import pickle
+    import shutil
+    import tempfile
+    from datetime import datetime
 
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
+    ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
     models_dir = path.parent / MODELS_DIR
     models_dir.mkdir(exist_ok=True)
     model_path = models_dir / f"{path.stem}_{model}_cv_{ts}.pkl"
@@ -736,19 +739,19 @@ def train_with_cv(
 
     # Retrain on full data
     if task == "classification":
-        x_tr, x_te, y_tr, y_te = train_test_split(x, y, test_size=0.2,
-                                                    random_state=random_state, stratify=y)
-        y_pred_final = _fit_predict_classifier(model, x_tr, x_te, y_tr)
+        x_tr, x_te, y_tr, y_te = train_test_split(x, y, test_size=0.2, random_state=random_state, stratify=y)
+        _y_pred_final = _fit_predict_classifier(model, x_tr, x_te, y_tr)
     else:
         x_tr, x_te, y_tr, y_te = train_test_split(x, y, test_size=0.2, random_state=random_state)
-        y_pred_final = _fit_predict_regressor(model, x_tr, x_te, y_tr)
+        _y_pred_final = _fit_predict_regressor(model, x_tr, x_te, y_tr)
 
     import sklearn
+
     metadata = {
         "model_type": model,
         "task": task,
         "trained_on": path.name,
-        "training_date": datetime.now(timezone.utc).isoformat(),
+        "training_date": datetime.now(UTC).isoformat(),
         "feature_columns": list(df.drop(columns=[target_column]).columns),
         "target_column": target_column,
         "encoding_map": encoding_map,
@@ -766,9 +769,7 @@ def train_with_cv(
     manifest_path.write_text(json_module.dumps(metadata, indent=2))
     progress.append(ok("Saved best model", model_path.name))
 
-    append_receipt(str(path), "train_with_cv",
-                   {"model": model, "task": task, "n_splits": n_splits},
-                   "success", backup)
+    append_receipt(str(path), "train_with_cv", {"model": model, "task": task, "n_splits": n_splits}, "success", backup)
 
     resp = {
         "success": True,
@@ -867,13 +868,9 @@ def compare_models(
     y = df[target_column].values
 
     if task == "classification":
-        x_tr, x_te, y_tr, y_te = train_test_split(
-            x, y, test_size=test_size, random_state=random_state, stratify=y
-        )
+        x_tr, x_te, y_tr, y_te = train_test_split(x, y, test_size=test_size, random_state=random_state, stratify=y)
     else:
-        x_tr, x_te, y_tr, y_te = train_test_split(
-            x, y, test_size=test_size, random_state=random_state
-        )
+        x_tr, x_te, y_tr, y_te = train_test_split(x, y, test_size=test_size, random_state=random_state)
 
     results: list[dict] = []
     for m in models:
@@ -909,11 +906,15 @@ def compare_models(
     best_model_path = ""
     backup = ""
     if best and not results[0].get("error"):
-        import pickle, tempfile, shutil, json as json_module
-        from datetime import datetime, timezone
+        import json as json_module
+        import pickle
+        import shutil
+        import tempfile
+        from datetime import datetime
+
         import sklearn
 
-        ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
+        ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
         models_dir = path.parent / MODELS_DIR
         models_dir.mkdir(exist_ok=True)
         mp = models_dir / f"{path.stem}_{best}_best_{ts}.pkl"
@@ -929,7 +930,7 @@ def compare_models(
             "model_type": best,
             "task": task,
             "trained_on": path.name,
-            "training_date": datetime.now(timezone.utc).isoformat(),
+            "training_date": datetime.now(UTC).isoformat(),
             "feature_columns": list(df.drop(columns=[target_column]).columns),
             "target_column": target_column,
             "encoding_map": encoding_map,
@@ -946,9 +947,7 @@ def compare_models(
         best_model_path = str(mp)
         progress.append(ok("Saved best model", mp.name))
 
-    append_receipt(str(path), "compare_models",
-                   {"task": task, "models": models},
-                   "success", backup)
+    append_receipt(str(path), "compare_models", {"task": task, "models": models}, "success", backup)
 
     resp = {
         "success": True,
@@ -1075,6 +1074,7 @@ def run_clustering(
     if n_found >= 2 and len(set(labels)) >= 2:
         try:
             from sklearn.metrics import silhouette_score
+
             non_noise = labels != -1
             if non_noise.sum() > n_found:
                 silhouette = round(float(silhouette_score(x_scaled[non_noise], labels[non_noise])), 4)
@@ -1089,11 +1089,11 @@ def run_clustering(
             progress.append(warn("Snapshot failed", str(exc)))
         df["cluster_label"] = labels
         df.to_csv(path, index=False)
-        progress.append(ok("Saved labels", f"cluster_label column added"))
+        progress.append(ok("Saved labels", "cluster_label column added"))
 
-    append_receipt(str(path), "run_clustering",
-                   {"algorithm": algorithm, "feature_columns": feature_columns},
-                   "success", backup)
+    append_receipt(
+        str(path), "run_clustering", {"algorithm": algorithm, "feature_columns": feature_columns}, "success", backup
+    )
 
     resp = {
         "success": True,
@@ -1114,8 +1114,6 @@ def run_clustering(
 # ---------------------------------------------------------------------------
 # Tool: read_receipt
 # ---------------------------------------------------------------------------
-
-from shared.receipt import read_receipt_log
 
 
 def read_receipt(file_path: str) -> dict:
@@ -1138,13 +1136,12 @@ def read_receipt(file_path: str) -> dict:
     return resp
 
 
-
-
 # ---------------------------------------------------------------------------
 # Tool: generate_eda_report
 # ---------------------------------------------------------------------------
 
 # ---- Quality alert helpers ----
+
 
 def _compute_quality_score(df: pd.DataFrame, alerts: list[dict]) -> float:
     """Score 0–100. Start at 100, deduct for each alert by severity."""
@@ -1153,8 +1150,8 @@ def _compute_quality_score(df: pd.DataFrame, alerts: list[dict]) -> float:
     # Additional structural deductions
     miss_pct = df.isnull().sum().sum() / max(len(df) * len(df.columns), 1) * 100
     dup_pct = df.duplicated().sum() / max(len(df), 1) * 100
-    deductions += min(miss_pct * 0.5, 20)   # up to 20 pts for missingness
-    deductions += min(dup_pct * 0.3, 10)    # up to 10 pts for duplicates
+    deductions += min(miss_pct * 0.5, 20)  # up to 20 pts for missingness
+    deductions += min(dup_pct * 0.3, 10)  # up to 10 pts for duplicates
     return round(max(0.0, min(100.0, 100.0 - deductions)), 1)
 
 
@@ -1166,26 +1163,30 @@ def _run_quality_alerts(df: pd.DataFrame, target_column: str = "") -> list[dict]
     # 1. Constant columns (single unique value)
     for col in df.columns:
         if df[col].nunique(dropna=False) <= 1:
-            alerts.append({
-                "type": "constant_column",
-                "severity": "high",
-                "column": col,
-                "message": f"Column '{col}' has only 1 unique value — provides no information.",
-                "recommendation": f"Drop '{col}' with run_preprocessing op 'drop_column'.",
-            })
+            alerts.append(
+                {
+                    "type": "constant_column",
+                    "severity": "high",
+                    "column": col,
+                    "message": f"Column '{col}' has only 1 unique value — provides no information.",
+                    "recommendation": f"Drop '{col}' with run_preprocessing op 'drop_column'.",
+                }
+            )
 
     # 2. High missing data (>20%)
     for col in df.columns:
         miss_pct = df[col].isnull().mean() * 100
         if miss_pct > 20:
-            alerts.append({
-                "type": "high_missing",
-                "severity": "high",
-                "column": col,
-                "missing_pct": round(miss_pct, 1),
-                "message": f"Column '{col}' is {miss_pct:.1f}% missing.",
-                "recommendation": f"Fill with run_preprocessing 'fill_nulls' (strategy: median/mode) or drop if >50%.",
-            })
+            alerts.append(
+                {
+                    "type": "high_missing",
+                    "severity": "high",
+                    "column": col,
+                    "missing_pct": round(miss_pct, 1),
+                    "message": f"Column '{col}' is {miss_pct:.1f}% missing.",
+                    "recommendation": "Fill with run_preprocessing fill_nulls or drop if >50%.",
+                }
+            )
 
     # 3. Zero-inflated distributions
     for col in numeric_cols:
@@ -1193,14 +1194,16 @@ def _run_quality_alerts(df: pd.DataFrame, target_column: str = "") -> list[dict]
             continue
         zero_pct = (df[col] == 0).mean() * 100
         if zero_pct > 50:
-            alerts.append({
-                "type": "zero_inflated",
-                "severity": "medium",
-                "column": col,
-                "zero_pct": round(zero_pct, 1),
-                "message": f"Column '{col}' is {zero_pct:.1f}% zeros — may need log transform.",
-                "recommendation": f"Consider log1p transform or treat zeros as a separate indicator.",
-            })
+            alerts.append(
+                {
+                    "type": "zero_inflated",
+                    "severity": "medium",
+                    "column": col,
+                    "zero_pct": round(zero_pct, 1),
+                    "message": f"Column '{col}' is {zero_pct:.1f}% zeros — may need log transform.",
+                    "recommendation": "Consider log1p transform or treat zeros as a separate indicator.",
+                }
+            )
 
     # 4. High cardinality in categoricals
     cat_cols = [c for c in df.columns if c not in numeric_cols and c != target_column]
@@ -1208,14 +1211,16 @@ def _run_quality_alerts(df: pd.DataFrame, target_column: str = "") -> list[dict]
         n_unique = df[col].nunique()
         ratio = n_unique / max(len(df), 1)
         if ratio > 0.5 and n_unique > 20:
-            alerts.append({
-                "type": "high_cardinality",
-                "severity": "medium",
-                "column": col,
-                "unique_count": n_unique,
-                "message": f"Column '{col}' has {n_unique} unique values ({ratio*100:.1f}% of rows) — likely an ID or free-text field.",
-                "recommendation": f"Drop '{col}' or encode only top-N categories before training.",
-            })
+            alerts.append(
+                {
+                    "type": "high_cardinality",
+                    "severity": "medium",
+                    "column": col,
+                    "unique_count": n_unique,
+                    "message": f"Column '{col}' has {n_unique} unique values ({ratio * 100:.1f}% of rows) — likely an ID or free-text field.",  # noqa: E501
+                    "recommendation": f"Drop '{col}' or encode only top-N categories before training.",
+                }
+            )
 
     # 5. Class imbalance (>90% dominance) — only for target or low-cardinality cols
     check_imbal = [target_column] if target_column and target_column in df.columns else []
@@ -1223,15 +1228,17 @@ def _run_quality_alerts(df: pd.DataFrame, target_column: str = "") -> list[dict]
     for col in check_imbal[:5]:  # cap to 5
         vc = df[col].value_counts(normalize=True)
         if len(vc) > 0 and vc.iloc[0] > 0.90:
-            alerts.append({
-                "type": "class_imbalance",
-                "severity": "high" if col == target_column else "medium",
-                "column": col,
-                "dominant_class": str(vc.index[0]),
-                "dominant_pct": round(float(vc.iloc[0]) * 100, 1),
-                "message": f"'{col}' is {vc.iloc[0]*100:.1f}% '{vc.index[0]}' — severe class imbalance.",
-                "recommendation": "Use stratify=y in train split. Consider SMOTE or class_weight='balanced'.",
-            })
+            alerts.append(
+                {
+                    "type": "class_imbalance",
+                    "severity": "high" if col == target_column else "medium",
+                    "column": col,
+                    "dominant_class": str(vc.index[0]),
+                    "dominant_pct": round(float(vc.iloc[0]) * 100, 1),
+                    "message": f"'{col}' is {vc.iloc[0] * 100:.1f}% '{vc.index[0]}' — severe class imbalance.",
+                    "recommendation": "Use stratify=y in train split. Consider SMOTE or class_weight='balanced'.",
+                }
+            )
 
     # 6. Extreme skewness (|skew| > 2)
     for col in numeric_cols:
@@ -1243,14 +1250,16 @@ def _run_quality_alerts(df: pd.DataFrame, target_column: str = "") -> list[dict]
             continue
         if abs(skew) > 2:
             direction = "right" if skew > 0 else "left"
-            alerts.append({
-                "type": "extreme_skewness",
-                "severity": "medium",
-                "column": col,
-                "skewness": round(skew, 2),
-                "message": f"Column '{col}' is {direction}-skewed (skew={skew:.2f}) — may hurt linear models.",
-                "recommendation": f"Apply log transform or use run_preprocessing 'cap_outliers' to reduce skew.",
-            })
+            alerts.append(
+                {
+                    "type": "extreme_skewness",
+                    "severity": "medium",
+                    "column": col,
+                    "skewness": round(skew, 2),
+                    "message": f"Column '{col}' is {direction}-skewed (skew={skew:.2f}) — may hurt linear models.",
+                    "recommendation": "Apply log transform or use run_preprocessing 'cap_outliers' to reduce skew.",
+                }
+            )
 
     # 7. Multicollinearity (|r| > 0.9 between feature pairs)
     if len(numeric_cols) >= 2:
@@ -1259,31 +1268,35 @@ def _run_quality_alerts(df: pd.DataFrame, target_column: str = "") -> list[dict]
             corr = df[feat_cols].corr().abs()
             seen: set[tuple] = set()
             for i, c1 in enumerate(feat_cols):
-                for c2 in feat_cols[i+1:]:
+                for c2 in feat_cols[i + 1 :]:
                     r = corr.loc[c1, c2]
                     if r > 0.9 and (c1, c2) not in seen:
                         seen.add((c1, c2))
-                        alerts.append({
-                            "type": "multicollinearity",
-                            "severity": "medium",
-                            "columns": [c1, c2],
-                            "correlation": round(float(r), 3),
-                            "message": f"'{c1}' and '{c2}' are highly correlated (r={r:.3f}).",
-                            "recommendation": f"Consider dropping one of them, or use PCA via apply_dimensionality_reduction.",
-                        })
+                        alerts.append(
+                            {
+                                "type": "multicollinearity",
+                                "severity": "medium",
+                                "columns": [c1, c2],
+                                "correlation": round(float(r), 3),
+                                "message": f"'{c1}' and '{c2}' are highly correlated (r={r:.3f}).",
+                                "recommendation": "Consider dropping one of them, or use PCA via apply_dimensionality_reduction.",  # noqa: E501
+                            }
+                        )
 
     # 8. Duplicate rows
     dup_count = int(df.duplicated().sum())
     if dup_count > 0:
         dup_pct = round(dup_count / len(df) * 100, 1)
-        alerts.append({
-            "type": "duplicate_rows",
-            "severity": "medium" if dup_pct > 5 else "low",
-            "count": dup_count,
-            "pct": dup_pct,
-            "message": f"{dup_count} duplicate rows found ({dup_pct}% of data).",
-            "recommendation": "Remove with run_preprocessing op 'drop_duplicates'.",
-        })
+        alerts.append(
+            {
+                "type": "duplicate_rows",
+                "severity": "medium" if dup_pct > 5 else "low",
+                "count": dup_count,
+                "pct": dup_pct,
+                "message": f"{dup_count} duplicate rows found ({dup_pct}% of data).",
+                "recommendation": "Remove with run_preprocessing op 'drop_duplicates'.",
+            }
+        )
 
     return alerts
 
@@ -1291,7 +1304,7 @@ def _run_quality_alerts(df: pd.DataFrame, target_column: str = "") -> list[dict]
 def _alerts_html(alerts: list[dict], t: dict) -> str:
     """Render alerts as styled HTML cards."""
     if not alerts:
-        return f'<div class="alert alert-success">✔ No quality issues detected.</div>'
+        return '<div class="alert alert-success">✔ No quality issues detected.</div>'
     sev_class = {"high": "alert-danger", "medium": "alert-warning", "low": "alert-success"}
     sev_icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}
     parts = []
@@ -1303,9 +1316,9 @@ def _alerts_html(alerts: list[dict], t: dict) -> str:
         rec = a.get("recommendation", "")
         parts.append(
             f'<div class="alert {cls}">'
-            f'<strong>{icon} {a["type"].replace("_", " ").title()}</strong> — {msg}'
-            f'{"<br><em>💡 " + rec + "</em>" if rec else ""}'
-            f'</div>'
+            f"<strong>{icon} {a['type'].replace('_', ' ').title()}</strong> — {msg}"
+            f"{'<br><em>💡 ' + rec + '</em>' if rec else ''}"
+            f"</div>"
         )
     return "\n".join(parts)
 
@@ -1313,8 +1326,8 @@ def _alerts_html(alerts: list[dict], t: dict) -> str:
 def _quality_score_html(score: float, alerts: list[dict], t: dict) -> str:
     """Render quality score gauge + alert summary cards."""
     high = sum(1 for a in alerts if a.get("severity") == "high")
-    med  = sum(1 for a in alerts if a.get("severity") == "medium")
-    low  = sum(1 for a in alerts if a.get("severity") == "low")
+    med = sum(1 for a in alerts if a.get("severity") == "medium")
+    low = sum(1 for a in alerts if a.get("severity") == "low")
 
     color = t["success"] if score >= 80 else (t["warning"] if score >= 60 else t["danger"])
     score_card = (
@@ -1323,23 +1336,23 @@ def _quality_score_html(score: float, alerts: list[dict], t: dict) -> str:
         f'  <div class="label">Quality Score</div>'
         f'  <div class="value" style="color:{color}">{score}</div>'
         f'  <div class="sub">out of 100</div>'
-        f'</div>'
+        f"</div>"
         f'<div class="card" style="border-left:4px solid {t["danger"]}">'
         f'  <div class="label">High Severity</div>'
         f'  <div class="value" style="color:{t["danger"]}">{high}</div>'
         f'  <div class="sub">critical issues</div>'
-        f'</div>'
+        f"</div>"
         f'<div class="card" style="border-left:4px solid {t["warning"]}">'
         f'  <div class="label">Medium Severity</div>'
         f'  <div class="value" style="color:{t["warning"]}">{med}</div>'
         f'  <div class="sub">warnings</div>'
-        f'</div>'
+        f"</div>"
         f'<div class="card" style="border-left:4px solid {t["success"]}">'
         f'  <div class="label">Low Severity</div>'
         f'  <div class="value" style="color:{t["success"]}">{low}</div>'
         f'  <div class="sub">minor notes</div>'
-        f'</div>'
-        f'</div>'
+        f"</div>"
+        f"</div>"
     )
     return score_card + _alerts_html(alerts, t)
 
@@ -1356,6 +1369,7 @@ def generate_eda_report(
     import plotly.express as px
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
+
     from shared.html_theme import (
         _open_file,
         build_html_report,
@@ -1410,23 +1424,27 @@ def generate_eda_report(
     progress.append(ok("Quality analysis", f"score={quality_score}/100, {len(alerts)} alerts"))
 
     missing_total = int(df.isnull().sum().sum())
-    missing_pct   = round(missing_total / max(len(df) * len(df.columns), 1) * 100, 2)
-    dup_rows      = int(df.duplicated().sum())
+    missing_pct = round(missing_total / max(len(df) * len(df.columns), 1) * 100, 2)
+    dup_rows = int(df.duplicated().sum())
 
-    overview_html = metrics_cards_html({
-        "quality_score": f"{quality_score}/100",
-        "rows":          f"{len(df):,}",
-        "columns":       len(df.columns),
-        "numeric":       len(numeric_cols),
-        "categorical":   len(cat_cols),
-        "missing_cells": f"{missing_pct}%",
-        "duplicate_rows": dup_rows,
-    })
-    sections.append({
-        "id": "quality",
-        "heading": "Data Quality",
-        "html": overview_html + _quality_score_html(quality_score, alerts, t),
-    })
+    overview_html = metrics_cards_html(
+        {
+            "quality_score": f"{quality_score}/100",
+            "rows": f"{len(df):,}",
+            "columns": len(df.columns),
+            "numeric": len(numeric_cols),
+            "categorical": len(cat_cols),
+            "missing_cells": f"{missing_pct}%",
+            "duplicate_rows": dup_rows,
+        }
+    )
+    sections.append(
+        {
+            "id": "quality",
+            "heading": "Data Quality",
+            "html": overview_html + _quality_score_html(quality_score, alerts, t),
+        }
+    )
 
     # ── 2. Missing values pattern ──────────────────────────────────────────
     if missing_total > 0:
@@ -1434,7 +1452,9 @@ def generate_eda_report(
         null_series = null_series[null_series > 0]
 
         fig_miss = px.bar(
-            x=null_series.values, y=null_series.index, orientation="h",
+            x=null_series.values,
+            y=null_series.index,
+            orientation="h",
             title="Missing Values per Column",
             labels={"x": "Missing Count", "y": "Column"},
             template=t["plotly_template"],
@@ -1443,57 +1463,66 @@ def generate_eda_report(
         )
         fig_miss.update_coloraxes(colorbar_title="% Missing")
         fig_miss.update_layout(
-            paper_bgcolor=t["paper_color"], plot_bgcolor=t["bg_color"],
-            font_color=t["text_color"], height=max(300, len(null_series) * 30 + 80),
+            paper_bgcolor=t["paper_color"],
+            plot_bgcolor=t["bg_color"],
+            font_color=t["text_color"],
+            height=max(300, len(null_series) * 30 + 80),
             margin=dict(l=10, r=10, t=40, b=10),
         )
-        sections.append({
-            "id": "missing",
-            "heading": "Missing Values",
-            "html": plotly_div(fig_miss, height=max(300, len(null_series) * 30 + 80)),
-        })
+        sections.append(
+            {
+                "id": "missing",
+                "heading": "Missing Values",
+                "html": plotly_div(fig_miss, height=max(300, len(null_series) * 30 + 80)),
+            }
+        )
         progress.append(ok("Missing values chart", f"{len(null_series)} cols affected"))
 
     # ── 3. Distributions — histogram + box plot side by side ──────────────
     if numeric_cols:
         show_nums = numeric_cols[:12]
         n = len(show_nums)
-        cols_per_row = min(2, n)  # 2 charts per col: histogram left, box right
+        # 2 charts per col: histogram left, box right
         rows_n = n
 
         fig_dist = make_subplots(
-            rows=rows_n, cols=2,
-            subplot_titles=[f"{c} — histogram" if i % 2 == 0 else f"{c} — box"
-                            for c in show_nums for i in range(2)],
-            horizontal_spacing=0.08, vertical_spacing=0.05,
+            rows=rows_n,
+            cols=2,
+            subplot_titles=[f"{c} — histogram" if i % 2 == 0 else f"{c} — box" for c in show_nums for i in range(2)],
+            horizontal_spacing=0.08,
+            vertical_spacing=0.05,
         )
         for i, col in enumerate(show_nums):
             r = i + 1
             clean = df[col].dropna()
             # histogram
             fig_dist.add_trace(
-                go.Histogram(x=clean, name=col, showlegend=False,
-                             marker_color=t["accent"]),
-                row=r, col=1,
+                go.Histogram(x=clean, name=col, showlegend=False, marker_color=t["accent"]),
+                row=r,
+                col=1,
             )
             # box plot
             fig_dist.add_trace(
-                go.Box(x=clean, name=col, showlegend=False,
-                       marker_color=t["accent"], boxpoints="outliers"),
-                row=r, col=2,
+                go.Box(x=clean, name=col, showlegend=False, marker_color=t["accent"], boxpoints="outliers"),
+                row=r,
+                col=2,
             )
         fig_dist.update_layout(
             title="Numeric Distributions (Histogram + Box Plot)",
             template=t["plotly_template"],
-            paper_bgcolor=t["paper_color"], plot_bgcolor=t["bg_color"],
-            font_color=t["text_color"], height=220 * rows_n + 60,
+            paper_bgcolor=t["paper_color"],
+            plot_bgcolor=t["bg_color"],
+            font_color=t["text_color"],
+            height=220 * rows_n + 60,
             margin=dict(l=10, r=10, t=50, b=10),
         )
-        sections.append({
-            "id": "distributions",
-            "heading": "Numeric Distributions",
-            "html": plotly_div(fig_dist, height=220 * rows_n + 100),
-        })
+        sections.append(
+            {
+                "id": "distributions",
+                "heading": "Numeric Distributions",
+                "html": plotly_div(fig_dist, height=220 * rows_n + 100),
+            }
+        )
         progress.append(ok("Distribution charts", f"{len(show_nums)} cols (histogram + box)"))
 
     # ── 4. Correlation — Pearson AND Spearman ─────────────────────────────
@@ -1501,7 +1530,8 @@ def generate_eda_report(
         feat_cols = [c for c in numeric_cols if c != target_column] or numeric_cols
 
         fig_corr = make_subplots(
-            rows=1, cols=2,
+            rows=1,
+            cols=2,
             subplot_titles=["Pearson Correlation", "Spearman Correlation"],
             horizontal_spacing=0.12,
         )
@@ -1509,25 +1539,34 @@ def generate_eda_report(
             corr = df[feat_cols].corr(method=method)
             fig_corr.add_trace(
                 go.Heatmap(
-                    z=corr.values, x=corr.columns.tolist(), y=corr.index.tolist(),
-                    colorscale="RdBu_r", zmid=0,
+                    z=corr.values,
+                    x=corr.columns.tolist(),
+                    y=corr.index.tolist(),
+                    colorscale="RdBu_r",
+                    zmid=0,
                     text=[[f"{v:.2f}" for v in row] for row in corr.values],
-                    texttemplate="%{text}", showscale=(col_idx == 1),
+                    texttemplate="%{text}",
+                    showscale=(col_idx == 1),
                     name=method,
                 ),
-                row=1, col=col_idx,
+                row=1,
+                col=col_idx,
             )
         fig_corr.update_layout(
             template=t["plotly_template"],
-            paper_bgcolor=t["paper_color"], plot_bgcolor=t["bg_color"],
-            font_color=t["text_color"], height=max(450, len(feat_cols) * 28 + 100),
+            paper_bgcolor=t["paper_color"],
+            plot_bgcolor=t["bg_color"],
+            font_color=t["text_color"],
+            height=max(450, len(feat_cols) * 28 + 100),
             margin=dict(l=10, r=10, t=50, b=10),
         )
-        sections.append({
-            "id": "correlation",
-            "heading": "Correlation (Pearson + Spearman)",
-            "html": plotly_div(fig_corr, height=max(450, len(feat_cols) * 28 + 140)),
-        })
+        sections.append(
+            {
+                "id": "correlation",
+                "heading": "Correlation (Pearson + Spearman)",
+                "html": plotly_div(fig_corr, height=max(450, len(feat_cols) * 28 + 140)),
+            }
+        )
         progress.append(ok("Correlation heatmaps", f"Pearson + Spearman, {len(feat_cols)} features"))
 
     # ── 5. Categorical columns ─────────────────────────────────────────────
@@ -1537,16 +1576,22 @@ def generate_eda_report(
         for col in show_cats:
             vc = df[col].value_counts().head(15)
             fig_cat = px.bar(
-                x=vc.values, y=vc.index.astype(str), orientation="h",
+                x=vc.values,
+                y=vc.index.astype(str),
+                orientation="h",
                 title=f"{col} — Top Values",
                 labels={"x": "Count", "y": col},
                 template=t["plotly_template"],
-                color=vc.values, color_continuous_scale="Blues",
+                color=vc.values,
+                color_continuous_scale="Blues",
             )
             fig_cat.update_layout(
-                paper_bgcolor=t["paper_color"], plot_bgcolor=t["bg_color"],
-                font_color=t["text_color"], height=max(250, len(vc) * 25 + 80),
-                margin=dict(l=10, r=10, t=40, b=10), showlegend=False,
+                paper_bgcolor=t["paper_color"],
+                plot_bgcolor=t["bg_color"],
+                font_color=t["text_color"],
+                height=max(250, len(vc) * 25 + 80),
+                margin=dict(l=10, r=10, t=40, b=10),
+                showlegend=False,
             )
             cat_html += plotly_div(fig_cat, height=max(250, len(vc) * 25 + 80))
         sections.append({"id": "categorical", "heading": "Categorical Columns", "html": cat_html})
@@ -1558,27 +1603,34 @@ def generate_eda_report(
         if tgt.nunique() <= 20:
             vc = tgt.value_counts()
             fig_tgt = px.pie(
-                names=vc.index.astype(str), values=vc.values,
+                names=vc.index.astype(str),
+                values=vc.values,
                 title=f"Target Distribution: {target_column}",
                 template=t["plotly_template"],
                 color_discrete_sequence=px.colors.qualitative.Set2,
             )
         else:
             fig_tgt = px.histogram(
-                df, x=target_column, nbins=40,
+                df,
+                x=target_column,
+                nbins=40,
                 title=f"Target Distribution: {target_column}",
                 template=t["plotly_template"],
             )
         fig_tgt.update_layout(
-            paper_bgcolor=t["paper_color"], plot_bgcolor=t["bg_color"],
-            font_color=t["text_color"], height=380,
+            paper_bgcolor=t["paper_color"],
+            plot_bgcolor=t["bg_color"],
+            font_color=t["text_color"],
+            height=380,
             margin=dict(l=10, r=10, t=50, b=10),
         )
-        sections.append({
-            "id": "target",
-            "heading": f"Target Column: {target_column}",
-            "html": plotly_div(fig_tgt, height=420),
-        })
+        sections.append(
+            {
+                "id": "target",
+                "heading": f"Target Column: {target_column}",
+                "html": plotly_div(fig_tgt, height=420),
+            }
+        )
         progress.append(ok("Target distribution", f"{tgt.nunique()} unique values"))
 
     # ── 7. Summary statistics table ────────────────────────────────────────
@@ -1587,14 +1639,17 @@ def generate_eda_report(
         desc["skewness"] = df[numeric_cols[:12]].skew().round(3)
         desc.index.name = "column"
         rows_data = [{"column": idx, **row.to_dict()} for idx, row in desc.iterrows()]
-        sections.append({
-            "id": "stats",
-            "heading": "Summary Statistics",
-            "html": data_table_html(rows_data),
-        })
+        sections.append(
+            {
+                "id": "stats",
+                "heading": "Summary Statistics",
+                "html": data_table_html(rows_data),
+            }
+        )
 
     # ── Build and write report ─────────────────────────────────────────────
     from datetime import datetime
+
     plotly_cdn = '<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>'
     subtitle = (
         f"Generated {datetime.now().strftime('%Y-%m-%d %H:%M')} · "
@@ -1619,9 +1674,7 @@ def generate_eda_report(
         _open_file(out_path)
 
     file_size_kb = out_path.stat().st_size // 1024
-    append_receipt(str(path), "generate_eda_report",
-                   {"theme": theme, "target_column": target_column},
-                   "success", "")
+    append_receipt(str(path), "generate_eda_report", {"theme": theme, "target_column": target_column}, "success", "")
 
     resp = {
         "success": True,
@@ -1646,8 +1699,20 @@ def generate_eda_report(
 # Tool: filter_rows
 # ---------------------------------------------------------------------------
 
-FILTER_OPS = {"eq", "ne", "gt", "lt", "gte", "lte", "contains", "not_contains",
-              "is_null", "not_null", "starts_with", "ends_with"}
+FILTER_OPS = {
+    "eq",
+    "ne",
+    "gt",
+    "lt",
+    "gte",
+    "lte",
+    "contains",
+    "not_contains",
+    "is_null",
+    "not_null",
+    "starts_with",
+    "ends_with",
+}
 
 
 def filter_rows(
@@ -1723,8 +1788,13 @@ def filter_rows(
 
     if dry_run:
         resp: dict = {
-            "success": True, "op": "filter_rows", "dry_run": True,
-            "rows_kept": kept, "rows_removed": removed, "progress": progress, "token_estimate": 0,
+            "success": True,
+            "op": "filter_rows",
+            "dry_run": True,
+            "rows_kept": kept,
+            "rows_removed": removed,
+            "progress": progress,
+            "token_estimate": 0,
         }
         resp["token_estimate"] = len(str(resp)) // 4
         return resp
@@ -1745,13 +1815,20 @@ def filter_rows(
     out_resolved.parent.mkdir(parents=True, exist_ok=True)
     df_filtered.to_csv(out_resolved, index=False)
     progress.append(ok("Saved filtered dataset", out_resolved.name))
-    append_receipt(str(path), "filter_rows", {"column": column, "operator": operator, "value": value}, "success", backup)
+    append_receipt(
+        str(path), "filter_rows", {"column": column, "operator": operator, "value": value}, "success", backup
+    )  # noqa: E501
 
     resp = {
-        "success": True, "op": "filter_rows",
+        "success": True,
+        "op": "filter_rows",
         "output_path": str(out_resolved),
-        "rows_original": original_count, "rows_kept": kept, "rows_removed": removed,
-        "backup": backup, "progress": progress, "token_estimate": 0,
+        "rows_original": original_count,
+        "rows_kept": kept,
+        "rows_removed": removed,
+        "backup": backup,
+        "progress": progress,
+        "token_estimate": 0,
     }
     resp["token_estimate"] = len(str(resp)) // 4
     return resp
@@ -1760,6 +1837,7 @@ def filter_rows(
 # ---------------------------------------------------------------------------
 # Tool: merge_datasets
 # ---------------------------------------------------------------------------
+
 
 def merge_datasets(
     file_path_1: str,
@@ -1803,9 +1881,15 @@ def merge_datasets(
 
     if dry_run:
         resp: dict = {
-            "success": True, "op": "merge_datasets", "dry_run": True,
-            "left_rows": len(df1), "right_rows": len(df2),
-            "join_keys": keys, "how": how, "progress": progress, "token_estimate": 0,
+            "success": True,
+            "op": "merge_datasets",
+            "dry_run": True,
+            "left_rows": len(df1),
+            "right_rows": len(df2),
+            "join_keys": keys,
+            "how": how,
+            "progress": progress,
+            "token_estimate": 0,
         }
         resp["token_estimate"] = len(str(resp)) // 4
         return resp
@@ -1830,16 +1914,21 @@ def merge_datasets(
     out_resolved.parent.mkdir(parents=True, exist_ok=True)
     df_merged.to_csv(out_resolved, index=False)
     progress.append(ok("Saved merged dataset", out_resolved.name))
-    append_receipt(str(p1), "merge_datasets",
-                   {"file_2": p2.name, "on": on, "how": how}, "success", backup)
+    append_receipt(str(p1), "merge_datasets", {"file_2": p2.name, "on": on, "how": how}, "success", backup)
 
     resp = {
-        "success": True, "op": "merge_datasets",
+        "success": True,
+        "op": "merge_datasets",
         "output_path": str(out_resolved),
-        "left_rows": len(df1), "right_rows": len(df2),
-        "merged_rows": len(df_merged), "merged_columns": len(df_merged.columns),
-        "join_keys": keys, "how": how,
-        "backup": backup, "progress": progress, "token_estimate": 0,
+        "left_rows": len(df1),
+        "right_rows": len(df2),
+        "merged_rows": len(df_merged),
+        "merged_columns": len(df_merged.columns),
+        "join_keys": keys,
+        "how": how,
+        "backup": backup,
+        "progress": progress,
+        "token_estimate": 0,
     }
     resp["token_estimate"] = len(str(resp)) // 4
     return resp
@@ -1848,6 +1937,7 @@ def merge_datasets(
 # ---------------------------------------------------------------------------
 # Tool: find_optimal_clusters
 # ---------------------------------------------------------------------------
+
 
 def find_optimal_clusters(
     file_path: str,
@@ -1862,7 +1952,8 @@ def find_optimal_clusters(
     from plotly.subplots import make_subplots
     from sklearn.cluster import KMeans as _KMeans
     from sklearn.metrics import silhouette_score
-    from shared.html_theme import _open_file, save_chart, get_theme
+
+    from shared.html_theme import get_theme, save_chart
 
     progress: list[dict] = []
     try:
@@ -1886,6 +1977,7 @@ def find_optimal_clusters(
         return _error("Need at least 4 rows for cluster analysis.", "Provide a larger dataset.")
 
     from sklearn.preprocessing import StandardScaler as _SS
+
     x_scaled = _SS().fit_transform(x)
 
     max_k = min(max_k, x_scaled.shape[0] - 1, 15)
@@ -1902,33 +1994,42 @@ def find_optimal_clusters(
     best_k = k_range[int(np.argmax(silhouettes))]
     t = get_theme(theme)
 
-    fig = make_subplots(rows=1, cols=2,
-                        subplot_titles=["Elbow Curve (Inertia)", "Silhouette Score"])
-    fig.add_trace(go.Scatter(x=k_range, y=inertias, mode="lines+markers",
-                             name="Inertia", marker_color=t["accent"]), row=1, col=1)
-    fig.add_trace(go.Scatter(x=k_range, y=silhouettes, mode="lines+markers",
-                             name="Silhouette", marker_color=t["success"]), row=1, col=2)
-    fig.add_vline(x=best_k, line_dash="dash", line_color=t["danger"],
-                  annotation_text=f"Best K={best_k}", row=1, col=2)
+    fig = make_subplots(rows=1, cols=2, subplot_titles=["Elbow Curve (Inertia)", "Silhouette Score"])
+    fig.add_trace(
+        go.Scatter(x=k_range, y=inertias, mode="lines+markers", name="Inertia", marker_color=t["accent"]), row=1, col=1
+    )
+    fig.add_trace(
+        go.Scatter(x=k_range, y=silhouettes, mode="lines+markers", name="Silhouette", marker_color=t["success"]),
+        row=1,
+        col=2,
+    )
+    fig.add_vline(x=best_k, line_dash="dash", line_color=t["danger"], annotation_text=f"Best K={best_k}", row=1, col=2)
     fig.update_layout(
         title=f"Optimal Clusters for {path.name}",
-        template=t["plotly_template"], paper_bgcolor=t["paper_color"],
-        plot_bgcolor=t["bg_color"], font_color=t["text_color"],
-        height=420, margin=dict(l=10, r=10, t=50, b=10),
+        template=t["plotly_template"],
+        paper_bgcolor=t["paper_color"],
+        plot_bgcolor=t["bg_color"],
+        font_color=t["text_color"],
+        height=420,
+        margin=dict(l=10, r=10, t=50, b=10),
     )
 
     out_str = output_path or str(path.parent / f"{path.stem}_optimal_k.html")
-    out_abs, out_name = save_chart(fig, out_str, theme=theme, open_browser=open_browser,
-                                   title=f"Optimal Clusters — {path.name}")
+    out_abs, out_name = save_chart(
+        fig, out_str, theme=theme, open_browser=open_browser, title=f"Optimal Clusters — {path.name}"
+    )
     progress.append(ok("Saved elbow chart", out_name))
 
     resp: dict = {
-        "success": True, "op": "find_optimal_clusters",
+        "success": True,
+        "op": "find_optimal_clusters",
         "best_k": best_k,
-        "k_range": k_range, "inertias": [round(v, 2) for v in inertias],
+        "k_range": k_range,
+        "inertias": [round(v, 2) for v in inertias],
         "silhouette_scores": [round(v, 4) for v in silhouettes],
         "output_path": out_abs,
-        "progress": progress, "token_estimate": 0,
+        "progress": progress,
+        "token_estimate": 0,
     }
     resp["token_estimate"] = len(str(resp)) // 4
     return resp
@@ -1937,6 +2038,7 @@ def find_optimal_clusters(
 # ---------------------------------------------------------------------------
 # Tool: anomaly_detection
 # ---------------------------------------------------------------------------
+
 
 def anomaly_detection(
     file_path: str,
@@ -1977,20 +2079,25 @@ def anomaly_detection(
 
     if dry_run:
         resp: dict = {
-            "success": True, "op": "anomaly_detection", "dry_run": True,
-            "method": method, "contamination": contamination,
-            "progress": progress, "token_estimate": 0,
+            "success": True,
+            "op": "anomaly_detection",
+            "dry_run": True,
+            "method": method,
+            "contamination": contamination,
+            "progress": progress,
+            "token_estimate": 0,
         }
         resp["token_estimate"] = len(str(resp)) // 4
         return resp
 
     from sklearn.preprocessing import StandardScaler as _SS
+
     x_scaled = _SS().fit_transform(x)
 
     if method == "isolation_forest":
         det = IsolationForest(contamination=contamination, random_state=42)
-        labels = det.fit_predict(x_scaled)        # -1 = anomaly, 1 = normal
-        scores = det.score_samples(x_scaled)      # lower = more anomalous
+        labels = det.fit_predict(x_scaled)  # -1 = anomaly, 1 = normal
+        scores = det.score_samples(x_scaled)  # lower = more anomalous
     else:
         det = LocalOutlierFactor(contamination=contamination)
         labels = det.fit_predict(x_scaled)
@@ -1999,10 +2106,10 @@ def anomaly_detection(
     anomaly_mask = labels == -1
     n_anomalies = int(anomaly_mask.sum())
     anomaly_pct = round(n_anomalies / len(df) * 100, 2)
-    progress.append(ok(f"Detected anomalies", f"{n_anomalies} ({anomaly_pct}%) anomalous rows"))
+    progress.append(ok("Detected anomalies", f"{n_anomalies} ({anomaly_pct}%) anomalous rows"))
 
     # Top anomaly indices
-    top_anomaly_idx = np.argsort(scores)[:min(10, n_anomalies)].tolist()
+    top_anomaly_idx = np.argsort(scores)[: min(10, n_anomalies)].tolist()
 
     backup = ""
     if save_labels:
@@ -2015,16 +2122,21 @@ def anomaly_detection(
         df.to_csv(path, index=False)
         progress.append(ok("Saved anomaly labels", path.name))
 
-    append_receipt(str(path), "anomaly_detection",
-                   {"method": method, "contamination": contamination},
-                   "success", backup)
+    append_receipt(
+        str(path), "anomaly_detection", {"method": method, "contamination": contamination}, "success", backup
+    )
 
     resp = {
-        "success": True, "op": "anomaly_detection",
-        "method": method, "contamination": contamination,
-        "n_anomalies": n_anomalies, "anomaly_pct": anomaly_pct,
+        "success": True,
+        "op": "anomaly_detection",
+        "method": method,
+        "contamination": contamination,
+        "n_anomalies": n_anomalies,
+        "anomaly_pct": anomaly_pct,
         "top_anomaly_indices": top_anomaly_idx,
-        "backup": backup, "progress": progress, "token_estimate": 0,
+        "backup": backup,
+        "progress": progress,
+        "token_estimate": 0,
     }
     resp["token_estimate"] = len(str(resp)) // 4
     return resp
@@ -2034,11 +2146,11 @@ def anomaly_detection(
 # Tool: check_data_quality (JSON summary — model-readable)
 # ---------------------------------------------------------------------------
 
+
 def check_data_quality(file_path: str) -> dict:
     """Return JSON data quality summary with score 0-100. No HTML."""
-    import numpy as np
     from shared.file_utils import resolve_path
-    from shared.progress import ok, warn
+    from shared.progress import ok
 
     progress = []
     try:
@@ -2046,8 +2158,12 @@ def check_data_quality(file_path: str) -> dict:
     except ValueError as exc:
         return {"success": False, "error": str(exc), "hint": "Check file path.", "token_estimate": 30}
     if not path.exists():
-        return {"success": False, "error": f"File not found: {file_path}",
-                "hint": "Check that file_path is absolute.", "token_estimate": 30}
+        return {
+            "success": False,
+            "error": f"File not found: {file_path}",
+            "hint": "Check that file_path is absolute.",
+            "token_estimate": 30,
+        }
 
     try:
         df = pd.read_csv(path, low_memory=False)
@@ -2062,9 +2178,15 @@ def check_data_quality(file_path: str) -> dict:
     # 1. Constant columns
     for col in df.columns:
         if df[col].nunique(dropna=True) <= 1:
-            alerts.append({"type": "constant_column", "severity": "high", "column": col,
-                           "message": f"Column '{col}' has only 1 unique value.",
-                           "recommendation": f"Drop column '{col}' — it contains no information."})
+            alerts.append(
+                {
+                    "type": "constant_column",
+                    "severity": "high",
+                    "column": col,
+                    "message": f"Column '{col}' has only 1 unique value.",
+                    "recommendation": f"Drop column '{col}' — it contains no information.",
+                }
+            )
             score -= 15
 
     # 2. High missing
@@ -2073,30 +2195,46 @@ def check_data_quality(file_path: str) -> dict:
         null_count = int(df[col].isnull().sum())
         null_pct = null_count / n_rows * 100 if n_rows > 0 else 0
         if null_pct > 0:
-            null_summary.append({"column": col, "null_count": null_count,
-                                  "null_pct": round(null_pct, 2)})
+            null_summary.append({"column": col, "null_count": null_count, "null_pct": round(null_pct, 2)})
         if null_pct > 20:
-            alerts.append({"type": "high_missing", "severity": "high", "column": col,
-                           "message": f"Column '{col}' is {null_pct:.1f}% null.",
-                           "recommendation": f"Use run_preprocessing fill_nulls or drop column '{col}'."})
+            alerts.append(
+                {
+                    "type": "high_missing",
+                    "severity": "high",
+                    "column": col,
+                    "message": f"Column '{col}' is {null_pct:.1f}% null.",
+                    "recommendation": f"Use run_preprocessing fill_nulls or drop column '{col}'.",
+                }
+            )
             score -= 15
 
     # 3. Duplicate rows
     dup_count = int(df.duplicated().sum())
     dup_pct = dup_count / n_rows * 100 if n_rows > 0 else 0
     if dup_count > 0:
-        alerts.append({"type": "duplicate_rows", "severity": "medium",
-                       "message": f"{dup_count} duplicate rows ({dup_pct:.1f}%).",
-                       "recommendation": "Use run_preprocessing op 'drop_duplicates' to remove them."})
+        alerts.append(
+            {
+                "type": "duplicate_rows",
+                "severity": "medium",
+                "message": f"{dup_count} duplicate rows ({dup_pct:.1f}%).",
+                "recommendation": "Use run_preprocessing op 'drop_duplicates' to remove them.",
+            }
+        )
         score -= min(10, dup_pct * 0.3)
 
     # 4. Zero-inflated numeric
     for col in df.select_dtypes(include="number").columns:
         zero_pct = (df[col] == 0).sum() / n_rows * 100 if n_rows > 0 else 0
         if zero_pct > 50:
-            alerts.append({"type": "zero_inflated", "severity": "medium", "column": col,
-                           "message": f"Column '{col}' is {zero_pct:.1f}% zeros.",
-                           "recommendation": f"Consider log_transform or separate zero/nonzero modeling for '{col}'."})
+            alerts.append(
+                {
+                    "type": "zero_inflated",
+                    "severity": "medium",
+                    "column": col,
+                    "message": f"Column '{col}' is {zero_pct:.1f}% zeros.",
+                    "recommendation": f"Consider log_transform or separate zero/nonzero modeling for '{col}'.",
+                }
+            )
             score -= 8
 
     # 5. High cardinality
@@ -2104,9 +2242,15 @@ def check_data_quality(file_path: str) -> dict:
         n_unique = df[col].nunique()
         ratio = n_unique / n_rows if n_rows > 0 else 0
         if ratio > 0.5 and n_unique > 20:
-            alerts.append({"type": "high_cardinality", "severity": "medium", "column": col,
-                           "message": f"Column '{col}' has {n_unique} unique values ({ratio*100:.1f}% of rows).",
-                           "recommendation": f"Consider drop_column or target-encoding for '{col}'."})
+            alerts.append(
+                {
+                    "type": "high_cardinality",
+                    "severity": "medium",
+                    "column": col,
+                    "message": f"Column '{col}' has {n_unique} unique values ({ratio * 100:.1f}% of rows).",
+                    "recommendation": f"Consider drop_column or target-encoding for '{col}'.",
+                }
+            )
             score -= 8
 
     # 6. Extreme skewness
@@ -2116,9 +2260,15 @@ def check_data_quality(file_path: str) -> dict:
         except Exception:
             continue
         if abs(skew) > 2:
-            alerts.append({"type": "extreme_skewness", "severity": "medium", "column": col,
-                           "message": f"Column '{col}' skewness = {skew:.2f}.",
-                           "recommendation": f"Apply log_transform to column '{col}' before training."})
+            alerts.append(
+                {
+                    "type": "extreme_skewness",
+                    "severity": "medium",
+                    "column": col,
+                    "message": f"Column '{col}' skewness = {skew:.2f}.",
+                    "recommendation": f"Apply log_transform to column '{col}' before training.",
+                }
+            )
             score -= 8
 
     # 7. Multicollinearity
@@ -2130,10 +2280,15 @@ def check_data_quality(file_path: str) -> dict:
                 for j in range(i + 1, len(num_cols)):
                     if corr_matrix.iloc[i, j] > 0.9:
                         c1, c2 = num_cols[i], num_cols[j]
-                        alerts.append({"type": "multicollinearity", "severity": "high",
-                                       "column_pair": [c1, c2],
-                                       "message": f"Columns '{c1}' and '{c2}' have |r|={corr_matrix.iloc[i,j]:.2f}.",
-                                       "recommendation": f"Drop one of '{c1}' or '{c2}' to reduce multicollinearity."})
+                        alerts.append(
+                            {
+                                "type": "multicollinearity",
+                                "severity": "high",
+                                "column_pair": [c1, c2],
+                                "message": f"Columns '{c1}' and '{c2}' have |r|={corr_matrix.iloc[i, j]:.2f}.",
+                                "recommendation": f"Drop one of '{c1}' or '{c2}' to reduce multicollinearity.",
+                            }
+                        )
                         score -= 15
         except Exception:
             pass
@@ -2172,6 +2327,7 @@ def check_data_quality(file_path: str) -> dict:
 # Tool: evaluate_model (score saved model on external labeled test file)
 # ---------------------------------------------------------------------------
 
+
 def evaluate_model(
     model_path: str,
     test_file_path: str,
@@ -2179,13 +2335,19 @@ def evaluate_model(
 ) -> dict:
     """Score a saved model on a labeled test CSV. Returns metrics dict."""
     import pickle
+
     import numpy as np
     import pandas as pd
-    from sklearn.metrics import (accuracy_score, f1_score, mean_squared_error,
-                                 r2_score, roc_auc_score)
+    from sklearn.metrics import (
+        accuracy_score,
+        f1_score,
+        mean_squared_error,
+        r2_score,
+        roc_auc_score,
+    )
 
     from shared.file_utils import resolve_path
-    from shared.progress import ok, fail
+    from shared.progress import ok
 
     progress = []
     try:
@@ -2195,14 +2357,23 @@ def evaluate_model(
         return {"success": False, "error": str(exc), "hint": "Check file paths.", "token_estimate": 30}
 
     if not mp.exists():
-        return {"success": False, "error": f"Model not found: {model_path}",
-                "hint": "Train a model first.", "token_estimate": 30}
+        return {
+            "success": False,
+            "error": f"Model not found: {model_path}",
+            "hint": "Train a model first.",
+            "token_estimate": 30,
+        }
     if not dp.exists():
-        return {"success": False, "error": f"File not found: {test_file_path}",
-                "hint": "Check file path.", "token_estimate": 30}
+        return {
+            "success": False,
+            "error": f"File not found: {test_file_path}",
+            "hint": "Check file path.",
+            "token_estimate": 30,
+        }
 
     try:
         import xgboost as xgb
+
         with open(mp, "rb") as f:
             payload = pickle.load(f)
         model_obj = payload["model"]
@@ -2219,20 +2390,26 @@ def evaluate_model(
         progress.append(ok("Loaded test data", f"{len(df)} rows"))
 
         if target_column not in df.columns:
-            return {"success": False, "error": f"Target column '{target_column}' not in test file.",
-                    "hint": "Use inspect_dataset() to check column names.", "token_estimate": 30}
+            return {
+                "success": False,
+                "error": f"Target column '{target_column}' not in test file.",
+                "hint": "Use inspect_dataset() to check column names.",
+                "token_estimate": 30,
+            }
 
         # Encode categoricals using stored map
         for col, mapping in encoding_map.items():
             if col in df.columns and col != target_column:
-                df[col] = df[col].astype(str).map(
-                    {str(k): v for k, v in mapping.items()}
-                ).fillna(-1).astype(int)
+                df[col] = df[col].astype(str).map({str(k): v for k, v in mapping.items()}).fillna(-1).astype(int)
 
         available = [c for c in feature_columns if c in df.columns]
         if not available:
-            return {"success": False, "error": "No feature columns found in test file.",
-                    "hint": "Use the same dataset schema as training.", "token_estimate": 30}
+            return {
+                "success": False,
+                "error": "No feature columns found in test file.",
+                "hint": "Use the same dataset schema as training.",
+                "token_estimate": 30,
+            }
 
         X = df[available].fillna(0).values.astype(float)
         if scaler is not None:
@@ -2244,6 +2421,7 @@ def evaluate_model(
 
         # Encode target if categorical
         from sklearn.preprocessing import LabelEncoder
+
         le = None
         if y_true.dtype == object or str(y_true.dtype) in ("string",):
             le = LabelEncoder()
@@ -2266,7 +2444,6 @@ def evaluate_model(
 
         metrics: dict = {}
         if task == "classification":
-            from sklearn.preprocessing import LabelEncoder as LE2
             acc = float(accuracy_score(y_true, y_pred))
             f1 = float(f1_score(y_true, y_pred, average="weighted", zero_division=0))
             metrics = {"accuracy": round(acc, 4), "f1_weighted": round(f1, 4)}
@@ -2283,6 +2460,7 @@ def evaluate_model(
                 except Exception:
                     pass
             from servers.ml_basic.engine import _confusion_dict
+
             metrics["confusion_matrix"] = _confusion_dict(y_true, y_pred)
         else:
             mse = float(mean_squared_error(y_true, y_pred))
@@ -2292,8 +2470,9 @@ def evaluate_model(
                 "r2": round(float(r2_score(y_true, y_pred)), 4),
             }
 
-        progress.append(ok("Evaluated model", ", ".join(f"{k}={v}" for k, v in metrics.items()
-                           if not isinstance(v, dict))[:80]))
+        progress.append(
+            ok("Evaluated model", ", ".join(f"{k}={v}" for k, v in metrics.items() if not isinstance(v, dict))[:80])
+        )
 
         resp = {
             "success": True,
@@ -2311,13 +2490,18 @@ def evaluate_model(
         return resp
 
     except Exception as exc:
-        return {"success": False, "error": str(exc),
-                "hint": "Check model and test file compatibility.", "token_estimate": 30}
+        return {
+            "success": False,
+            "error": str(exc),
+            "hint": "Check model and test file compatibility.",
+            "token_estimate": 30,
+        }
 
 
 # ---------------------------------------------------------------------------
 # Tool: batch_predict (all rows → CSV, no row limit)
 # ---------------------------------------------------------------------------
+
 
 def batch_predict(
     model_path: str,
@@ -2327,11 +2511,12 @@ def batch_predict(
 ) -> dict:
     """Run predictions on all rows and save to CSV. No row limit."""
     import pickle
+
     import numpy as np
     import pandas as pd
 
     from shared.file_utils import resolve_path
-    from shared.progress import ok, info
+    from shared.progress import info, ok
     from shared.version_control import snapshot
 
     progress = []
@@ -2342,19 +2527,34 @@ def batch_predict(
         return {"success": False, "error": str(exc), "hint": "Check file paths.", "token_estimate": 30}
 
     if not mp.exists():
-        return {"success": False, "error": f"Model not found: {model_path}",
-                "hint": "Train a model first.", "token_estimate": 30}
+        return {
+            "success": False,
+            "error": f"Model not found: {model_path}",
+            "hint": "Train a model first.",
+            "token_estimate": 30,
+        }
     if not dp.exists():
-        return {"success": False, "error": f"File not found: {file_path}",
-                "hint": "Check file path.", "token_estimate": 30}
+        return {
+            "success": False,
+            "error": f"File not found: {file_path}",
+            "hint": "Check file path.",
+            "token_estimate": 30,
+        }
 
     if dry_run:
-        return {"success": True, "op": "batch_predict", "dry_run": True,
-                "model_path": str(mp), "file_path": str(dp),
-                "progress": [info("Dry run — no files written")], "token_estimate": 40}
+        return {
+            "success": True,
+            "op": "batch_predict",
+            "dry_run": True,
+            "model_path": str(mp),
+            "file_path": str(dp),
+            "progress": [info("Dry run — no files written")],
+            "token_estimate": 40,
+        }
 
     try:
         import xgboost as xgb
+
         with open(mp, "rb") as f:
             payload = pickle.load(f)
         model_obj = payload["model"]
@@ -2374,9 +2574,7 @@ def batch_predict(
 
         for col, mapping in encoding_map.items():
             if col in df.columns:
-                df[col] = df[col].astype(str).map(
-                    {str(k): v for k, v in mapping.items()}
-                ).fillna(-1).astype(int)
+                df[col] = df[col].astype(str).map({str(k): v for k, v in mapping.items()}).fillna(-1).astype(int)
 
         available = [c for c in feature_columns if c in df.columns]
         X = df[available].fillna(0).values.astype(float)
@@ -2403,6 +2601,7 @@ def batch_predict(
 
         out_path_str = output_path or str(dp.parent / f"{dp.stem}_predictions.csv")
         from pathlib import Path
+
         out = Path(out_path_str).resolve()
 
         backup = ""
@@ -2418,12 +2617,13 @@ def batch_predict(
 
         # Distribution summary
         if task == "classification":
-            dist = {str(k): int(v) for k, v in
-                    pd.Series(preds).value_counts().sort_index().items()}
+            dist = {str(k): int(v) for k, v in pd.Series(preds).value_counts().sort_index().items()}
         else:
-            dist = {"min": round(float(preds.min()), 4),
-                    "max": round(float(preds.max()), 4),
-                    "mean": round(float(preds.mean()), 4)}
+            dist = {
+                "min": round(float(preds.min()), 4),
+                "max": round(float(preds.max()), 4),
+                "mean": round(float(preds.mean()), 4),
+            }
 
         resp = {
             "success": True,
@@ -2440,5 +2640,9 @@ def batch_predict(
         return resp
 
     except Exception as exc:
-        return {"success": False, "error": str(exc),
-                "hint": "Check model and data compatibility.", "token_estimate": 30}
+        return {
+            "success": False,
+            "error": str(exc),
+            "hint": "Check model and data compatibility.",
+            "token_estimate": 30,
+        }
