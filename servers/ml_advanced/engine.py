@@ -548,18 +548,16 @@ def run_profiling_report(
             rows_data = [{"column": idx, **row.to_dict()} for idx, row in desc.iterrows()]
             sections.append({"id": "stats", "heading": "Summary Statistics", "html": data_table_html(rows_data)})
 
-        plotly_cdn = '<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>'
-        from datetime import datetime as _dt
-
         html = build_html_report(
             title=f"Profile Report — {path.name}",
-            subtitle=f"Generated {_dt.now().strftime('%Y-%m-%d %H:%M')} · {len(df):,} rows",
+            subtitle="",
             sections=sections,
             theme="light",
             open_browser=False,
             output_path="",
+            sidebar_title="Profile Report",
+            sidebar_meta=f"{path.name}<br>{len(df):,} rows",
         )
-        html = html.replace("</head>", f"  {plotly_cdn}\n</head>")
         out_path_resolved.parent.mkdir(parents=True, exist_ok=True)
         out_path_resolved.write_text(html, encoding="utf-8")
         progress.append(ok("Saved Plotly profile report", out_path_resolved.name))
@@ -906,18 +904,17 @@ def generate_training_report(
         )
 
     # --- Build report ---
-    subtitle = f"Model: {model_type} · Task: {task} · Trained: {training_date[:10] if training_date else 'unknown'}"
-
-    plotly_cdn = '<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>'
+    trained_str = training_date[:10] if training_date else "unknown"
     html = build_html_report(
         title=f"Training Report — {mp.stem}",
-        subtitle=subtitle,
+        subtitle="",
         sections=sections,
         theme=theme,
         open_browser=False,
         output_path="",
+        sidebar_title="Training Report",
+        sidebar_meta=f"{model_type}<br>Task: {task}<br>Trained: {trained_str}",
     )
-    html = html.replace("</head>", f"  {plotly_cdn}\n</head>")
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(html, encoding="utf-8")
