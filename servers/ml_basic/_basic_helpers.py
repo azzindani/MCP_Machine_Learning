@@ -103,7 +103,7 @@ def _auto_preprocess(df: pd.DataFrame, target_column: str) -> tuple[pd.DataFrame
 
     # fill numeric nulls with median
     for col in df.select_dtypes(include="number").columns:
-        if df[col].isnull().any():
+        if bool(df[col].isnull().any()):
             df[col] = df[col].fillna(df[col].median())
 
     return df, encoding_map, encoded_cols

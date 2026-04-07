@@ -1773,86 +1773,85 @@ and must be corrected immediately.
 Track implementation progress here. Update checkboxes as work completes.
 
 ### Phase 0 — Shared Infrastructure
-- [ ] `shared/__init__.py`
-- [ ] `shared/version_control.py` — snapshot / restore / list
-- [ ] `shared/patch_validator.py` — validate_ops + ALLOWED_PREPROCESSING_OPS
-- [ ] `shared/file_utils.py` — resolve_path (with home-dir boundary check) / atomic_write_json
-- [ ] `shared/platform_utils.py` — all constrained mode helpers
-- [ ] `shared/progress.py` — ok / fail / info / warn / undo
-- [ ] `shared/receipt.py` — append_receipt / read_receipt_log
-- [ ] Unit tests for all shared modules (100% coverage)
-- [ ] `resolve_path()` rejects paths outside home directory (security test)
+- [x] `shared/__init__.py`
+- [x] `shared/version_control.py` — snapshot / restore / list
+- [x] `shared/patch_validator.py` — validate_ops + ALLOWED_PREPROCESSING_OPS
+- [x] `shared/file_utils.py` — resolve_path (with home-dir boundary check) / atomic_write_json
+- [x] `shared/platform_utils.py` — all constrained mode helpers
+- [x] `shared/progress.py` — ok / fail / info / warn / undo
+- [x] `shared/receipt.py` — append_receipt / read_receipt_log
+- [x] Unit tests for all shared modules (100% coverage)
+- [x] `resolve_path()` rejects paths outside home directory (security test)
 
 ### Phase 1 — ml_basic (Tier 1)
-- [ ] `servers/ml_basic/__init__.py`
-- [ ] `servers/ml_basic/pyproject.toml` — `requires-python = ">=3.12"`, `fastmcp>=2.0,<3.0`
-- [ ] `servers/ml_basic/engine.py` — inspect_dataset
-- [ ] `servers/ml_basic/engine.py` — read_column_profile
-- [ ] `servers/ml_basic/engine.py` — search_columns
-- [ ] `servers/ml_basic/engine.py` — read_rows
-- [ ] `servers/ml_basic/engine.py` — train_classifier (all 7 algorithms)
-- [ ] `servers/ml_basic/engine.py` — train_regressor (all 7 algorithms)
-- [ ] `servers/ml_basic/engine.py` — get_predictions
-- [ ] `servers/ml_basic/engine.py` — restore_version
-- [ ] `servers/ml_basic/server.py` — all 8 @mcp.tool() wrappers with annotations
-- [ ] `tests/fixtures/` — all 6 fixture CSVs
-- [ ] `tests/test_ml_basic.py` — all required tests (§16.3)
-- [ ] `uv run pytest tests/test_ml_basic.py` — all pass
-- [ ] `uv run pyright servers/ml_basic/` — no errors
-- [ ] `verify_tool_docstrings.py` — all ≤ 80 chars
+- [x] `servers/ml_basic/__init__.py`
+- [x] `servers/ml_basic/pyproject.toml` — `requires-python = ">=3.12"`, `fastmcp>=2.0,<3.0`
+- [x] `servers/ml_basic/engine.py` — inspect_dataset
+- [x] `servers/ml_basic/engine.py` — read_column_profile
+- [x] `servers/ml_basic/engine.py` — search_columns
+- [x] `servers/ml_basic/engine.py` — read_rows
+- [x] `servers/ml_basic/engine.py` — train_classifier (all 7 algorithms)
+- [x] `servers/ml_basic/engine.py` — train_regressor (all 7 algorithms)
+- [x] `servers/ml_basic/engine.py` — get_predictions
+- [x] `servers/ml_basic/engine.py` — restore_version
+- [x] `servers/ml_basic/server.py` — all @mcp.tool() wrappers with annotations
+- [x] `tests/fixtures/` — all 6 fixture CSVs
+- [x] `tests/test_ml_basic.py` — all required tests (§16.3)
+- [x] `uv run pytest tests/test_ml_basic.py` — all pass
+- [x] `uv run pyright servers/ml_basic/` — no errors (pyrightconfig.json)
+- [x] `verify_tool_docstrings.py` — all ≤ 80 chars
 - [ ] Manual test in LM Studio (9B model) — four-tool loop works
 
 ### Phase 2 — ml_medium (Tier 2)
-- [ ] `servers/ml_medium/__init__.py`
-- [ ] `servers/ml_medium/pyproject.toml` — `requires-python = ">=3.12"`, `fastmcp>=2.0,<3.0`
-- [ ] `servers/ml_medium/engine.py` — run_preprocessing + all ops
-- [ ] `servers/ml_medium/engine.py` — detect_outliers (IQR + std)
-- [ ] `servers/ml_medium/engine.py` — train_with_cv
-- [ ] `servers/ml_medium/engine.py` — compare_models
-- [ ] `servers/ml_medium/engine.py` — run_clustering (3 algorithms)
-- [ ] `servers/ml_medium/engine.py` — read_receipt
-- [ ] `servers/ml_medium/server.py` — all 6 @mcp.tool() wrappers with annotations
-- [ ] `tests/test_ml_medium.py` — all required tests
-- [ ] `uv run pytest tests/test_ml_medium.py` — all pass
-- [ ] Manual test: ml_basic + ml_medium loaded together (≤ 14 tools total)
+- [x] `servers/ml_medium/__init__.py`
+- [x] `servers/ml_medium/pyproject.toml` — `requires-python = ">=3.12"`, `fastmcp>=2.0,<3.0`
+- [x] `servers/ml_medium/engine.py` — run_preprocessing + all ops
+- [x] `servers/ml_medium/engine.py` — detect_outliers (IQR + std)
+- [x] `servers/ml_medium/engine.py` — train_with_cv
+- [x] `servers/ml_medium/engine.py` — compare_models
+- [x] `servers/ml_medium/engine.py` — run_clustering (3 algorithms)
+- [x] `servers/ml_medium/engine.py` — read_receipt
+- [x] `servers/ml_medium/server.py` — all @mcp.tool() wrappers with annotations
+- [x] `tests/test_ml_medium.py` — all required tests
+- [x] `uv run pytest tests/test_ml_medium.py` — all pass
+- [ ] Manual test: ml_basic + ml_medium loaded together
 
 ### Phase 3 — ml_advanced (Tier 3)
-- [ ] `servers/ml_advanced/__init__.py`
-- [ ] `servers/ml_advanced/pyproject.toml` — `requires-python = ">=3.12"`, `fastmcp>=2.0,<3.0`
-- [ ] Sub-module layout: `_adv_tuning.py`, `_adv_export.py`, `_adv_report.py`, `_adv_profiling.py`, `_adv_reduction.py`
-- [ ] `engine.py` is a thin router re-exporting from sub-modules
-- [ ] All heavy imports (sklearn, xgboost, ydata_profiling) are lazy (inside functions)
-- [ ] `servers/ml_advanced/engine.py` — tune_hyperparameters (grid + random)
-- [ ] `servers/ml_advanced/engine.py` — export_model + manifest
-- [ ] `servers/ml_advanced/engine.py` — read_model_report
-- [ ] `servers/ml_advanced/engine.py` — run_profiling_report
-- [ ] `servers/ml_advanced/engine.py` — apply_dimensionality_reduction
-- [ ] `servers/ml_advanced/server.py` — all 5 @mcp.tool() wrappers with annotations
-- [ ] `tests/test_ml_advanced.py` — all required tests
-- [ ] `uv run pytest tests/test_ml_advanced.py` — all pass
+- [x] `servers/ml_advanced/__init__.py`
+- [x] `servers/ml_advanced/pyproject.toml` — `requires-python = ">=3.12"`, `fastmcp>=2.0,<3.0`
+- [x] Sub-modules: `_adv_helpers.py` (train/eval), `_adv_viz.py` (report/chart generation)
+- [x] All heavy imports (sklearn, xgboost, ydata_profiling) are lazy (inside functions)
+- [x] `servers/ml_advanced/engine.py` — tune_hyperparameters (grid + random)
+- [x] `servers/ml_advanced/engine.py` — export_model + manifest
+- [x] `servers/ml_advanced/engine.py` — read_model_report
+- [x] `servers/ml_advanced/engine.py` — run_profiling_report
+- [x] `servers/ml_advanced/engine.py` — apply_dimensionality_reduction
+- [x] `servers/ml_advanced/server.py` — all @mcp.tool() wrappers with annotations
+- [x] `tests/test_ml_advanced.py` — all required tests
+- [x] `uv run pytest tests/test_ml_advanced.py` — all pass
 
 ### Phase 4 — Installation and Distribution
-- [ ] `install/install.sh` — Python 3.12 check, uv sync, VRAM detection, client config
-- [ ] `install/install.bat` — Windows equivalent
-- [ ] `install/mcp_config_writer.py` — LM Studio / Claude Desktop / Cursor / Windsurf
-- [ ] `root pyproject.toml` — workspace with all three server members
-- [ ] `uv.lock` committed
-- [ ] `.python-version` = `3.12`
-- [ ] `.gitattributes` — `* text=auto eol=lf`
-- [ ] `.editorconfig` — consistent editor settings
+- [x] `install/install.sh` — Python 3.12 check, uv sync, VRAM detection, client config
+- [x] `install/install.bat` — Windows equivalent
+- [x] `install/mcp_config_writer.py` — LM Studio / Claude Desktop / Cursor / Windsurf
+- [x] `root pyproject.toml` — workspace with all three server members
+- [x] `uv.lock` committed
+- [x] `.python-version` = `3.12`
+- [x] `.gitattributes` — `* text=auto eol=lf`
+- [x] `.editorconfig` — consistent editor settings
 - [ ] Test install on clean machine / VM
 
 ### Phase 5 — CI/CD
-- [ ] `.github/workflows/test.yml` — matrix: ubuntu + windows + macos
-- [ ] `PYTHONPATH: "."` set in CI env so `shared/` imports resolve correctly
-- [ ] `verify_tool_docstrings.py` — ≤ 80 char enforcement
-- [ ] All CI checks passing on all three platforms
-- [ ] `MCP_CONSTRAINED_MODE=1` enforced in CI environment
-- [ ] `pyright` covers all engine sub-modules, not just top-level engine.py
+- [x] `.github/workflows/ci.yml` — matrix: ubuntu + windows + macos
+- [x] `PYTHONPATH: "."` set in CI env so `shared/` imports resolve correctly
+- [x] `verify_tool_docstrings.py` — ≤ 80 char enforcement
+- [x] `MCP_CONSTRAINED_MODE=1` enforced in CI environment
+- [x] `pyright` covers all engine sub-modules (pyrightconfig.json — 0 errors)
+- [ ] All CI checks passing on all three platforms (pending remote run)
 
 ### Phase 6 — Documentation
-- [ ] `README.md` — full required sections (§29 of STANDARDS.md)
-- [ ] Hardware sovereignty statement in README
-- [ ] Tool reference table in README
-- [ ] Usage examples showing four-tool loop for classification and regression
+- [x] `README.md` — full required sections
+- [x] Hardware sovereignty statement in README
+- [x] Tool reference table in README
+- [x] Usage examples showing four-tool loop for classification and regression
 

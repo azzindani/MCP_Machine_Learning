@@ -16,14 +16,10 @@ shared = { path = "shared" }
 [tool.ruff]
 line-length = 120
 target-version = "py312"
-exclude = ["*.ipynb", "ML_Lookup.ipynb"]
+exclude = ["*.ipynb", "ML_Lookup.ipynb", "install/*.sh", "install/*.bat"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP"]
-
-[tool.pyright]
-pythonVersion = "3.12"
-typeCheckingMode = "basic"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

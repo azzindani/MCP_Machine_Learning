@@ -212,7 +212,7 @@ def search_columns(
 
         for col in df.columns:
             series = df[col]
-            if has_nulls and not series.isnull().any():
+            if has_nulls and not bool(series.isnull().any()):
                 continue
             if dtype:
                 if dtype == "numeric" and not pd.api.types.is_numeric_dtype(series):

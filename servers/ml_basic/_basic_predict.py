@@ -228,7 +228,7 @@ def predict_single(model_path: str, input_data: str) -> dict:
             row_df[col] = row_df[col].map(mapping).fillna(-1)
     # Fill missing numerics
     for col in row_df.select_dtypes(include="number").columns:
-        if row_df[col].isnull().any():
+        if bool(row_df[col].isnull().any()):
             row_df[col] = row_df[col].fillna(0)
 
     x = row_df.values
