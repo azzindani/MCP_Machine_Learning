@@ -79,7 +79,7 @@ def _sh_launch_cmd(server_name: str) -> str:
     return (
         f'd="{d}"; '
         f"lf=/tmp/mcp_ml.lock; n=0; "
-        f"until mkdir \"$lf\" 2>/dev/null; do sleep 1; n=$((n+1)); [ $n -gt 300 ] && break; done; "
+        f'until mkdir "$lf" 2>/dev/null; do sleep 1; n=$((n+1)); [ $n -gt 300 ] && break; done; '
         f'[ -d "$d/.git" ] || git clone {REPO_URL} "$d" -q; '
         f'cd "$d"; '
         f"git fetch origin main -q 2>/dev/null; "
