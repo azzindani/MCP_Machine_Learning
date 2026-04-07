@@ -70,7 +70,7 @@ def _ps_launch_cmd(server_name: str) -> str:
         f"Set-Location $d; "
         f"git fetch origin main -q 2>$null; "
         f"git checkout -B main origin/main -q 2>$null; "
-        f"if(!(Test-Path(Join-Path $d '.venv'))){{uv sync --all-packages -q}} "
+        f"if(!(Test-Path(Join-Path $d '.venv'))){{uv sync -q}} "
         f"}} finally {{$m.ReleaseMutex()}}; "
         f"Set-Location (Join-Path $d '{server_dir}'); "
         f"uv run python server.py"
@@ -98,7 +98,7 @@ def _sh_launch_cmd(server_name: str) -> str:
         f'cd "$d"; '
         f"git fetch origin main -q 2>/dev/null; "
         f"git checkout -B main origin/main -q 2>/dev/null; "
-        f'[ -d "$d/.venv" ] || uv sync --all-packages -q; '
+        f'[ -d "$d/.venv" ] || uv sync -q; '
         f'rmdir "$lf" 2>/dev/null; '
         f'cd "$d/{server_dir}"; '
         f"uv run python server.py"
