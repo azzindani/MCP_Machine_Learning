@@ -42,30 +42,50 @@ def _install_dir_posix() -> str:
 
 
 def _ps_launch_cmd(server_name: str) -> str:
-    """Return PowerShell command string for a server entry."""
-    d = r"Join-Path $env:USERPROFILE '.mcp_servers\\" + REPO_NAME + "'"
+    """Return PowerShell -Command string for a server entry.
+
+    Uses a global named mutex so that when all three servers start at once,
+    only one at a time runs the git-fetch + optional uv-sync block.
+    Skips uv sync when .venv already exists (fast subsequent starts).
+    Uses 'git checkout -B main origin/main' to avoid detached HEAD.
+    """
+    d_expr = r"Join-Path $env:USERPROFILE '.mcp_servers\\" + REPO_NAME + "'"
     return (
-        f"$d = {d}; "
-        f"if (!(Test-Path $d)) {{ git clone {REPO_URL} $d }}; "
+        f"$d={d_expr}; "
+        f"$m=[System.Threading.Mutex]::new($false,'Global\\\\MCP_ML'); "
+        f"$m.WaitOne(300000)|Out-Null; "
+        f"try {{ "
+        f"if(!(Test-Path(Join-Path $d '.git')))"
+        f"{{git clone {REPO_URL} $d -q 2>$null}}; "
         f"Set-Location $d; "
-        f"git fetch --quiet; git checkout main --quiet 2>$null; "
-        f"git reset --hard origin/main --quiet; "
-        f"uv sync --all-packages --quiet; "
+        f"git fetch origin main -q 2>$null; "
+        f"git checkout -B main origin/main -q 2>$null; "
+        f"if(!(Test-Path(Join-Path $d '.venv'))){{uv sync --all-packages -q}} "
+        f"}} finally {{$m.ReleaseMutex()}}; "
         f"uv run --package {server_name} {server_name}"
     )
 
 
 def _sh_launch_cmd(server_name: str) -> str:
-    """Return sh command string for a server entry (macOS/Linux)."""
+    """Return sh -c command string for a server entry (macOS/Linux).
+
+    Uses a mkdir-based spin lock (/tmp/mcp_ml.lock) so concurrent server
+    starts don't race on git clone / uv sync.
+    Skips uv sync when .venv already exists (fast subsequent starts).
+    Uses 'git checkout -B main origin/main' to avoid detached HEAD.
+    """
     home = str(Path.home())
     d = f"{home}/.mcp_servers/{REPO_NAME}"
     return (
-        f"[ -d '{d}' ] || git clone {REPO_URL} '{d}'; "
-        f"cd '{d}'; "
-        f"git fetch --quiet origin; "
-        f"git checkout main --quiet 2>/dev/null; "
-        f"git reset --hard origin/main --quiet; "
-        f"uv sync --all-packages --quiet; "
+        f'd="{d}"; '
+        f"lf=/tmp/mcp_ml.lock; n=0; "
+        f"until mkdir \"$lf\" 2>/dev/null; do sleep 1; n=$((n+1)); [ $n -gt 300 ] && break; done; "
+        f'[ -d "$d/.git" ] || git clone {REPO_URL} "$d" -q; '
+        f'cd "$d"; '
+        f"git fetch origin main -q 2>/dev/null; "
+        f"git checkout -B main origin/main -q 2>/dev/null; "
+        f'[ -d "$d/.venv" ] || uv sync --all-packages -q; '
+        f'rmdir "$lf" 2>/dev/null; '
         f"uv run --package {server_name} {server_name}"
     )
 
