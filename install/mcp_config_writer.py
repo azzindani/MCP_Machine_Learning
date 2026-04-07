@@ -23,6 +23,13 @@ from pathlib import Path
 REPO_URL = "https://github.com/azzindani/MCP_Machine_Learning.git"
 REPO_NAME = "MCP_Machine_Learning"
 
+# Map server name to its subdirectory under servers/
+SERVER_DIRS = {
+    "ml-basic": "servers/ml_basic",
+    "ml-medium": "servers/ml_medium",
+    "ml-advanced": "servers/ml_advanced",
+}
+
 # --------------------------------------------------------------------------- #
 # Platform helpers
 # --------------------------------------------------------------------------- #
@@ -48,7 +55,10 @@ def _ps_launch_cmd(server_name: str) -> str:
     only one at a time runs the git-fetch + optional uv-sync block.
     Skips uv sync when .venv already exists (fast subsequent starts).
     Uses 'git checkout -B main origin/main' to avoid detached HEAD.
+    Launches via 'cd tier_dir && uv run python server.py' (same pattern
+    as MCP_Data_Analyst) for reliable imports.
     """
+    server_dir = SERVER_DIRS[server_name].replace("/", "\\\\")
     d_expr = r"Join-Path $env:USERPROFILE '.mcp_servers\\" + REPO_NAME + "'"
     return (
         f"$d={d_expr}; "
@@ -62,7 +72,8 @@ def _ps_launch_cmd(server_name: str) -> str:
         f"git checkout -B main origin/main -q 2>$null; "
         f"if(!(Test-Path(Join-Path $d '.venv'))){{uv sync --all-packages -q}} "
         f"}} finally {{$m.ReleaseMutex()}}; "
-        f"uv run --package {server_name} {server_name}"
+        f"Set-Location (Join-Path $d '{server_dir}'); "
+        f"uv run python server.py"
     )
 
 
@@ -73,7 +84,10 @@ def _sh_launch_cmd(server_name: str) -> str:
     starts don't race on git clone / uv sync.
     Skips uv sync when .venv already exists (fast subsequent starts).
     Uses 'git checkout -B main origin/main' to avoid detached HEAD.
+    Launches via 'cd tier_dir && uv run python server.py' (same pattern
+    as MCP_Data_Analyst) for reliable imports.
     """
+    server_dir = SERVER_DIRS[server_name]
     home = str(Path.home())
     d = f"{home}/.mcp_servers/{REPO_NAME}"
     return (
@@ -86,7 +100,8 @@ def _sh_launch_cmd(server_name: str) -> str:
         f"git checkout -B main origin/main -q 2>/dev/null; "
         f'[ -d "$d/.venv" ] || uv sync --all-packages -q; '
         f'rmdir "$lf" 2>/dev/null; '
-        f"uv run --package {server_name} {server_name}"
+        f'cd "$d/{server_dir}"; '
+        f"uv run python server.py"
     )
 
 
