@@ -3,10 +3,20 @@
 import argparse
 import logging
 import sys
+from pathlib import Path
 
-from fastmcp import FastMCP
+# When launched directly (uv run python server.py from tier dir),
+# add the repo root to sys.path so 'shared' and 'servers' resolve.
+_repo_root = str(Path(__file__).resolve().parent.parent.parent)
+if _repo_root not in sys.path:
+    sys.path.insert(0, _repo_root)
 
-from . import engine
+from fastmcp import FastMCP  # noqa: E402
+
+try:
+    from . import engine  # noqa: E402
+except ImportError:
+    from servers.ml_medium import engine  # noqa: E402
 
 logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
 
