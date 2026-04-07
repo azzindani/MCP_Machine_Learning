@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 from shared.file_utils import get_output_dir, resolve_path
-from shared.html_theme import get_theme, save_chart
+from shared.html_theme import get_theme, plotly_template, save_chart
 from shared.progress import info, ok
 
 # ---------------------------------------------------------------------------
@@ -152,6 +152,7 @@ def plot_roc_curve(
             y_prob = model.predict_proba(X)
 
         t = get_theme(theme)
+        tmpl = plotly_template(theme)
         fig = go.Figure()
 
         auc_scores = {}
@@ -201,7 +202,7 @@ def plot_roc_curve(
             xaxis_title="False Positive Rate",
             yaxis_title="True Positive Rate",
             legend=dict(x=0.6, y=0.1),
-            template=t["plotly_template"],
+            template=tmpl,
         )
 
         out_path_str = output_path or str(get_output_dir() / f"{dp.stem}_roc_curve.html")
@@ -339,6 +340,7 @@ def plot_learning_curve(
         val_std = val_scores.std(axis=1)
 
         t = get_theme(theme)
+        tmpl = plotly_template(theme)
         fig = go.Figure()
 
         fig.add_trace(
@@ -366,7 +368,7 @@ def plot_learning_curve(
             title=f"Learning Curve — {model} ({task})",
             xaxis_title="Training Examples",
             yaxis_title=scoring.upper(),
-            template=t["plotly_template"],
+            template=tmpl,
         )
 
         out_path_str = output_path or str(get_output_dir() / f"{dp.stem}_{model}_learning_curve.html")
@@ -500,6 +502,7 @@ def plot_predictions_vs_actual(
         r2 = float(r2_score(y_true, y_pred))
 
         t = get_theme(theme)
+        tmpl = plotly_template(theme)
         fig = go.Figure()
         fig.add_trace(
             go.Scatter(
@@ -527,7 +530,7 @@ def plot_predictions_vs_actual(
             title=f"Predictions vs Actual — R²={r2:.3f}",
             xaxis_title="Actual",
             yaxis_title="Predicted",
-            template=t["plotly_template"],
+            template=tmpl,
         )
 
         out_path_str = output_path or str(get_output_dir() / f"{dp.stem}_pred_vs_actual.html")
@@ -579,6 +582,7 @@ def generate_cluster_report(
         get_theme,
         metrics_cards_html,
         plotly_div,
+        plotly_template,
     )
 
     progress = []
@@ -635,6 +639,7 @@ def generate_cluster_report(
         n_clusters = labels.nunique()
 
         t = get_theme(theme)
+        tmpl = plotly_template(theme)
         sections = []
 
         # --- Summary cards ---
@@ -686,7 +691,7 @@ def generate_cluster_report(
                 y="PC2",
                 color="cluster",
                 title=f"PCA Scatter — {explained[0] * 100:.1f}%/{explained[1] * 100:.1f}% variance",
-                template=t["plotly_template"],
+                template=tmpl,
             )
             sections.append(
                 {
@@ -727,7 +732,7 @@ def generate_cluster_report(
             title="Cluster Sizes",
             xaxis_title="Cluster",
             yaxis_title="Count",
-            template=t["plotly_template"],
+            template=tmpl,
         )
         sections.append(
             {

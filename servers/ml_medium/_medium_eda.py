@@ -176,20 +176,27 @@ def _run_quality_alerts(df: pd.DataFrame, target_column: str = "") -> list[dict]
 def _alerts_html(alerts: list[dict], t: dict) -> str:
     """Render alerts as styled HTML cards."""
     if not alerts:
-        return '<div class="alert alert-success">✔ No quality issues detected.</div>'
+        return '<div class="alert alert-success">&#10004; No quality issues detected.</div>'
     sev_class = {"high": "alert-danger", "medium": "alert-warning", "low": "alert-success"}
-    sev_icon = {"high": "🔴", "medium": "🟡", "low": "🟢"}
+    sev_icon = {"high": "&#9679;", "medium": "&#9679;", "low": "&#9679;"}
+    sev_icon_style = {
+        "high": "color:var(--red)",
+        "medium": "color:var(--orange)",
+        "low": "color:var(--green)",
+    }
     parts = []
     for a in alerts:
         sev = a.get("severity", "low")
         cls = sev_class.get(sev, "alert-warning")
-        icon = sev_icon.get(sev, "●")
+        icon = sev_icon.get(sev, "&#9679;")
+        icon_style = sev_icon_style.get(sev, "")
         msg = a.get("message", "")
         rec = a.get("recommendation", "")
         parts.append(
             f'<div class="alert {cls}">'
-            f"<strong>{icon} {a['type'].replace('_', ' ').title()}</strong> — {msg}"
-            f"{'<br><em>💡 ' + rec + '</em>' if rec else ''}"
+            f"<strong><span style='{icon_style}'>{icon}</span> "
+            f"{a['type'].replace('_', ' ').title()}</strong> &mdash; {msg}"
+            f"{'<br><em>' + rec + '</em>' if rec else ''}"
             f"</div>"
         )
     return "\n".join(parts)
@@ -201,27 +208,27 @@ def _quality_score_html(score: float, alerts: list[dict], t: dict) -> str:
     med = sum(1 for a in alerts if a.get("severity") == "medium")
     low = sum(1 for a in alerts if a.get("severity") == "low")
 
-    color = t["success"] if score >= 80 else (t["warning"] if score >= 60 else t["danger"])
+    score_color = "var(--green)" if score >= 80 else ("var(--orange)" if score >= 60 else "var(--red)")
     score_card = (
         f'<div class="cards">'
-        f'<div class="card" style="border-left:4px solid {color}">'
+        f'<div class="card" style="border-left:4px solid {score_color}">'
         f'  <div class="label">Quality Score</div>'
-        f'  <div class="value" style="color:{color}">{score}</div>'
+        f'  <div class="value" style="color:{score_color}">{score}</div>'
         f'  <div class="sub">out of 100</div>'
         f"</div>"
-        f'<div class="card" style="border-left:4px solid {t["danger"]}">'
+        f'<div class="card" style="border-left:4px solid var(--red)">'
         f'  <div class="label">High Severity</div>'
-        f'  <div class="value" style="color:{t["danger"]}">{high}</div>'
+        f'  <div class="value" style="color:var(--red)">{high}</div>'
         f'  <div class="sub">critical issues</div>'
         f"</div>"
-        f'<div class="card" style="border-left:4px solid {t["warning"]}">'
+        f'<div class="card" style="border-left:4px solid var(--orange)">'
         f'  <div class="label">Medium Severity</div>'
-        f'  <div class="value" style="color:{t["warning"]}">{med}</div>'
+        f'  <div class="value" style="color:var(--orange)">{med}</div>'
         f'  <div class="sub">warnings</div>'
         f"</div>"
-        f'<div class="card" style="border-left:4px solid {t["success"]}">'
+        f'<div class="card" style="border-left:4px solid var(--green)">'
         f'  <div class="label">Low Severity</div>'
-        f'  <div class="value" style="color:{t["success"]}">{low}</div>'
+        f'  <div class="value" style="color:var(--green)">{low}</div>'
         f'  <div class="sub">minor notes</div>'
         f"</div>"
         f"</div>"
@@ -249,6 +256,7 @@ def generate_eda_report(
         get_theme,
         metrics_cards_html,
         plotly_div,
+        plotly_template,
     )
 
     progress: list[dict] = []
@@ -286,6 +294,7 @@ def generate_eda_report(
         return resp
 
     t = get_theme(theme)
+    tmpl = plotly_template(theme)
     numeric_cols = df.select_dtypes(include="number").columns.tolist()
     cat_cols = [c for c in df.columns if c not in numeric_cols]
     sections: list[dict] = []
@@ -329,15 +338,12 @@ def generate_eda_report(
             orientation="h",
             title="Missing Values per Column",
             labels={"x": "Missing Count", "y": "Column"},
-            template=t["plotly_template"],
+            template=tmpl,
             color=null_series.values / len(df) * 100,
             color_continuous_scale="Reds",
         )
         fig_miss.update_coloraxes(colorbar_title="% Missing")
         fig_miss.update_layout(
-            paper_bgcolor=t["paper_color"],
-            plot_bgcolor=t["bg_color"],
-            font_color=t["text_color"],
             height=max(300, len(null_series) * 30 + 80),
             margin=dict(l=10, r=10, t=40, b=10),
         )
@@ -367,13 +373,11 @@ def generate_eda_report(
         for i, col in enumerate(show_nums):
             r = i + 1
             clean = df[col].dropna()
-            # histogram
             fig_dist.add_trace(
                 go.Histogram(x=clean, name=col, showlegend=False, marker_color=t["accent"]),
                 row=r,
                 col=1,
             )
-            # box plot
             fig_dist.add_trace(
                 go.Box(x=clean, name=col, showlegend=False, marker_color=t["accent"], boxpoints="outliers"),
                 row=r,
@@ -381,10 +385,7 @@ def generate_eda_report(
             )
         fig_dist.update_layout(
             title="Numeric Distributions (Histogram + Box Plot)",
-            template=t["plotly_template"],
-            paper_bgcolor=t["paper_color"],
-            plot_bgcolor=t["bg_color"],
-            font_color=t["text_color"],
+            template=tmpl,
             height=220 * rows_n + 60,
             margin=dict(l=10, r=10, t=50, b=10),
         )
@@ -425,10 +426,7 @@ def generate_eda_report(
                 col=col_idx,
             )
         fig_corr.update_layout(
-            template=t["plotly_template"],
-            paper_bgcolor=t["paper_color"],
-            plot_bgcolor=t["bg_color"],
-            font_color=t["text_color"],
+            template=tmpl,
             height=max(450, len(feat_cols) * 28 + 100),
             margin=dict(l=10, r=10, t=50, b=10),
         )
@@ -453,14 +451,11 @@ def generate_eda_report(
                 orientation="h",
                 title=f"{col} — Top Values",
                 labels={"x": "Count", "y": col},
-                template=t["plotly_template"],
+                template=tmpl,
                 color=vc.values,
                 color_continuous_scale="Blues",
             )
             fig_cat.update_layout(
-                paper_bgcolor=t["paper_color"],
-                plot_bgcolor=t["bg_color"],
-                font_color=t["text_color"],
                 height=max(250, len(vc) * 25 + 80),
                 margin=dict(l=10, r=10, t=40, b=10),
                 showlegend=False,
@@ -478,7 +473,7 @@ def generate_eda_report(
                 names=vc.index.astype(str),
                 values=vc.values,
                 title=f"Target Distribution: {target_column}",
-                template=t["plotly_template"],
+                template=tmpl,
                 color_discrete_sequence=px.colors.qualitative.Set2,
             )
         else:
@@ -487,12 +482,9 @@ def generate_eda_report(
                 x=target_column,
                 nbins=40,
                 title=f"Target Distribution: {target_column}",
-                template=t["plotly_template"],
+                template=tmpl,
             )
         fig_tgt.update_layout(
-            paper_bgcolor=t["paper_color"],
-            plot_bgcolor=t["bg_color"],
-            font_color=t["text_color"],
             height=380,
             margin=dict(l=10, r=10, t=50, b=10),
         )
