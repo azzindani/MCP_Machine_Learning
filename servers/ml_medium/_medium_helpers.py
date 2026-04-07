@@ -111,7 +111,7 @@ def _auto_preprocess(df: pd.DataFrame, target_column: str) -> tuple[pd.DataFrame
             encoded_cols.append(col)
 
     for col in df.select_dtypes(include="number").columns:
-        if df[col].isnull().any():
+        if bool(df[col].isnull().any()):
             df[col] = df[col].fillna(df[col].median())
 
     return df, encoding_map, encoded_cols
@@ -286,10 +286,10 @@ def _apply_op(df: pd.DataFrame, op: dict) -> tuple[pd.DataFrame, dict]:
             q1 = df[col].quantile(0.25)
             q3 = df[col].quantile(0.75)
             iqr = q3 - q1
-            df = df[(df[col] >= q1 - 1.5 * iqr) & (df[col] <= q3 + 1.5 * iqr)]
+            df = df[(df[col] >= q1 - 1.5 * iqr) & (df[col] <= q3 + 1.5 * iqr)].copy()  # type: ignore[assignment]
         else:  # std
             mean, std = df[col].mean(), df[col].std()
-            df = df[(df[col] >= mean - 3 * std) & (df[col] <= mean + 3 * std)]
+            df = df[(df[col] >= mean - 3 * std) & (df[col] <= mean + 3 * std)].copy()  # type: ignore[assignment]
         return df.copy(), {"op": op_name, "column": col, "method": method, "removed": before - len(df)}
 
     elif op_name == "label_encode":
