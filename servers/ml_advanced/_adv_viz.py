@@ -328,7 +328,7 @@ def plot_learning_curve(
         scoring = "accuracy" if task == "classification" else "r2"
         train_sizes = np.linspace(0.1, 1.0, 10)
 
-        train_sizes_abs, train_scores, val_scores = learning_curve(
+        train_sizes_abs, train_scores, val_scores = learning_curve(  # type: ignore[misc]
             estimator, X, y, cv=cv, scoring=scoring, train_sizes=train_sizes, n_jobs=-1
         )
         progress.append(ok("Computed learning curves", f"{len(train_sizes_abs)} points"))

@@ -45,6 +45,12 @@ jobs:
       - name: Format check (ruff)
         run: uv run ruff format --check .
 
+      - name: Type check (pyright)
+        run: uv run pyright servers/ shared/
+
+      - name: Verify tool docstrings
+        run: python verify_tool_docstrings.py
+
       - name: Run tests
         run: uv run python -m pytest tests/ -q --tb=short
 

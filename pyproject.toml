@@ -16,14 +16,10 @@ shared = { path = "shared" }
 [tool.ruff]
 line-length = 120
 target-version = "py312"
-exclude = ["*.ipynb", "ML_Lookup.ipynb"]
+exclude = ["*.ipynb", "ML_Lookup.ipynb", "install/*.sh", "install/*.bat"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP"]
-
-[tool.pyright]
-pythonVersion = "3.12"
-typeCheckingMode = "basic"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -34,6 +30,7 @@ dev = [
     "pandas>=2.3.3",
     "plotly>=6.6.0",
     "psutil>=7.2.2",
+    "pyright>=1.1.408",
     "pytest>=9.0.2",
     "ruff>=0.9",
     "scikit-learn>=1.8.0",

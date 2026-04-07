@@ -1,0 +1,16 @@
+{
+    "include": ["servers", "shared"],
+    "exclude": [".venv"],
+    "venvPath": ".",
+    "venv": ".venv",
+    "typeCheckingMode": "basic",
+    "reportMissingImports": "warning",
+    "reportMissingModuleSource": "none",
+    "reportArgumentType": "none",
+    "reportOperatorIssue": "none",
+    "reportCallIssue": "none",
+    "reportAttributeAccessIssue": "none",
+    "reportOptionalSubscript": "none",
+    "reportOptionalMemberAccess": "none",
+    "reportIndexIssue": "none"
+}
