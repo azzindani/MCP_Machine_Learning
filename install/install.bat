@@ -69,7 +69,7 @@ if exist "%INSTALL_DIR%\.git" (
 
 REM --- Sync dependencies ---
 echo Installing dependencies ^(uv sync^)...
-uv sync --all-packages --quiet
+uv sync --quiet
 echo Dependencies installed.
 
 REM --- Write MCP config ---
