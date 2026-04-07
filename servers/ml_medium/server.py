@@ -1,24 +1,18 @@
 """ml_medium server — Tier 2 MCP tool wrappers. Zero domain logic."""
 
-import argparse
+from __future__ import annotations
+
 import logging
 import sys
-from pathlib import Path
-
-# When launched directly (uv run python server.py from tier dir),
-# add the repo root to sys.path so 'shared' and 'servers' resolve.
-_repo_root = str(Path(__file__).resolve().parent.parent.parent)
-if _repo_root not in sys.path:
-    sys.path.insert(0, _repo_root)
-
-from fastmcp import FastMCP  # noqa: E402
-
-try:
-    from . import engine  # noqa: E402
-except ImportError:
-    from servers.ml_medium import engine  # noqa: E402
 
 logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
+
+from fastmcp import FastMCP
+
+try:
+    from . import engine
+except ImportError:
+    from servers.ml_medium import engine
 
 mcp = FastMCP("ml-medium")
 
@@ -299,15 +293,7 @@ def batch_predict(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="ml-medium MCP server")
-    parser.add_argument("--transport", choices=["stdio", "http"], default="stdio")
-    parser.add_argument("--port", type=int, default=8766)
-    args = parser.parse_args()
-
-    if args.transport == "http":
-        mcp.run(transport="streamable-http", host="127.0.0.1", port=args.port, path="/mcp")
-    else:
-        mcp.run()
+    mcp.run()
 
 
 if __name__ == "__main__":

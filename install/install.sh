@@ -59,7 +59,7 @@ fi
 
 # --- Sync dependencies ---
 echo "Installing dependencies (uv sync)..."
-uv sync --all-packages --quiet
+uv sync --quiet
 echo "Dependencies installed."
 
 # --- Write MCP config ---

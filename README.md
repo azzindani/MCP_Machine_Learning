@@ -174,14 +174,14 @@ This downloads the repo and pre-installs all packages (~200 MB). Do this **befor
 $d = "$env:USERPROFILE\.mcp_servers\MCP_Machine_Learning"
 git clone https://github.com/azzindani/MCP_Machine_Learning.git $d
 Set-Location $d
-uv sync --all-packages
+uv sync
 ```
 
 **macOS / Linux:**
 ```bash
 d="$HOME/.mcp_servers/MCP_Machine_Learning"
 git clone https://github.com/azzindani/MCP_Machine_Learning.git "$d"
-cd "$d" && uv sync --all-packages
+cd "$d" && uv sync
 ```
 
 After this runs successfully, add the MCP config below and restart your client.
@@ -219,7 +219,7 @@ Each server entry auto-clones to `%USERPROFILE%\.mcp_servers\MCP_Machine_Learnin
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
-        "$d=Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; $m=[System.Threading.Mutex]::new($false,'Global\\MCP_ML'); $m.WaitOne(300000)|Out-Null; try { if(!(Test-Path(Join-Path $d '.git'))){git clone https://github.com/azzindani/MCP_Machine_Learning.git $d -q 2>$null}; Set-Location $d; git fetch origin main -q 2>$null; git checkout -B main origin/main -q 2>$null; if(!(Test-Path(Join-Path $d '.venv'))){uv sync --all-packages -q} } finally {$m.ReleaseMutex()}; Set-Location (Join-Path $d 'servers\\ml_basic'); uv run python server.py"
+        "$d=Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; $m=[System.Threading.Mutex]::new($false,'Global\\MCP_ML'); $m.WaitOne(300000)|Out-Null; try { if(!(Test-Path(Join-Path $d '.git'))){git clone https://github.com/azzindani/MCP_Machine_Learning.git $d -q 2>$null}; Set-Location $d; git fetch origin main -q 2>$null; git checkout -B main origin/main -q 2>$null; if(!(Test-Path(Join-Path $d '.venv'))){uv sync -q} } finally {$m.ReleaseMutex()}; Set-Location (Join-Path $d 'servers\\ml_basic'); uv run python server.py"
       ],
       "env": {
         "MCP_CONSTRAINED_MODE": "0"
@@ -233,7 +233,7 @@ Each server entry auto-clones to `%USERPROFILE%\.mcp_servers\MCP_Machine_Learnin
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
-        "$d=Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; $m=[System.Threading.Mutex]::new($false,'Global\\MCP_ML'); $m.WaitOne(300000)|Out-Null; try { if(!(Test-Path(Join-Path $d '.git'))){git clone https://github.com/azzindani/MCP_Machine_Learning.git $d -q 2>$null}; Set-Location $d; git fetch origin main -q 2>$null; git checkout -B main origin/main -q 2>$null; if(!(Test-Path(Join-Path $d '.venv'))){uv sync --all-packages -q} } finally {$m.ReleaseMutex()}; Set-Location (Join-Path $d 'servers\\ml_medium'); uv run python server.py"
+        "$d=Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; $m=[System.Threading.Mutex]::new($false,'Global\\MCP_ML'); $m.WaitOne(300000)|Out-Null; try { if(!(Test-Path(Join-Path $d '.git'))){git clone https://github.com/azzindani/MCP_Machine_Learning.git $d -q 2>$null}; Set-Location $d; git fetch origin main -q 2>$null; git checkout -B main origin/main -q 2>$null; if(!(Test-Path(Join-Path $d '.venv'))){uv sync -q} } finally {$m.ReleaseMutex()}; Set-Location (Join-Path $d 'servers\\ml_medium'); uv run python server.py"
       ],
       "env": {
         "MCP_CONSTRAINED_MODE": "0"
@@ -247,7 +247,7 @@ Each server entry auto-clones to `%USERPROFILE%\.mcp_servers\MCP_Machine_Learnin
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
-        "$d=Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; $m=[System.Threading.Mutex]::new($false,'Global\\MCP_ML'); $m.WaitOne(300000)|Out-Null; try { if(!(Test-Path(Join-Path $d '.git'))){git clone https://github.com/azzindani/MCP_Machine_Learning.git $d -q 2>$null}; Set-Location $d; git fetch origin main -q 2>$null; git checkout -B main origin/main -q 2>$null; if(!(Test-Path(Join-Path $d '.venv'))){uv sync --all-packages -q} } finally {$m.ReleaseMutex()}; Set-Location (Join-Path $d 'servers\\ml_advanced'); uv run python server.py"
+        "$d=Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; $m=[System.Threading.Mutex]::new($false,'Global\\MCP_ML'); $m.WaitOne(300000)|Out-Null; try { if(!(Test-Path(Join-Path $d '.git'))){git clone https://github.com/azzindani/MCP_Machine_Learning.git $d -q 2>$null}; Set-Location $d; git fetch origin main -q 2>$null; git checkout -B main origin/main -q 2>$null; if(!(Test-Path(Join-Path $d '.venv'))){uv sync -q} } finally {$m.ReleaseMutex()}; Set-Location (Join-Path $d 'servers\\ml_advanced'); uv run python server.py"
       ],
       "env": {
         "MCP_CONSTRAINED_MODE": "0"
@@ -270,7 +270,7 @@ Each server entry auto-clones to `%USERPROFILE%\.mcp_servers\MCP_Machine_Learnin
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
-        "$d=Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; $m=[System.Threading.Mutex]::new($false,'Global\\MCP_ML'); $m.WaitOne(300000)|Out-Null; try { if(!(Test-Path(Join-Path $d '.git'))){git clone https://github.com/azzindani/MCP_Machine_Learning.git $d -q 2>$null}; Set-Location $d; git fetch origin main -q 2>$null; git checkout -B main origin/main -q 2>$null; if(!(Test-Path(Join-Path $d '.venv'))){uv sync --all-packages -q} } finally {$m.ReleaseMutex()}; Set-Location (Join-Path $d 'servers\\ml_basic'); uv run python server.py"
+        "$d=Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; $m=[System.Threading.Mutex]::new($false,'Global\\MCP_ML'); $m.WaitOne(300000)|Out-Null; try { if(!(Test-Path(Join-Path $d '.git'))){git clone https://github.com/azzindani/MCP_Machine_Learning.git $d -q 2>$null}; Set-Location $d; git fetch origin main -q 2>$null; git checkout -B main origin/main -q 2>$null; if(!(Test-Path(Join-Path $d '.venv'))){uv sync -q} } finally {$m.ReleaseMutex()}; Set-Location (Join-Path $d 'servers\\ml_basic'); uv run python server.py"
       ],
       "env": {
         "MCP_CONSTRAINED_MODE": "1"
@@ -293,7 +293,7 @@ Each server entry auto-clones to `%USERPROFILE%\.mcp_servers\MCP_Machine_Learnin
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
-        "$d=Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; $m=[System.Threading.Mutex]::new($false,'Global\\MCP_ML'); $m.WaitOne(300000)|Out-Null; try { if(!(Test-Path(Join-Path $d '.git'))){git clone https://github.com/azzindani/MCP_Machine_Learning.git $d -q 2>$null}; Set-Location $d; git fetch origin main -q 2>$null; git checkout -B main origin/main -q 2>$null; if(!(Test-Path(Join-Path $d '.venv'))){uv sync --all-packages -q} } finally {$m.ReleaseMutex()}; Set-Location (Join-Path $d 'servers\\ml_basic'); uv run python server.py"
+        "$d=Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; $m=[System.Threading.Mutex]::new($false,'Global\\MCP_ML'); $m.WaitOne(300000)|Out-Null; try { if(!(Test-Path(Join-Path $d '.git'))){git clone https://github.com/azzindani/MCP_Machine_Learning.git $d -q 2>$null}; Set-Location $d; git fetch origin main -q 2>$null; git checkout -B main origin/main -q 2>$null; if(!(Test-Path(Join-Path $d '.venv'))){uv sync -q} } finally {$m.ReleaseMutex()}; Set-Location (Join-Path $d 'servers\\ml_basic'); uv run python server.py"
       ],
       "env": {
         "MCP_CONSTRAINED_MODE": "1"
@@ -307,7 +307,7 @@ Each server entry auto-clones to `%USERPROFILE%\.mcp_servers\MCP_Machine_Learnin
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
-        "$d=Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; $m=[System.Threading.Mutex]::new($false,'Global\\MCP_ML'); $m.WaitOne(300000)|Out-Null; try { if(!(Test-Path(Join-Path $d '.git'))){git clone https://github.com/azzindani/MCP_Machine_Learning.git $d -q 2>$null}; Set-Location $d; git fetch origin main -q 2>$null; git checkout -B main origin/main -q 2>$null; if(!(Test-Path(Join-Path $d '.venv'))){uv sync --all-packages -q} } finally {$m.ReleaseMutex()}; Set-Location (Join-Path $d 'servers\\ml_medium'); uv run python server.py"
+        "$d=Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; $m=[System.Threading.Mutex]::new($false,'Global\\MCP_ML'); $m.WaitOne(300000)|Out-Null; try { if(!(Test-Path(Join-Path $d '.git'))){git clone https://github.com/azzindani/MCP_Machine_Learning.git $d -q 2>$null}; Set-Location $d; git fetch origin main -q 2>$null; git checkout -B main origin/main -q 2>$null; if(!(Test-Path(Join-Path $d '.venv'))){uv sync -q} } finally {$m.ReleaseMutex()}; Set-Location (Join-Path $d 'servers\\ml_medium'); uv run python server.py"
       ],
       "env": {
         "MCP_CONSTRAINED_MODE": "1"
@@ -331,7 +331,7 @@ Each server entry auto-clones to `~/.mcp_servers/MCP_Machine_Learning`, pulls la
       "command": "bash",
       "args": [
         "-c",
-        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; lf=/tmp/mcp_ml.lock; n=0; until mkdir \"$lf\" 2>/dev/null; do sleep 1; n=$((n+1)); [ $n -gt 300 ] && break; done; [ -d \"$d/.git\" ] || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\" -q; cd \"$d\"; git fetch origin main -q 2>/dev/null; git checkout -B main origin/main -q 2>/dev/null; [ -d \"$d/.venv\" ] || uv sync --all-packages -q; rmdir \"$lf\" 2>/dev/null; cd \"$d/servers/ml_basic\"; uv run python server.py"
+        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; lf=/tmp/mcp_ml.lock; n=0; until mkdir \"$lf\" 2>/dev/null; do sleep 1; n=$((n+1)); [ $n -gt 300 ] && break; done; [ -d \"$d/.git\" ] || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\" -q; cd \"$d\"; git fetch origin main -q 2>/dev/null; git checkout -B main origin/main -q 2>/dev/null; [ -d \"$d/.venv\" ] || uv sync -q; rmdir \"$lf\" 2>/dev/null; cd \"$d/servers/ml_basic\"; uv run python server.py"
       ],
       "env": {
         "MCP_CONSTRAINED_MODE": "0"
@@ -342,7 +342,7 @@ Each server entry auto-clones to `~/.mcp_servers/MCP_Machine_Learning`, pulls la
       "command": "bash",
       "args": [
         "-c",
-        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; lf=/tmp/mcp_ml.lock; n=0; until mkdir \"$lf\" 2>/dev/null; do sleep 1; n=$((n+1)); [ $n -gt 300 ] && break; done; [ -d \"$d/.git\" ] || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\" -q; cd \"$d\"; git fetch origin main -q 2>/dev/null; git checkout -B main origin/main -q 2>/dev/null; [ -d \"$d/.venv\" ] || uv sync --all-packages -q; rmdir \"$lf\" 2>/dev/null; cd \"$d/servers/ml_medium\"; uv run python server.py"
+        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; lf=/tmp/mcp_ml.lock; n=0; until mkdir \"$lf\" 2>/dev/null; do sleep 1; n=$((n+1)); [ $n -gt 300 ] && break; done; [ -d \"$d/.git\" ] || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\" -q; cd \"$d\"; git fetch origin main -q 2>/dev/null; git checkout -B main origin/main -q 2>/dev/null; [ -d \"$d/.venv\" ] || uv sync -q; rmdir \"$lf\" 2>/dev/null; cd \"$d/servers/ml_medium\"; uv run python server.py"
       ],
       "env": {
         "MCP_CONSTRAINED_MODE": "0"
@@ -353,7 +353,7 @@ Each server entry auto-clones to `~/.mcp_servers/MCP_Machine_Learning`, pulls la
       "command": "bash",
       "args": [
         "-c",
-        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; lf=/tmp/mcp_ml.lock; n=0; until mkdir \"$lf\" 2>/dev/null; do sleep 1; n=$((n+1)); [ $n -gt 300 ] && break; done; [ -d \"$d/.git\" ] || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\" -q; cd \"$d\"; git fetch origin main -q 2>/dev/null; git checkout -B main origin/main -q 2>/dev/null; [ -d \"$d/.venv\" ] || uv sync --all-packages -q; rmdir \"$lf\" 2>/dev/null; cd \"$d/servers/ml_advanced\"; uv run python server.py"
+        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; lf=/tmp/mcp_ml.lock; n=0; until mkdir \"$lf\" 2>/dev/null; do sleep 1; n=$((n+1)); [ $n -gt 300 ] && break; done; [ -d \"$d/.git\" ] || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\" -q; cd \"$d\"; git fetch origin main -q 2>/dev/null; git checkout -B main origin/main -q 2>/dev/null; [ -d \"$d/.venv\" ] || uv sync -q; rmdir \"$lf\" 2>/dev/null; cd \"$d/servers/ml_advanced\"; uv run python server.py"
       ],
       "env": {
         "MCP_CONSTRAINED_MODE": "0"
@@ -373,7 +373,7 @@ Each server entry auto-clones to `~/.mcp_servers/MCP_Machine_Learning`, pulls la
       "command": "bash",
       "args": [
         "-c",
-        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; lf=/tmp/mcp_ml.lock; n=0; until mkdir \"$lf\" 2>/dev/null; do sleep 1; n=$((n+1)); [ $n -gt 300 ] && break; done; [ -d \"$d/.git\" ] || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\" -q; cd \"$d\"; git fetch origin main -q 2>/dev/null; git checkout -B main origin/main -q 2>/dev/null; [ -d \"$d/.venv\" ] || uv sync --all-packages -q; rmdir \"$lf\" 2>/dev/null; cd \"$d/servers/ml_basic\"; uv run python server.py"
+        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; lf=/tmp/mcp_ml.lock; n=0; until mkdir \"$lf\" 2>/dev/null; do sleep 1; n=$((n+1)); [ $n -gt 300 ] && break; done; [ -d \"$d/.git\" ] || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\" -q; cd \"$d\"; git fetch origin main -q 2>/dev/null; git checkout -B main origin/main -q 2>/dev/null; [ -d \"$d/.venv\" ] || uv sync -q; rmdir \"$lf\" 2>/dev/null; cd \"$d/servers/ml_basic\"; uv run python server.py"
       ],
       "env": {
         "MCP_CONSTRAINED_MODE": "1"
@@ -393,7 +393,7 @@ Each server entry auto-clones to `~/.mcp_servers/MCP_Machine_Learning`, pulls la
       "command": "bash",
       "args": [
         "-c",
-        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; lf=/tmp/mcp_ml.lock; n=0; until mkdir \"$lf\" 2>/dev/null; do sleep 1; n=$((n+1)); [ $n -gt 300 ] && break; done; [ -d \"$d/.git\" ] || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\" -q; cd \"$d\"; git fetch origin main -q 2>/dev/null; git checkout -B main origin/main -q 2>/dev/null; [ -d \"$d/.venv\" ] || uv sync --all-packages -q; rmdir \"$lf\" 2>/dev/null; cd \"$d/servers/ml_basic\"; uv run python server.py"
+        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; lf=/tmp/mcp_ml.lock; n=0; until mkdir \"$lf\" 2>/dev/null; do sleep 1; n=$((n+1)); [ $n -gt 300 ] && break; done; [ -d \"$d/.git\" ] || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\" -q; cd \"$d\"; git fetch origin main -q 2>/dev/null; git checkout -B main origin/main -q 2>/dev/null; [ -d \"$d/.venv\" ] || uv sync -q; rmdir \"$lf\" 2>/dev/null; cd \"$d/servers/ml_basic\"; uv run python server.py"
       ],
       "env": {
         "MCP_CONSTRAINED_MODE": "1"
@@ -404,7 +404,7 @@ Each server entry auto-clones to `~/.mcp_servers/MCP_Machine_Learning`, pulls la
       "command": "bash",
       "args": [
         "-c",
-        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; lf=/tmp/mcp_ml.lock; n=0; until mkdir \"$lf\" 2>/dev/null; do sleep 1; n=$((n+1)); [ $n -gt 300 ] && break; done; [ -d \"$d/.git\" ] || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\" -q; cd \"$d\"; git fetch origin main -q 2>/dev/null; git checkout -B main origin/main -q 2>/dev/null; [ -d \"$d/.venv\" ] || uv sync --all-packages -q; rmdir \"$lf\" 2>/dev/null; cd \"$d/servers/ml_medium\"; uv run python server.py"
+        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; lf=/tmp/mcp_ml.lock; n=0; until mkdir \"$lf\" 2>/dev/null; do sleep 1; n=$((n+1)); [ $n -gt 300 ] && break; done; [ -d \"$d/.git\" ] || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\" -q; cd \"$d\"; git fetch origin main -q 2>/dev/null; git checkout -B main origin/main -q 2>/dev/null; [ -d \"$d/.venv\" ] || uv sync -q; rmdir \"$lf\" 2>/dev/null; cd \"$d/servers/ml_medium\"; uv run python server.py"
       ],
       "env": {
         "MCP_CONSTRAINED_MODE": "1"
