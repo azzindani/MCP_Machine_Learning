@@ -743,16 +743,16 @@ def generate_cluster_report(
         )
 
         out_path_str = output_path or str(dp.parent / f"{dp.stem}_cluster_report.html")
-        plotly_cdn = '<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>'
         html = build_html_report(
             title=f"Cluster Report — {dp.name}",
-            subtitle=f"Clusters: {n_clusters} · Samples: {len(df)} · Features: {len(feature_columns)}",
+            subtitle="",
             sections=sections,
             theme=theme,
             open_browser=False,
             output_path="",
+            sidebar_title="Cluster Report",
+            sidebar_meta=f"{dp.name}<br>Clusters: {n_clusters} &middot; Samples: {len(df):,}",
         )
-        html = html.replace("</head>", f"  {plotly_cdn}\n</head>")
 
         out = Path(out_path_str).resolve()
         out.parent.mkdir(parents=True, exist_ok=True)
