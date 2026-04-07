@@ -468,9 +468,11 @@ def run_profiling_report(
             get_theme,
             metrics_cards_html,
             plotly_div,
+            plotly_template,
         )
 
         t = get_theme("light")
+        tmpl = plotly_template("light")
         sections: list[dict] = []
         numeric_cols = df.select_dtypes(include="number").columns.tolist()
 
@@ -511,10 +513,7 @@ def run_profiling_report(
                 )
             fig.update_layout(
                 title="Distributions",
-                template=t["plotly_template"],
-                paper_bgcolor=t["paper_color"],
-                plot_bgcolor=t["bg_color"],
-                font_color=t["text_color"],
+                template=tmpl,
                 height=280 * rows_n,
                 margin=dict(l=10, r=10, t=50, b=10),
             )
@@ -537,10 +536,7 @@ def run_profiling_report(
             )
             fig_c.update_layout(
                 title="Correlation",
-                template=t["plotly_template"],
-                paper_bgcolor=t["paper_color"],
-                plot_bgcolor=t["bg_color"],
-                font_color=t["text_color"],
+                template=tmpl,
                 height=480,
                 margin=dict(l=10, r=10, t=50, b=10),
             )
@@ -736,9 +732,9 @@ def generate_training_report(
         _open_file,
         build_html_report,
         data_table_html,
-        get_theme,
         metrics_cards_html,
         plotly_div,
+        plotly_template,
     )
 
     progress: list[dict] = []
@@ -777,7 +773,7 @@ def generate_training_report(
         return _error(f"Failed to load model: {exc}", "Check model_path points to a valid .pkl file.")
     progress.append(ok("Loaded model", mp.name))
 
-    t = get_theme(theme)
+    tmpl = plotly_template(theme)
     sections: list[dict] = []
 
     # --- Model overview ---
@@ -855,10 +851,7 @@ def generate_training_report(
                 title="Confusion Matrix",
                 xaxis_title="Predicted",
                 yaxis_title="Actual",
-                template=t["plotly_template"],
-                paper_bgcolor=t["paper_color"],
-                plot_bgcolor=t["bg_color"],
-                font_color=t["text_color"],
+                template=tmpl,
                 height=380,
                 margin=dict(l=10, r=10, t=50, b=10),
             )
@@ -884,14 +877,11 @@ def generate_training_report(
             orientation="h",
             title="Feature Importance (Top 20)",
             labels={"x": "Importance", "y": "Feature"},
-            template=t["plotly_template"],
+            template=tmpl,
             color=fi_values,
             color_continuous_scale="Blues",
         )
         fig_fi.update_layout(
-            paper_bgcolor=t["paper_color"],
-            plot_bgcolor=t["bg_color"],
-            font_color=t["text_color"],
             height=max(300, len(fi_pairs) * 28 + 80),
             margin=dict(l=10, r=10, t=50, b=10),
         )

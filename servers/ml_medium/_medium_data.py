@@ -273,7 +273,7 @@ def find_optimal_clusters(
     from sklearn.cluster import KMeans as _KMeans
     from sklearn.metrics import silhouette_score
 
-    from shared.html_theme import get_theme, save_chart
+    from shared.html_theme import get_theme, plotly_template, save_chart
 
     progress: list[dict] = []
     try:
@@ -313,6 +313,7 @@ def find_optimal_clusters(
 
     best_k = k_range[int(np.argmax(silhouettes))]
     t = get_theme(theme)
+    tmpl = plotly_template(theme)
 
     fig = make_subplots(rows=1, cols=2, subplot_titles=["Elbow Curve (Inertia)", "Silhouette Score"])
     fig.add_trace(
@@ -326,10 +327,7 @@ def find_optimal_clusters(
     fig.add_vline(x=best_k, line_dash="dash", line_color=t["danger"], annotation_text=f"Best K={best_k}", row=1, col=2)
     fig.update_layout(
         title=f"Optimal Clusters for {path.name}",
-        template=t["plotly_template"],
-        paper_bgcolor=t["paper_color"],
-        plot_bgcolor=t["bg_color"],
-        font_color=t["text_color"],
+        template=tmpl,
         height=420,
         margin=dict(l=10, r=10, t=50, b=10),
     )
