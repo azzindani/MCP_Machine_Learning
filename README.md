@@ -167,7 +167,7 @@ Pass an `ops` array to apply a pipeline in one call:
 
 ### First-Time Setup (run once before configuring your MCP client)
 
-This downloads the repo and pre-installs all packages (~200 MB). Do this **before** adding the MCP config to LM Studio/Claude Desktop, because the package install takes 1–3 minutes and MCP clients time out on the first launch otherwise.
+This downloads the repo and pre-installs all packages (~200 MB including xgboost). You **MUST** do this before adding the MCP config to LM Studio, because LM Studio has a 60-second startup timeout and the initial package download will exceed that.
 
 **Windows (PowerShell):**
 ```powershell
@@ -184,13 +184,13 @@ git clone https://github.com/azzindani/MCP_Machine_Learning.git "$d"
 cd "$d" && uv sync
 ```
 
-After this runs successfully, add the MCP config below and restart your client.
+Wait for `uv sync` to finish completely (you'll see `Installed X packages`), **then** add the MCP config below and restart your client.
 
 ---
 
 ## MCP Configuration
 
-Copy the JSON config for your platform into your MCP client config file. On each start the server checks for repo updates and new packages, then launches immediately.
+Copy the JSON config for your platform into your MCP client config file. On each start the server pulls latest changes and launches.
 
 ### Where to add this configuration
 
@@ -205,7 +205,7 @@ Copy the JSON config for your platform into your MCP client config file. On each
 
 ### Windows (PowerShell)
 
-Each server entry auto-clones to `%USERPROFILE%\.mcp_servers\MCP_Machine_Learning`, pulls latest, syncs dependencies, and runs. Set `MCP_CONSTRAINED_MODE` to `1` for 8 GB VRAM or less.
+Set `MCP_CONSTRAINED_MODE` to `1` for 8 GB VRAM or less.
 
 **All three tiers (12+ GB VRAM)**
 
@@ -214,44 +214,26 @@ Each server entry auto-clones to `%USERPROFILE%\.mcp_servers\MCP_Machine_Learnin
   "mcpServers": {
     "ml-basic": {
       "command": "powershell",
-      "args": [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        "$d=Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; $m=[System.Threading.Mutex]::new($false,'Global\\MCP_ML'); $m.WaitOne(300000)|Out-Null; try { if(!(Test-Path(Join-Path $d '.git'))){git clone https://github.com/azzindani/MCP_Machine_Learning.git $d -q 2>$null}; Set-Location $d; git fetch origin main -q 2>$null; git checkout -B main origin/main -q 2>$null; if(!(Test-Path(Join-Path $d '.venv'))){uv sync -q} } finally {$m.ReleaseMutex()}; Set-Location (Join-Path $d 'servers\\ml_basic'); uv run python server.py"
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
+        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d } else { Set-Location $d; git pull --quiet }; Set-Location (Join-Path $d 'servers\\ml_basic'); uv run python server.py"
       ],
-      "env": {
-        "MCP_CONSTRAINED_MODE": "0"
-      },
+      "env": { "MCP_CONSTRAINED_MODE": "0" },
       "timeout": 600000
     },
     "ml-medium": {
       "command": "powershell",
-      "args": [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        "$d=Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; $m=[System.Threading.Mutex]::new($false,'Global\\MCP_ML'); $m.WaitOne(300000)|Out-Null; try { if(!(Test-Path(Join-Path $d '.git'))){git clone https://github.com/azzindani/MCP_Machine_Learning.git $d -q 2>$null}; Set-Location $d; git fetch origin main -q 2>$null; git checkout -B main origin/main -q 2>$null; if(!(Test-Path(Join-Path $d '.venv'))){uv sync -q} } finally {$m.ReleaseMutex()}; Set-Location (Join-Path $d 'servers\\ml_medium'); uv run python server.py"
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
+        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d } else { Set-Location $d; git pull --quiet }; Set-Location (Join-Path $d 'servers\\ml_medium'); uv run python server.py"
       ],
-      "env": {
-        "MCP_CONSTRAINED_MODE": "0"
-      },
+      "env": { "MCP_CONSTRAINED_MODE": "0" },
       "timeout": 600000
     },
     "ml-advanced": {
       "command": "powershell",
-      "args": [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        "$d=Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; $m=[System.Threading.Mutex]::new($false,'Global\\MCP_ML'); $m.WaitOne(300000)|Out-Null; try { if(!(Test-Path(Join-Path $d '.git'))){git clone https://github.com/azzindani/MCP_Machine_Learning.git $d -q 2>$null}; Set-Location $d; git fetch origin main -q 2>$null; git checkout -B main origin/main -q 2>$null; if(!(Test-Path(Join-Path $d '.venv'))){uv sync -q} } finally {$m.ReleaseMutex()}; Set-Location (Join-Path $d 'servers\\ml_advanced'); uv run python server.py"
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
+        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d } else { Set-Location $d; git pull --quiet }; Set-Location (Join-Path $d 'servers\\ml_advanced'); uv run python server.py"
       ],
-      "env": {
-        "MCP_CONSTRAINED_MODE": "0"
-      },
+      "env": { "MCP_CONSTRAINED_MODE": "0" },
       "timeout": 600000
     }
   }
@@ -265,16 +247,10 @@ Each server entry auto-clones to `%USERPROFILE%\.mcp_servers\MCP_Machine_Learnin
   "mcpServers": {
     "ml-basic": {
       "command": "powershell",
-      "args": [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        "$d=Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; $m=[System.Threading.Mutex]::new($false,'Global\\MCP_ML'); $m.WaitOne(300000)|Out-Null; try { if(!(Test-Path(Join-Path $d '.git'))){git clone https://github.com/azzindani/MCP_Machine_Learning.git $d -q 2>$null}; Set-Location $d; git fetch origin main -q 2>$null; git checkout -B main origin/main -q 2>$null; if(!(Test-Path(Join-Path $d '.venv'))){uv sync -q} } finally {$m.ReleaseMutex()}; Set-Location (Join-Path $d 'servers\\ml_basic'); uv run python server.py"
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
+        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d } else { Set-Location $d; git pull --quiet }; Set-Location (Join-Path $d 'servers\\ml_basic'); uv run python server.py"
       ],
-      "env": {
-        "MCP_CONSTRAINED_MODE": "1"
-      },
+      "env": { "MCP_CONSTRAINED_MODE": "1" },
       "timeout": 600000
     }
   }
@@ -288,30 +264,18 @@ Each server entry auto-clones to `%USERPROFILE%\.mcp_servers\MCP_Machine_Learnin
   "mcpServers": {
     "ml-basic": {
       "command": "powershell",
-      "args": [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        "$d=Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; $m=[System.Threading.Mutex]::new($false,'Global\\MCP_ML'); $m.WaitOne(300000)|Out-Null; try { if(!(Test-Path(Join-Path $d '.git'))){git clone https://github.com/azzindani/MCP_Machine_Learning.git $d -q 2>$null}; Set-Location $d; git fetch origin main -q 2>$null; git checkout -B main origin/main -q 2>$null; if(!(Test-Path(Join-Path $d '.venv'))){uv sync -q} } finally {$m.ReleaseMutex()}; Set-Location (Join-Path $d 'servers\\ml_basic'); uv run python server.py"
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
+        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d } else { Set-Location $d; git pull --quiet }; Set-Location (Join-Path $d 'servers\\ml_basic'); uv run python server.py"
       ],
-      "env": {
-        "MCP_CONSTRAINED_MODE": "1"
-      },
+      "env": { "MCP_CONSTRAINED_MODE": "1" },
       "timeout": 600000
     },
     "ml-medium": {
       "command": "powershell",
-      "args": [
-        "-NoProfile",
-        "-ExecutionPolicy",
-        "Bypass",
-        "-Command",
-        "$d=Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; $m=[System.Threading.Mutex]::new($false,'Global\\MCP_ML'); $m.WaitOne(300000)|Out-Null; try { if(!(Test-Path(Join-Path $d '.git'))){git clone https://github.com/azzindani/MCP_Machine_Learning.git $d -q 2>$null}; Set-Location $d; git fetch origin main -q 2>$null; git checkout -B main origin/main -q 2>$null; if(!(Test-Path(Join-Path $d '.venv'))){uv sync -q} } finally {$m.ReleaseMutex()}; Set-Location (Join-Path $d 'servers\\ml_medium'); uv run python server.py"
+      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
+        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d } else { Set-Location $d; git pull --quiet }; Set-Location (Join-Path $d 'servers\\ml_medium'); uv run python server.py"
       ],
-      "env": {
-        "MCP_CONSTRAINED_MODE": "1"
-      },
+      "env": { "MCP_CONSTRAINED_MODE": "1" },
       "timeout": 600000
     }
   }
@@ -320,8 +284,6 @@ Each server entry auto-clones to `%USERPROFILE%\.mcp_servers\MCP_Machine_Learnin
 
 ### macOS / Linux (bash)
 
-Each server entry auto-clones to `~/.mcp_servers/MCP_Machine_Learning`, pulls latest, syncs dependencies, and runs.
-
 **All three tiers (12+ GB VRAM)**
 
 ```json
@@ -329,35 +291,26 @@ Each server entry auto-clones to `~/.mcp_servers/MCP_Machine_Learning`, pulls la
   "mcpServers": {
     "ml-basic": {
       "command": "bash",
-      "args": [
-        "-c",
-        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; lf=/tmp/mcp_ml.lock; n=0; until mkdir \"$lf\" 2>/dev/null; do sleep 1; n=$((n+1)); [ $n -gt 300 ] && break; done; [ -d \"$d/.git\" ] || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\" -q; cd \"$d\"; git fetch origin main -q 2>/dev/null; git checkout -B main origin/main -q 2>/dev/null; [ -d \"$d/.venv\" ] || uv sync -q; rmdir \"$lf\" 2>/dev/null; cd \"$d/servers/ml_basic\"; uv run python server.py"
+      "args": ["-c",
+        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; if [ ! -d \"$d\" ]; then git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\"; else cd \"$d\" && git pull --quiet; fi; cd \"$d/servers/ml_basic\"; uv run python server.py"
       ],
-      "env": {
-        "MCP_CONSTRAINED_MODE": "0"
-      },
+      "env": { "MCP_CONSTRAINED_MODE": "0" },
       "timeout": 600000
     },
     "ml-medium": {
       "command": "bash",
-      "args": [
-        "-c",
-        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; lf=/tmp/mcp_ml.lock; n=0; until mkdir \"$lf\" 2>/dev/null; do sleep 1; n=$((n+1)); [ $n -gt 300 ] && break; done; [ -d \"$d/.git\" ] || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\" -q; cd \"$d\"; git fetch origin main -q 2>/dev/null; git checkout -B main origin/main -q 2>/dev/null; [ -d \"$d/.venv\" ] || uv sync -q; rmdir \"$lf\" 2>/dev/null; cd \"$d/servers/ml_medium\"; uv run python server.py"
+      "args": ["-c",
+        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; if [ ! -d \"$d\" ]; then git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\"; else cd \"$d\" && git pull --quiet; fi; cd \"$d/servers/ml_medium\"; uv run python server.py"
       ],
-      "env": {
-        "MCP_CONSTRAINED_MODE": "0"
-      },
+      "env": { "MCP_CONSTRAINED_MODE": "0" },
       "timeout": 600000
     },
     "ml-advanced": {
       "command": "bash",
-      "args": [
-        "-c",
-        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; lf=/tmp/mcp_ml.lock; n=0; until mkdir \"$lf\" 2>/dev/null; do sleep 1; n=$((n+1)); [ $n -gt 300 ] && break; done; [ -d \"$d/.git\" ] || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\" -q; cd \"$d\"; git fetch origin main -q 2>/dev/null; git checkout -B main origin/main -q 2>/dev/null; [ -d \"$d/.venv\" ] || uv sync -q; rmdir \"$lf\" 2>/dev/null; cd \"$d/servers/ml_advanced\"; uv run python server.py"
+      "args": ["-c",
+        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; if [ ! -d \"$d\" ]; then git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\"; else cd \"$d\" && git pull --quiet; fi; cd \"$d/servers/ml_advanced\"; uv run python server.py"
       ],
-      "env": {
-        "MCP_CONSTRAINED_MODE": "0"
-      },
+      "env": { "MCP_CONSTRAINED_MODE": "0" },
       "timeout": 600000
     }
   }
@@ -371,13 +324,10 @@ Each server entry auto-clones to `~/.mcp_servers/MCP_Machine_Learning`, pulls la
   "mcpServers": {
     "ml-basic": {
       "command": "bash",
-      "args": [
-        "-c",
-        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; lf=/tmp/mcp_ml.lock; n=0; until mkdir \"$lf\" 2>/dev/null; do sleep 1; n=$((n+1)); [ $n -gt 300 ] && break; done; [ -d \"$d/.git\" ] || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\" -q; cd \"$d\"; git fetch origin main -q 2>/dev/null; git checkout -B main origin/main -q 2>/dev/null; [ -d \"$d/.venv\" ] || uv sync -q; rmdir \"$lf\" 2>/dev/null; cd \"$d/servers/ml_basic\"; uv run python server.py"
+      "args": ["-c",
+        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; if [ ! -d \"$d\" ]; then git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\"; else cd \"$d\" && git pull --quiet; fi; cd \"$d/servers/ml_basic\"; uv run python server.py"
       ],
-      "env": {
-        "MCP_CONSTRAINED_MODE": "1"
-      },
+      "env": { "MCP_CONSTRAINED_MODE": "1" },
       "timeout": 600000
     }
   }
@@ -391,24 +341,18 @@ Each server entry auto-clones to `~/.mcp_servers/MCP_Machine_Learning`, pulls la
   "mcpServers": {
     "ml-basic": {
       "command": "bash",
-      "args": [
-        "-c",
-        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; lf=/tmp/mcp_ml.lock; n=0; until mkdir \"$lf\" 2>/dev/null; do sleep 1; n=$((n+1)); [ $n -gt 300 ] && break; done; [ -d \"$d/.git\" ] || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\" -q; cd \"$d\"; git fetch origin main -q 2>/dev/null; git checkout -B main origin/main -q 2>/dev/null; [ -d \"$d/.venv\" ] || uv sync -q; rmdir \"$lf\" 2>/dev/null; cd \"$d/servers/ml_basic\"; uv run python server.py"
+      "args": ["-c",
+        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; if [ ! -d \"$d\" ]; then git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\"; else cd \"$d\" && git pull --quiet; fi; cd \"$d/servers/ml_basic\"; uv run python server.py"
       ],
-      "env": {
-        "MCP_CONSTRAINED_MODE": "1"
-      },
+      "env": { "MCP_CONSTRAINED_MODE": "1" },
       "timeout": 600000
     },
     "ml-medium": {
       "command": "bash",
-      "args": [
-        "-c",
-        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; lf=/tmp/mcp_ml.lock; n=0; until mkdir \"$lf\" 2>/dev/null; do sleep 1; n=$((n+1)); [ $n -gt 300 ] && break; done; [ -d \"$d/.git\" ] || git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\" -q; cd \"$d\"; git fetch origin main -q 2>/dev/null; git checkout -B main origin/main -q 2>/dev/null; [ -d \"$d/.venv\" ] || uv sync -q; rmdir \"$lf\" 2>/dev/null; cd \"$d/servers/ml_medium\"; uv run python server.py"
+      "args": ["-c",
+        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; if [ ! -d \"$d\" ]; then git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\"; else cd \"$d\" && git pull --quiet; fi; cd \"$d/servers/ml_medium\"; uv run python server.py"
       ],
-      "env": {
-        "MCP_CONSTRAINED_MODE": "1"
-      },
+      "env": { "MCP_CONSTRAINED_MODE": "1" },
       "timeout": 600000
     }
   }

@@ -39,39 +39,18 @@ def _is_windows() -> bool:
     return platform.system() == "Windows"
 
 
-def _install_dir_win() -> str:
-    return r"%USERPROFILE%\.mcp_servers\\" + REPO_NAME
-
-
-def _install_dir_posix() -> str:
-    home = str(Path.home())
-    return f"{home}/.mcp_servers/{REPO_NAME}"
-
-
 def _ps_launch_cmd(server_name: str) -> str:
     """Return PowerShell -Command string for a server entry.
 
-    Uses a global named mutex so that when all three servers start at once,
-    only one at a time runs the git-fetch + optional uv-sync block.
-    Skips uv sync when .venv already exists (fast subsequent starts).
-    Uses 'git checkout -B main origin/main' to avoid detached HEAD.
-    Launches via 'cd tier_dir && uv run python server.py' (same pattern
-    as MCP_Data_Analyst) for reliable imports.
+    Simple pattern matching MCP_Data_Analyst: check if repo exists,
+    if so pull quietly, then cd to tier dir and run.
+    No mutex — pre-install handles the heavy setup.
     """
-    server_dir = SERVER_DIRS[server_name].replace("/", "\\\\")
-    d_expr = r"Join-Path $env:USERPROFILE '.mcp_servers\\" + REPO_NAME + "'"
+    server_dir = SERVER_DIRS[server_name].replace("/", "\\")
     return (
-        f"$d={d_expr}; "
-        f"$m=[System.Threading.Mutex]::new($false,'Global\\\\MCP_ML'); "
-        f"$m.WaitOne(300000)|Out-Null; "
-        f"try {{ "
-        f"if(!(Test-Path(Join-Path $d '.git')))"
-        f"{{git clone {REPO_URL} $d -q 2>$null}}; "
-        f"Set-Location $d; "
-        f"git fetch origin main -q 2>$null; "
-        f"git checkout -B main origin/main -q 2>$null; "
-        f"if(!(Test-Path(Join-Path $d '.venv'))){{uv sync -q}} "
-        f"}} finally {{$m.ReleaseMutex()}}; "
+        f"$d = Join-Path $env:USERPROFILE '.mcp_servers\\{REPO_NAME}'; "
+        f"if (!(Test-Path $d)) {{ git clone {REPO_URL} $d }} "
+        f"else {{ Set-Location $d; git pull --quiet }}; "
         f"Set-Location (Join-Path $d '{server_dir}'); "
         f"uv run python server.py"
     )
@@ -80,26 +59,17 @@ def _ps_launch_cmd(server_name: str) -> str:
 def _sh_launch_cmd(server_name: str) -> str:
     """Return sh -c command string for a server entry (macOS/Linux).
 
-    Uses a mkdir-based spin lock (/tmp/mcp_ml.lock) so concurrent server
-    starts don't race on git clone / uv sync.
-    Skips uv sync when .venv already exists (fast subsequent starts).
-    Uses 'git checkout -B main origin/main' to avoid detached HEAD.
-    Launches via 'cd tier_dir && uv run python server.py' (same pattern
-    as MCP_Data_Analyst) for reliable imports.
+    Simple pattern matching MCP_Data_Analyst: check if repo exists,
+    if so pull quietly, then cd to tier dir and run.
+    No lock — pre-install handles the heavy setup.
     """
     server_dir = SERVER_DIRS[server_name]
     home = str(Path.home())
     d = f"{home}/.mcp_servers/{REPO_NAME}"
     return (
         f'd="{d}"; '
-        f"lf=/tmp/mcp_ml.lock; n=0; "
-        f'until mkdir "$lf" 2>/dev/null; do sleep 1; n=$((n+1)); [ $n -gt 300 ] && break; done; '
-        f'[ -d "$d/.git" ] || git clone {REPO_URL} "$d" -q; '
-        f'cd "$d"; '
-        f"git fetch origin main -q 2>/dev/null; "
-        f"git checkout -B main origin/main -q 2>/dev/null; "
-        f'[ -d "$d/.venv" ] || uv sync -q; '
-        f'rmdir "$lf" 2>/dev/null; '
+        f'if [ ! -d "$d" ]; then git clone {REPO_URL} "$d"; '
+        f'else cd "$d" && git pull --quiet; fi; '
         f'cd "$d/{server_dir}"; '
         f"uv run python server.py"
     )
