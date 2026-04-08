@@ -294,10 +294,10 @@ def list_models(directory: str = "") -> dict:
         except ValueError as exc:
             return _error(str(exc), "Check that directory is inside your home directory.")
     else:
-        search_dir = Path.home()
+        search_dir = get_output_dir()
 
     models: list[dict] = []
-    for pkl in sorted(search_dir.rglob("*.mcp_models/*.pkl")):
+    for pkl in sorted(search_dir.glob("*.pkl")):
         if ".mcp_versions" in str(pkl):
             continue
         manifest = pkl.with_suffix(".manifest.json")
