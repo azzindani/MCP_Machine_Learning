@@ -7,7 +7,6 @@ from ._basic_helpers import (
     ALLOWED_REGRESSORS,
     MIN_ROWS_CLASSIFIER,
     MIN_ROWS_REGRESSOR,
-    MODELS_DIR,
     SVC,
     UTC,
     Any,
@@ -32,6 +31,7 @@ from ._basic_helpers import (
     append_receipt,
     datetime,
     f1_score,
+    get_output_dir,
     logger,
     mean_squared_error,
     np,
@@ -247,8 +247,7 @@ def train_classifier(
 
         # --- save model ---
         ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
-        models_dir = path.parent / MODELS_DIR
-        models_dir.mkdir(exist_ok=True)
+        models_dir = get_output_dir()
         model_filename = f"{path.stem}_{model}_{ts}.pkl"
         model_path = models_dir / model_filename
 
@@ -452,8 +451,7 @@ def train_regressor(
         progress.append(ok(f"Trained {model_class_name}", f"r2={r2:.3f}, rmse={rmse:.2f}"))
 
         ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
-        models_dir = path.parent / MODELS_DIR
-        models_dir.mkdir(exist_ok=True)
+        models_dir = get_output_dir()
         model_path = models_dir / f"{path.stem}_{model}_{ts}.pkl"
 
         if model_path.exists():

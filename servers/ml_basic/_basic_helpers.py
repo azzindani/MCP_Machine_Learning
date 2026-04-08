@@ -38,7 +38,7 @@ from sklearn.preprocessing import (
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
-from shared.file_utils import resolve_path
+from shared.file_utils import get_output_dir, resolve_path
 from shared.platform_utils import get_max_columns, get_max_results, get_max_rows
 from shared.progress import info, ok
 from shared.progress import name as pname
@@ -184,6 +184,7 @@ __all__ = [
     "mean_squared_error",
     "r2_score",
     "resolve_path",
+    "get_output_dir",
     "get_max_rows",
     "get_max_results",
     "get_max_columns",

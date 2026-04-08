@@ -36,11 +36,11 @@ def resolve_path(
 def get_output_dir() -> Path:
     """Return the standard output directory for generated files.
 
-    All generated outputs (HTML reports, charts, exported CSVs, predictions)
-    are saved to ~/Downloads/MCP_Machine_Learning/. The directory is created
-    automatically if it does not exist.
+    All generated outputs (models, HTML reports, charts, exported CSVs,
+    predictions) are saved directly to ~/Downloads/. The directory is
+    created automatically if it does not exist.
     """
-    out = Path.home() / "Downloads" / "MCP_Machine_Learning"
+    out = Path.home() / "Downloads"
     out.mkdir(parents=True, exist_ok=True)
     return out
 
