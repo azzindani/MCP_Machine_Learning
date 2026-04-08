@@ -1,5 +1,11 @@
-"""shared/html_theme.py — HTML report builder with light/dark/device themes,
-responsive layout, and Plotly integration."""
+"""shared/html_theme.py — Plotly theme + HTML report utilities.
+
+Matches the MCP_Data_Analyst layout pattern exactly:
+- CSS custom properties for light/dark/device themes
+- Device-mode JS for auto system-preference detection
+- Plotly CDN loaded in <head> (version-pinned)
+- Fixed sidebar, responsive grid cards, styled tables
+"""
 
 from __future__ import annotations
 
@@ -16,91 +22,84 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 PLOTLY_TEMPLATE: dict[str, str] = {
-    "light": "plotly_white",
     "dark": "plotly_dark",
-    "device": "plotly_white",  # device starts light; JS switches at runtime
+    "light": "plotly_white",
+    "device": "plotly_white",  # device starts light, JS switches it
 }
 
 
 def plotly_template(theme: str) -> str:
-    """Return the Plotly template name for a given theme."""
-    return PLOTLY_TEMPLATE.get(theme, "plotly_white")
+    """Return the Plotly template string for a given theme."""
+    return PLOTLY_TEMPLATE.get(theme, "plotly_dark")
 
 
 # ---------------------------------------------------------------------------
-# CSS custom properties (design tokens)
+# Viewport meta tag
 # ---------------------------------------------------------------------------
 
-_LIGHT_VARS = (
-    "--bg:#ffffff;"
-    "--surface:#f6f8fa;"
-    "--surface-hover:#eaeef2;"
-    "--border:#d0d7de;"
-    "--border-subtle:#e8ebef;"
-    "--text:#1f2328;"
-    "--text-secondary:#656d76;"
-    "--text-muted:#8b949e;"
-    "--accent:#0969da;"
-    "--accent-hover:#0550ae;"
-    "--accent-subtle:rgba(9,105,218,0.08);"
-    "--green:#1a7f37;"
-    "--green-subtle:rgba(26,127,55,0.1);"
-    "--orange:#9a6700;"
-    "--orange-subtle:rgba(154,103,0,0.1);"
-    "--red:#cf222e;"
-    "--red-subtle:rgba(207,34,46,0.1);"
-    "--sidebar-bg:#f6f8fa;"
-    "--sidebar-text:#1f2328;"
-    "--sidebar-active:rgba(9,105,218,0.12);"
-    "--card-shadow:0 1px 3px rgba(0,0,0,0.06),0 1px 2px rgba(0,0,0,0.04);"
-    "--card-shadow-hover:0 4px 12px rgba(0,0,0,0.08),0 2px 4px rgba(0,0,0,0.04);"
-    "--overlay-bg:rgba(0,0,0,0.3);"
-    "--radius:8px;"
-    "--radius-sm:6px;"
-    "--transition:0.2s cubic-bezier(0.4,0,0.2,1);"
-)
+VIEWPORT_META = '<meta name="viewport" content="width=device-width,initial-scale=1">'
+
+# ---------------------------------------------------------------------------
+# Plotly CDN (version-pinned)
+# ---------------------------------------------------------------------------
+
+PLOTLY_CDN = '<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>'
+
+# ---------------------------------------------------------------------------
+# CSS custom property blocks
+# ---------------------------------------------------------------------------
 
 _DARK_VARS = (
-    "--bg:#0d1117;"
-    "--surface:#161b22;"
-    "--surface-hover:#1c2129;"
-    "--border:#30363d;"
-    "--border-subtle:#21262d;"
-    "--text:#e6edf3;"
-    "--text-secondary:#9da5b0;"
-    "--text-muted:#6e7681;"
-    "--accent:#58a6ff;"
-    "--accent-hover:#79c0ff;"
-    "--accent-subtle:rgba(88,166,255,0.1);"
-    "--green:#3fb950;"
-    "--green-subtle:rgba(63,185,80,0.1);"
-    "--orange:#f0883e;"
-    "--orange-subtle:rgba(240,136,62,0.1);"
-    "--red:#f85149;"
-    "--red-subtle:rgba(248,81,73,0.1);"
-    "--sidebar-bg:#161b22;"
-    "--sidebar-text:#e6edf3;"
-    "--sidebar-active:rgba(88,166,255,0.15);"
-    "--card-shadow:0 1px 3px rgba(0,0,0,0.3),0 1px 2px rgba(0,0,0,0.2);"
-    "--card-shadow-hover:0 4px 12px rgba(0,0,0,0.4),0 2px 4px rgba(0,0,0,0.2);"
-    "--overlay-bg:rgba(0,0,0,0.6);"
-    "--radius:8px;"
-    "--radius-sm:6px;"
-    "--transition:0.2s cubic-bezier(0.4,0,0.2,1);"
+    "--bg:#0d1117;--surface:#161b22;--border:#21262d;--text:#c9d1d9;"
+    "--text-muted:#8b949e;--accent:#58a6ff;--green:#3fb950;"
+    "--orange:#f0883e;--red:#f85149;"
+)
+_LIGHT_VARS = (
+    "--bg:#ffffff;--surface:#f6f8fa;--border:#d0d7de;--text:#1f2328;"
+    "--text-muted:#636c76;--accent:#0969da;--green:#1a7f37;"
+    "--orange:#9a6700;--red:#cf222e;"
 )
 
 
 def css_vars(theme: str) -> str:
-    """Return CSS :root{} block (with optional media query for device mode)."""
+    """Return a CSS :root{} block (and optional media query) for the theme."""
     if theme == "light":
         return f":root{{{_LIGHT_VARS}}}"
-    if theme == "device":
+    elif theme == "device":
         return f":root{{{_LIGHT_VARS}}}@media(prefers-color-scheme:dark){{:root{{{_DARK_VARS}}}}}"
-    return f":root{{{_DARK_VARS}}}"
+    else:  # dark (default)
+        return f":root{{{_DARK_VARS}}}"
 
 
 # ---------------------------------------------------------------------------
-# Legacy theme dict (backward-compatible for callers using get_theme())
+# Device-mode JS (auto-switches Plotly template + body bg on system pref)
+# ---------------------------------------------------------------------------
+
+_DEVICE_JS = """<script>
+(function(){
+  var DARK_BG='#0d1117',LIGHT_BG='#ffffff';
+  function applyTheme(){
+    var dark=window.matchMedia('(prefers-color-scheme:dark)').matches;
+    document.body.style.background=dark?DARK_BG:LIGHT_BG;
+    document.documentElement.setAttribute('data-theme',dark?'dark':'light');
+    document.querySelectorAll('.plotly-graph-div').forEach(function(d){
+      try{Plotly.relayout(d,{template:dark?'plotly_dark':'plotly_white'});}catch(e){}
+    });
+  }
+  if(typeof Plotly!=='undefined'){applyTheme();}
+  else{window.addEventListener('load',applyTheme);}
+  window.matchMedia('(prefers-color-scheme:dark)').addEventListener('change',applyTheme);
+})();
+</script>"""
+
+
+def device_mode_js() -> str:
+    """Return device-mode theme switching JS snippet."""
+    return _DEVICE_JS
+
+
+# ---------------------------------------------------------------------------
+# Theme colors for Plotly charts (used when embedding chart data as JSON)
 # ---------------------------------------------------------------------------
 
 THEMES: dict[str, dict] = {
@@ -123,25 +122,31 @@ THEMES: dict[str, dict] = {
         "plotly_template": "plotly_dark",
         "bg_color": "#0d1117",
         "paper_color": "#161b22",
-        "text_color": "#e6edf3",
-        "grid_color": "#30363d",
+        "text_color": "#c9d1d9",
+        "grid_color": "#21262d",
         "accent": "#58a6ff",
         "success": "#3fb950",
         "warning": "#f0883e",
         "danger": "#f85149",
         "card_bg": "#161b22",
         "sidebar_bg": "#161b22",
-        "sidebar_text": "#e6edf3",
-        "border_color": "#30363d",
+        "sidebar_text": "#c9d1d9",
+        "border_color": "#21262d",
     },
 }
-# Device mode starts as light — JS handles runtime switching.
 THEMES["device"] = THEMES["light"]
 
 
 def get_theme(theme: str = "light") -> dict:
     """Return theme config dict. Falls back to light for unknown themes."""
     return THEMES.get(theme, THEMES["light"])
+
+
+def theme_plot_colors(theme: str) -> tuple[str, str, str]:
+    """Return (plot_bg, font_color, accent_color) for inline Plotly scripts."""
+    if theme == "dark":
+        return "#161b22", "#c9d1d9", "#58a6ff"
+    return "#f6f8fa", "#1f2328", "#0969da"
 
 
 # ---------------------------------------------------------------------------
@@ -164,271 +169,7 @@ def _open_file(path: str | Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Device-mode JS — auto-detects system preference and live-switches theme
-# ---------------------------------------------------------------------------
-
-_DEVICE_JS = """<script>
-(function(){
-  var DARK='dark',LIGHT='light';
-  function getPreferred(){return window.matchMedia('(prefers-color-scheme:dark)').matches?DARK:LIGHT;}
-  function apply(mode){
-    var d=document.documentElement;
-    d.setAttribute('data-theme',mode);
-    /* Switch Plotly chart templates */
-    document.querySelectorAll('.plotly-graph-div').forEach(function(el){
-      try{Plotly.relayout(el,{template:mode===DARK?'plotly_dark':'plotly_white'});}catch(e){}
-    });
-    /* Update toggle icon */
-    var btn=document.getElementById('theme-toggle');
-    if(btn){btn.textContent=mode===DARK?'\\u2600':'\\u263E';}
-  }
-  /* Apply on load */
-  var saved=localStorage.getItem('mcp-theme');
-  var mode=saved||(getPreferred());
-  apply(mode);
-  /* Listen for system changes (only if no manual override) */
-  window.matchMedia('(prefers-color-scheme:dark)').addEventListener('change',function(e){
-    if(!localStorage.getItem('mcp-theme')){apply(e.matches?DARK:LIGHT);}
-  });
-  /* Theme toggle button handler */
-  document.addEventListener('click',function(e){
-    if(e.target&&e.target.id==='theme-toggle'){
-      var cur=document.documentElement.getAttribute('data-theme')||getPreferred();
-      var next=cur===DARK?LIGHT:DARK;
-      localStorage.setItem('mcp-theme',next);
-      apply(next);
-    }
-  });
-  /* Mobile sidebar toggle */
-  document.addEventListener('click',function(e){
-    var sidebar=document.getElementById('sidebar');
-    var overlay=document.getElementById('sidebar-overlay');
-    if(!sidebar)return;
-    if(e.target&&e.target.id==='menu-toggle'){
-      sidebar.classList.toggle('open');
-      if(overlay)overlay.classList.toggle('visible');
-    }
-    if(e.target&&e.target.id==='sidebar-overlay'){
-      sidebar.classList.remove('open');
-      overlay.classList.remove('visible');
-    }
-    /* Close sidebar on nav link click (mobile) */
-    if(e.target&&e.target.closest&&e.target.closest('.sidebar a')){
-      if(window.innerWidth<=768){
-        sidebar.classList.remove('open');
-        if(overlay)overlay.classList.remove('visible');
-      }
-    }
-  });
-})();
-</script>"""
-
-
-def device_mode_js() -> str:
-    """Return the device-mode theme switching JavaScript."""
-    return _DEVICE_JS
-
-
-# ---------------------------------------------------------------------------
-# Core CSS — uses custom properties for theming
-# ---------------------------------------------------------------------------
-
-_CORE_CSS = """
-/* Reset */
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-
-/* Base */
-html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;}
-body{
-  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Noto Sans',Helvetica,Arial,sans-serif;
-  font-size:15px;line-height:1.6;
-  background:var(--bg);color:var(--text);
-  transition:background var(--transition),color var(--transition);
-}
-
-/* Layout */
-.layout{display:flex;min-height:100vh;position:relative;}
-
-/* Sidebar overlay (mobile) */
-.sidebar-overlay{
-  display:none;position:fixed;inset:0;background:var(--overlay-bg);
-  z-index:90;opacity:0;transition:opacity var(--transition);
-}
-.sidebar-overlay.visible{display:block;opacity:1;}
-
-/* Sidebar */
-.sidebar{
-  width:240px;min-height:100vh;
-  background:var(--sidebar-bg);color:var(--sidebar-text);
-  padding:1.25rem 0.75rem;position:sticky;top:0;align-self:flex-start;
-  flex-shrink:0;border-right:1px solid var(--border-subtle);
-  transition:background var(--transition),border-color var(--transition);
-  overflow-y:auto;max-height:100vh;z-index:100;
-}
-.sidebar-header{
-  display:flex;align-items:center;justify-content:space-between;
-  padding:0 0.5rem;margin-bottom:1rem;
-}
-.sidebar-header h2{
-  font-size:0.75rem;text-transform:uppercase;letter-spacing:0.08em;
-  color:var(--text-muted);font-weight:600;margin:0;
-}
-.sidebar a{
-  display:block;padding:0.4rem 0.75rem;border-radius:var(--radius-sm);
-  color:var(--sidebar-text);text-decoration:none;font-size:0.84rem;
-  margin-bottom:2px;transition:all var(--transition);white-space:nowrap;
-  overflow:hidden;text-overflow:ellipsis;
-}
-.sidebar a:hover{background:var(--sidebar-active);color:var(--accent);}
-
-/* Theme toggle button */
-.theme-toggle{
-  width:32px;height:32px;border-radius:50%;border:1px solid var(--border);
-  background:var(--surface);color:var(--text-secondary);cursor:pointer;
-  font-size:1rem;display:flex;align-items:center;justify-content:center;
-  transition:all var(--transition);flex-shrink:0;
-}
-.theme-toggle:hover{background:var(--accent-subtle);color:var(--accent);border-color:var(--accent);}
-
-/* Mobile hamburger */
-.menu-toggle{
-  display:none;position:fixed;top:0.75rem;left:0.75rem;z-index:110;
-  width:36px;height:36px;border-radius:var(--radius-sm);border:1px solid var(--border);
-  background:var(--surface);color:var(--text);cursor:pointer;font-size:1.2rem;
-  align-items:center;justify-content:center;
-  box-shadow:var(--card-shadow);transition:all var(--transition);
-}
-
-/* Content */
-.content{
-  flex:1;padding:2.5rem 3rem;max-width:1100px;min-width:0;
-}
-.content h1{
-  font-size:1.5rem;font-weight:700;margin-bottom:0.25rem;
-  color:var(--text);line-height:1.3;
-}
-.subtitle{
-  font-size:0.875rem;color:var(--text-muted);margin-bottom:2.5rem;
-  line-height:1.5;
-}
-
-/* Sections */
-.section{margin-bottom:3rem;}
-.section h2{
-  font-size:1.05rem;font-weight:600;color:var(--text);
-  padding-bottom:0.5rem;margin-bottom:1.25rem;
-  border-bottom:2px solid var(--accent);
-}
-
-/* Metric cards */
-.cards{
-  display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));
-  gap:0.875rem;margin-bottom:1.25rem;
-}
-.card{
-  background:var(--surface);border:1px solid var(--border-subtle);
-  border-radius:var(--radius);padding:1rem 1.15rem;
-  transition:all var(--transition);box-shadow:var(--card-shadow);
-}
-.card:hover{box-shadow:var(--card-shadow-hover);border-color:var(--border);}
-.card .label{
-  font-size:0.7rem;text-transform:uppercase;letter-spacing:0.06em;
-  color:var(--text-muted);font-weight:600;margin-bottom:0.25rem;
-}
-.card .value{
-  font-size:1.4rem;font-weight:700;color:var(--accent);
-  line-height:1.2;word-break:break-word;
-}
-.card .sub{font-size:0.78rem;color:var(--text-muted);margin-top:0.2rem;}
-
-/* Tables */
-.table-wrap{overflow-x:auto;border-radius:var(--radius);border:1px solid var(--border-subtle);margin-top:0.5rem;}
-table{width:100%;border-collapse:collapse;font-size:0.84rem;}
-th{
-  background:var(--surface);color:var(--text-secondary);
-  padding:0.6rem 0.85rem;text-align:left;font-weight:600;font-size:0.78rem;
-  text-transform:uppercase;letter-spacing:0.04em;
-  border-bottom:2px solid var(--border);
-  position:sticky;top:0;z-index:1;
-  transition:background var(--transition);
-}
-td{
-  padding:0.5rem 0.85rem;border-bottom:1px solid var(--border-subtle);
-  color:var(--text);transition:background var(--transition);
-}
-tr:hover td{background:var(--surface-hover);}
-
-/* Chart containers */
-.chart-container{
-  width:100%;overflow:hidden;border-radius:var(--radius);
-  border:1px solid var(--border-subtle);margin-top:0.75rem;
-  background:var(--surface);box-shadow:var(--card-shadow);
-  transition:all var(--transition);
-}
-
-/* Alerts */
-.alert{
-  padding:0.8rem 1rem;border-radius:var(--radius-sm);
-  margin-bottom:0.625rem;font-size:0.84rem;line-height:1.5;
-  transition:all var(--transition);
-}
-.alert em{display:block;margin-top:0.3rem;opacity:0.85;font-size:0.8rem;}
-.alert-warning{background:var(--orange-subtle);border-left:3px solid var(--orange);color:var(--text);}
-.alert-success{background:var(--green-subtle);border-left:3px solid var(--green);color:var(--text);}
-.alert-danger{background:var(--red-subtle);border-left:3px solid var(--red);color:var(--text);}
-
-/* Code / pre blocks */
-pre{
-  background:var(--surface);border:1px solid var(--border-subtle);
-  border-radius:var(--radius-sm);padding:1rem;overflow-x:auto;
-  font-size:0.84rem;line-height:1.6;color:var(--text);
-  transition:background var(--transition);
-}
-
-/* Print styles */
-@media print{
-  .sidebar,.sidebar-overlay,.menu-toggle,.theme-toggle{display:none!important;}
-  .content{padding:1rem!important;max-width:100%!important;}
-  .card{break-inside:avoid;}
-  body{background:#fff!important;color:#000!important;}
-}
-
-/* Responsive: Tablet */
-@media(max-width:1024px){
-  .content{padding:2rem 1.5rem;}
-  .cards{grid-template-columns:repeat(auto-fill,minmax(140px,1fr));}
-}
-
-/* Responsive: Mobile */
-@media(max-width:768px){
-  .menu-toggle{display:flex;}
-  .sidebar{
-    position:fixed;left:-260px;top:0;width:260px;height:100vh;
-    transition:left var(--transition);border-right:1px solid var(--border);
-    box-shadow:none;
-  }
-  .sidebar.open{left:0;box-shadow:4px 0 24px rgba(0,0,0,0.15);}
-  .content{padding:3.5rem 1rem 2rem 1rem;}
-  .content h1{font-size:1.25rem;}
-  .cards{grid-template-columns:1fr 1fr;gap:0.625rem;}
-  .card{padding:0.75rem 0.9rem;}
-  .card .value{font-size:1.15rem;}
-  table{font-size:0.78rem;}
-  th,td{padding:0.4rem 0.6rem;}
-  .section{margin-bottom:2rem;}
-  .section h2{font-size:0.95rem;}
-}
-
-/* Responsive: Small phone */
-@media(max-width:420px){
-  .cards{grid-template-columns:1fr;}
-  .content{padding:3rem 0.75rem 1.5rem 0.75rem;}
-}
-"""
-
-
-# ---------------------------------------------------------------------------
-# Plotly chart → standalone HTML file
+# save_chart — standalone Plotly figure → HTML file
 # ---------------------------------------------------------------------------
 
 
@@ -443,54 +184,99 @@ def save_chart(
 
     Returns (absolute_path_str, filename).
     """
-    import plotly.io as pio  # lazy
-
     tmpl = plotly_template(theme)
     fig.update_layout(template=tmpl, autosize=True)  # type: ignore[attr-defined]
 
     out = Path(output_path).resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
 
-    html_str = pio.to_html(
-        fig,
+    html = fig.to_html(  # type: ignore[attr-defined]
+        include_plotlyjs=True,
         full_html=True,
-        include_plotlyjs="cdn",
-        config={"responsive": True, "displayModeBar": True, "scrollZoom": False},
+        config={"responsive": True, "displayModeBar": True, "scrollZoom": True},
     )
 
-    # Inject viewport meta + title
-    viewport = '<meta name="viewport" content="width=device-width, initial-scale=1">'
-    inject_head = f"<head>\n  {viewport}"
+    # Inject viewport meta
+    html = html.replace("<head>", f"<head>\n{VIEWPORT_META}", 1)
     if title:
-        inject_head += f"\n  <title>{title}</title>"
+        html = html.replace("<head>", f"<head>\n<title>{title}</title>", 1)
 
-    html_str = html_str.replace("<head>", inject_head, 1)
-
-    # Theme-aware background
+    # Inject device-mode JS and CSS media query
     if theme == "device":
         style_block = (
             "<style>"
-            f"{css_vars('device')}"
-            "html,body{background:var(--bg)!important;transition:background 0.2s;}"
+            "@media(prefers-color-scheme:dark){html,body{background:#0d1117!important;}}"
+            "@media(prefers-color-scheme:light){html,body{background:#ffffff!important;}}"
             "</style>"
         )
-        html_str = html_str.replace("</head>", f"{style_block}\n</head>", 1)
-        html_str = html_str.replace("</body>", f"{device_mode_js()}\n</body>", 1)
+        html = html.replace("</head>", f"{style_block}\n</head>", 1)
+        html = html.replace("</body>", f"{device_mode_js()}\n</body>", 1)
     else:
         bg = "#0d1117" if theme == "dark" else "#ffffff"
-        fg = "#e6edf3" if theme == "dark" else "#1f2328"
-        html_str = html_str.replace(
+        html = html.replace(
             "</head>",
-            f"<style>html,body{{background:{bg}!important;color:{fg}!important;}}</style>\n</head>",
+            f"<style>html,body{{background:{bg}!important;}}</style>\n</head>",
             1,
         )
 
-    out.write_text(html_str, encoding="utf-8")
-
+    out.write_text(html, encoding="utf-8")
     if open_browser:
         _open_file(out)
 
     return str(out), out.name
+
+
+# ---------------------------------------------------------------------------
+# Report CSS — matches MCP_Data_Analyst _eda_css() pattern exactly
+# ---------------------------------------------------------------------------
+
+
+def report_css(vars_block: str) -> str:
+    """Return the full CSS block for multi-section HTML reports."""
+    return f"""{vars_block}
+*{{box-sizing:border-box;margin:0;padding:0}}
+html{{scroll-behavior:smooth}}
+body{{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;transition:background 0.2s,color 0.2s}}
+::-webkit-scrollbar{{width:6px}}::-webkit-scrollbar-track{{background:var(--bg)}}::-webkit-scrollbar-thumb{{background:var(--border);border-radius:3px}}
+.sidebar{{width:260px;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100}}
+.sidebar-hdr{{padding:20px;border-bottom:1px solid var(--border)}}
+.sidebar-hdr h2{{color:var(--accent);font-size:16px;margin-bottom:4px}}
+.sidebar-hdr .meta{{color:var(--text-muted);font-size:12px}}
+.nav{{padding:8px 0}}
+.nav a{{display:block;padding:7px 20px;color:var(--text-muted);text-decoration:none;font-size:13px;border-left:3px solid transparent;transition:all 0.15s}}
+.nav a:hover,.nav a.active{{color:var(--accent);background:rgba(88,166,255,0.06);border-left-color:var(--accent)}}
+.nav .st{{padding:14px 20px 4px;color:var(--border);font-size:10px;text-transform:uppercase;letter-spacing:1px;font-weight:600}}
+.main{{margin-left:260px;padding:32px;min-height:100vh;overflow-x:auto}}
+.section{{margin-bottom:48px}}
+.section>h2{{color:var(--accent);font-size:20px;margin-bottom:20px;padding-bottom:10px;border-bottom:2px solid var(--border);font-weight:600}}
+.cards{{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:24px}}
+.card{{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;text-align:center;transition:transform 0.15s,border-color 0.15s}}
+.card:hover{{transform:translateY(-2px);border-color:var(--accent)}}
+.card .num{{font-size:28px;font-weight:700;color:var(--accent);line-height:1.2}}
+.card .lbl{{font-size:11px;color:var(--text-muted);margin-top:4px;text-transform:uppercase;letter-spacing:0.8px}}
+.card.good .num{{color:var(--green)}}.card.warn .num{{color:var(--orange)}}.card.bad .num{{color:var(--red)}}
+table{{width:100%;border-collapse:collapse;margin:12px 0;font-size:13px;background:var(--surface);border-radius:8px;overflow:hidden}}
+th,td{{padding:10px 14px;text-align:left;border-bottom:1px solid var(--border)}}
+th{{background:rgba(88,166,255,0.08);color:var(--accent);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:0.5px}}
+tr:hover{{background:rgba(88,166,255,0.03)}}
+.good{{color:var(--green)}}.warn{{color:var(--orange)}}.bad{{color:var(--red)}}
+.badge{{font-size:11px;padding:2px 8px;border-radius:10px;background:var(--border);color:var(--text-muted);font-weight:500}}
+.stats-cell{{font-size:12px;color:var(--text-muted);font-family:monospace}}
+.insights{{list-style:none;padding:0}}
+.insights li{{padding:10px 14px;margin:6px 0;background:var(--surface);border-radius:8px;border-left:4px solid var(--accent);font-size:13px;line-height:1.5}}
+.insights li.warn{{border-left-color:var(--orange)}}.insights li.bad{{border-left-color:var(--red)}}.insights li.good{{border-left-color:var(--green)}}
+.mbar{{height:24px;background:var(--border);border-radius:6px;overflow:hidden;margin:4px 0}}
+.mbar-fill{{height:100%;background:linear-gradient(90deg,var(--orange),var(--red));border-radius:6px}}
+.chart-container{{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;margin:16px 0;min-height:420px;overflow:hidden;max-width:100%}}
+pre{{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px;overflow-x:auto;font-size:13px;line-height:1.5;color:var(--text)}}
+.alert-panel{{border-radius:10px;overflow:hidden;margin-bottom:20px}}
+.alert-item{{padding:10px 14px;margin:3px 0;font-size:13px;border-radius:8px;display:flex;align-items:flex-start;gap:10px;background:var(--surface);border:1px solid var(--border)}}
+.alert-item.error{{border-left:4px solid var(--red)}}.alert-item.warning{{border-left:4px solid var(--orange)}}.alert-item.info{{border-left:4px solid var(--green)}}
+.alert-badge{{font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;white-space:nowrap;flex-shrink:0;margin-top:1px}}
+.alert-badge.error{{background:var(--red);color:#fff}}.alert-badge.warning{{background:var(--orange);color:#fff}}.alert-badge.info{{background:var(--green);color:#fff}}
+@media(max-width:1100px){{.sidebar{{width:220px}}.main{{margin-left:220px}}}}
+@media(max-width:768px){{.sidebar{{display:none}}.main{{margin-left:0;padding:16px}}.cards{{grid-template-columns:repeat(2,1fr)}}}}
+@media(max-width:480px){{.cards{{grid-template-columns:1fr}}th,td{{padding:8px 10px;font-size:12px}}}}"""  # noqa: E501
 
 
 # ---------------------------------------------------------------------------
@@ -505,50 +291,52 @@ def build_html_report(
     theme: str = "light",
     open_browser: bool = True,
     output_path: str | Path = "",
+    sidebar_title: str = "",
+    sidebar_meta: str = "",
 ) -> str:
     """Build a full multi-section HTML report with sidebar navigation.
 
     Each section dict: {"id": str, "heading": str, "html": str}
 
-    Supports themes: "light", "dark", "device" (auto-detects system preference).
-    Returns rendered HTML string. Writes to output_path if provided and auto-opens.
+    Supports themes: "light", "dark", "device" (auto-detects system pref).
+    Returns rendered HTML string. Writes to output_path if provided.
     """
     vars_css = css_vars(theme)
-    initial_icon = "&#9790;" if theme == "light" else ("&#9728;" if theme == "dark" else "&#9790;")
+    css_block = report_css(vars_css)
+    dev_js = device_mode_js() if theme == "device" else ""
 
     nav_links = "\n    ".join(f'<a href="#{s["id"]}">{s["heading"]}</a>' for s in sections)
     sections_html = "\n".join(
-        f'<div class="section" id="{s["id"]}">\n  <h2>{s["heading"]}</h2>\n  {s["html"]}\n</div>' for s in sections
+        f'<div id="{s["id"]}" class="section">\n  <h2>{s["heading"]}</h2>\n  {s["html"]}\n</div>' for s in sections
     )
 
+    sb_title = sidebar_title or title
+    sb_meta = f'<p class="meta">{sidebar_meta}</p>' if sidebar_meta else ""
+
     html = f"""<!DOCTYPE html>
-<html lang="en" data-theme="{theme if theme != "device" else "light"}">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{title}</title>
-  <style>{vars_css}{_CORE_CSS}</style>
-</head>
-<body>
-  <div id="sidebar-overlay" class="sidebar-overlay"></div>
-  <button id="menu-toggle" class="menu-toggle" aria-label="Toggle navigation">&#9776;</button>
-  <div class="layout">
-    <nav id="sidebar" class="sidebar">
-      <div class="sidebar-header">
-        <h2>Contents</h2>
-        <button id="theme-toggle" class="theme-toggle" aria-label="Toggle theme">{initial_icon}</button>
-      </div>
-      {nav_links}
-    </nav>
-    <main class="content">
-      <h1>{title}</h1>
-      <p class="subtitle">{subtitle}</p>
-      {sections_html}
-    </main>
+<html lang="en"><head>
+<meta charset="utf-8">
+{VIEWPORT_META}
+<title>{title}</title>
+{PLOTLY_CDN}
+<style>
+{css_block}
+</style></head><body>
+<div class="sidebar">
+  <div class="sidebar-hdr">
+    <h2>{sb_title}</h2>
+    {sb_meta}
   </div>
-{_DEVICE_JS}
-</body>
-</html>"""
+  <div class="nav">
+    <div class="st">Sections</div>
+    {nav_links}
+  </div>
+</div>
+<div class="main">
+  {sections_html}
+</div>
+{dev_js}
+</body></html>"""
 
     if output_path:
         out = Path(output_path).resolve()
@@ -565,16 +353,23 @@ def build_html_report(
 # ---------------------------------------------------------------------------
 
 
-def metrics_cards_html(metrics: dict) -> str:
-    """Render a dict of metrics as card HTML."""
+def metrics_cards_html(metrics: dict, styles: dict[str, str] | None = None) -> str:
+    """Render a dict of metrics as card HTML.
+
+    Optional styles dict maps key -> CSS class (good/warn/bad).
+    """
+    if styles is None:
+        styles = {}
     cards = []
     for k, v in metrics.items():
+        cls = styles.get(k, "")
+        cls_attr = f' class="card {cls}"' if cls else ' class="card"'
         label = k.replace("_", " ").title()
         if isinstance(v, float):
             val = f"{v:.4f}" if abs(v) < 10 else f"{v:,.2f}"
         else:
             val = str(v)
-        cards.append(f'<div class="card"><div class="label">{label}</div><div class="value">{val}</div></div>')
+        cards.append(f'<div{cls_attr}><div class="num">{val}</div><div class="lbl">{label}</div></div>')
     return f'<div class="cards">{"".join(cards)}</div>'
 
 
@@ -591,24 +386,31 @@ def data_table_html(rows: list[dict], max_rows: int = 50) -> str:
     if len(rows) > max_rows:
         remaining = len(rows) - max_rows
         trs += (
-            f'<tr><td colspan="{len(headers)}" style="text-align:center;'
-            f'color:var(--text-muted);font-style:italic;">'
+            f'<tr><td colspan="{len(headers)}" '
+            f'style="text-align:center;color:var(--text-muted);font-style:italic">'
             f"&hellip; {remaining} more rows</td></tr>"
         )
-    return f'<div class="table-wrap"><table><thead><tr>{th}</tr></thead><tbody>{trs}</tbody></table></div>'
+    return f'<div style="overflow-x:auto"><table><tr>{th}</tr>{trs}</table></div>'
 
 
 def plotly_div(fig: object, height: int = 450) -> str:
-    """Embed a Plotly figure as an inline div (no full HTML wrapper)."""
+    """Embed a Plotly figure as an inline div.
+
+    Uses Plotly CDN loaded from build_html_report <head>.
+    """
     import plotly.io as pio  # lazy
 
     return (
-        f'<div class="chart-container" style="height:{height}px">'
+        f'<div class="chart-container" style="min-height:{height}px">'
         + pio.to_html(
             fig,
             full_html=False,
             include_plotlyjs=False,
-            config={"responsive": True, "displayModeBar": True},
+            config={
+                "responsive": True,
+                "displayModeBar": True,
+                "scrollZoom": True,
+            },
         )
         + "</div>"
     )

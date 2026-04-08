@@ -174,32 +174,32 @@ def _run_quality_alerts(df: pd.DataFrame, target_column: str = "") -> list[dict]
 
 
 def _alerts_html(alerts: list[dict], t: dict) -> str:
-    """Render alerts as styled HTML cards."""
+    """Render alerts as styled HTML cards — matches Data Analyst pattern."""
     if not alerts:
-        return '<div class="alert alert-success">&#10004; No quality issues detected.</div>'
-    sev_class = {"high": "alert-danger", "medium": "alert-warning", "low": "alert-success"}
-    sev_icon = {"high": "&#9679;", "medium": "&#9679;", "low": "&#9679;"}
-    sev_icon_style = {
-        "high": "color:var(--red)",
-        "medium": "color:var(--orange)",
-        "low": "color:var(--green)",
+        return (
+            '<div class="alert-panel">'
+            '<div class="alert-item info">'
+            '<span class="alert-badge info">OK</span> No data quality issues detected.'
+            "</div></div>"
+        )
+    sev_badge = {"high": "error", "medium": "warning", "low": "info"}
+    sev_label = {
+        "high": lambda a: a["type"].replace("_", " ").upper(),
+        "medium": lambda a: a["type"].replace("_", " ").upper(),
+        "low": lambda a: a["type"].replace("_", " ").upper(),
     }
     parts = []
     for a in alerts:
         sev = a.get("severity", "low")
-        cls = sev_class.get(sev, "alert-warning")
-        icon = sev_icon.get(sev, "&#9679;")
-        icon_style = sev_icon_style.get(sev, "")
+        badge_cls = sev_badge.get(sev, "info")
+        label = sev_label.get(sev, lambda x: "INFO")(a)
         msg = a.get("message", "")
         rec = a.get("recommendation", "")
+        full_msg = f"{msg} &mdash; {rec}" if rec else msg
         parts.append(
-            f'<div class="alert {cls}">'
-            f"<strong><span style='{icon_style}'>{icon}</span> "
-            f"{a['type'].replace('_', ' ').title()}</strong> &mdash; {msg}"
-            f"{'<br><em>' + rec + '</em>' if rec else ''}"
-            f"</div>"
+            f'<div class="alert-item {badge_cls}"><span class="alert-badge {badge_cls}">{label}</span> {full_msg}</div>'
         )
-    return "\n".join(parts)
+    return f'<div class="alert-panel">{"".join(parts)}</div>'
 
 
 def _quality_score_html(score: float, alerts: list[dict], t: dict) -> str:
@@ -208,28 +208,20 @@ def _quality_score_html(score: float, alerts: list[dict], t: dict) -> str:
     med = sum(1 for a in alerts if a.get("severity") == "medium")
     low = sum(1 for a in alerts if a.get("severity") == "low")
 
-    score_color = "var(--green)" if score >= 80 else ("var(--orange)" if score >= 60 else "var(--red)")
+    score_cls = "good" if score >= 80 else ("warn" if score >= 60 else "bad")
     score_card = (
         f'<div class="cards">'
-        f'<div class="card" style="border-left:4px solid {score_color}">'
-        f'  <div class="label">Quality Score</div>'
-        f'  <div class="value" style="color:{score_color}">{score}</div>'
-        f'  <div class="sub">out of 100</div>'
+        f'<div class="card {score_cls}">'
+        f'  <div class="num">{score}</div><div class="lbl">Quality Score</div>'
         f"</div>"
-        f'<div class="card" style="border-left:4px solid var(--red)">'
-        f'  <div class="label">High Severity</div>'
-        f'  <div class="value" style="color:var(--red)">{high}</div>'
-        f'  <div class="sub">critical issues</div>'
+        f'<div class="card bad">'
+        f'  <div class="num">{high}</div><div class="lbl">High Severity</div>'
         f"</div>"
-        f'<div class="card" style="border-left:4px solid var(--orange)">'
-        f'  <div class="label">Medium Severity</div>'
-        f'  <div class="value" style="color:var(--orange)">{med}</div>'
-        f'  <div class="sub">warnings</div>'
+        f'<div class="card warn">'
+        f'  <div class="num">{med}</div><div class="lbl">Medium Severity</div>'
         f"</div>"
-        f'<div class="card" style="border-left:4px solid var(--green)">'
-        f'  <div class="label">Low Severity</div>'
-        f'  <div class="value" style="color:var(--green)">{low}</div>'
-        f'  <div class="sub">minor notes</div>'
+        f'<div class="card good">'
+        f'  <div class="num">{low}</div><div class="lbl">Low Severity</div>'
         f"</div>"
         f"</div>"
     )
@@ -308,16 +300,22 @@ def generate_eda_report(
     missing_pct = round(missing_total / max(len(df) * len(df.columns), 1) * 100, 2)
     dup_rows = int(df.duplicated().sum())
 
+    score_cls = "good" if quality_score >= 80 else ("warn" if quality_score >= 60 else "bad")
+    dup_cls = "warn" if dup_rows > 0 else "good"
     overview_html = metrics_cards_html(
         {
-            "quality_score": f"{quality_score}/100",
             "rows": f"{len(df):,}",
             "columns": len(df.columns),
             "numeric": len(numeric_cols),
             "categorical": len(cat_cols),
+            "quality_score": quality_score,
             "missing_cells": f"{missing_pct}%",
-            "duplicate_rows": dup_rows,
-        }
+            "duplicates": f"{dup_rows:,}",
+        },
+        styles={
+            "quality_score": score_cls,
+            "duplicates": dup_cls,
+        },
     )
     sections.append(
         {
@@ -512,23 +510,16 @@ def generate_eda_report(
         )
 
     # ── Build and write report ─────────────────────────────────────────────
-    from datetime import datetime
-
-    plotly_cdn = '<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>'
-    subtitle = (
-        f"Generated {datetime.now().strftime('%Y-%m-%d %H:%M')} · "
-        f"{len(df):,} rows · {len(df.columns)} columns · "
-        f"Quality score: {quality_score}/100"
-    )
     html = build_html_report(
         title=f"EDA Report — {path.name}",
-        subtitle=subtitle,
+        subtitle="",
         sections=sections,
         theme=theme,
         open_browser=False,
         output_path="",
+        sidebar_title="EDA Report",
+        sidebar_meta=f"{path.name}<br>{len(df):,} rows &times; {len(df.columns)} cols",
     )
-    html = html.replace("</head>", f"  {plotly_cdn}\n</head>")
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(html, encoding="utf-8")
