@@ -742,7 +742,7 @@ def generate_cluster_report(
             }
         )
 
-        out_path_str = output_path or str(dp.parent / f"{dp.stem}_cluster_report.html")
+        out_path_str = output_path or str(get_output_dir() / f"{dp.stem}_cluster_report.html")
         html = build_html_report(
             title=f"Cluster Report — {dp.name}",
             subtitle="",

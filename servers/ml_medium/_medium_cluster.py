@@ -102,9 +102,14 @@ def run_clustering(
         x_scaled = reducer.fit_transform(x_scaled)
         progress.append(ok(f"Reduced dims with {reduce_dims.upper()}", f"{nc} components"))
 
-    # Cluster
+    # Cluster (use MiniBatchKMeans for large datasets — much faster)
     if algorithm == "kmeans":
-        clf = KMeans(n_clusters=n_clusters, max_iter=100, random_state=42)
+        if len(x_scaled) > 50_000:
+            from sklearn.cluster import MiniBatchKMeans
+
+            clf = MiniBatchKMeans(n_clusters=n_clusters, max_iter=100, random_state=42, batch_size=1024)
+        else:
+            clf = KMeans(n_clusters=n_clusters, max_iter=100, random_state=42)
         labels = clf.fit_predict(x_scaled)
         inertia = float(clf.inertia_)
         n_found = n_clusters
@@ -126,14 +131,23 @@ def run_clustering(
     progress.append(ok(f"Clustered with {algorithm}", f"{n_found} clusters"))
 
     # Silhouette score (needs at least 2 clusters and not all noise)
+    # Subsample for large datasets — silhouette_score is O(n²)
     silhouette = None
     if n_found >= 2 and len(set(labels)) >= 2:
         try:
             from sklearn.metrics import silhouette_score
 
             non_noise = labels != -1
-            if non_noise.sum() > n_found:
-                silhouette = round(float(silhouette_score(x_scaled[non_noise], labels[non_noise])), 4)
+            x_sil = x_scaled[non_noise]
+            l_sil = labels[non_noise]
+            if len(x_sil) > n_found:
+                sil_cap = min(len(x_sil), 10_000)
+                if len(x_sil) > sil_cap:
+                    rng = np.random.RandomState(42)
+                    idx = rng.choice(len(x_sil), sil_cap, replace=False)
+                    x_sil = x_sil[idx]
+                    l_sil = l_sil[idx]
+                silhouette = round(float(silhouette_score(x_sil, l_sil)), 4)
         except Exception:
             pass
 

@@ -110,9 +110,11 @@ def _auto_preprocess(df: pd.DataFrame, target_column: str) -> tuple[pd.DataFrame
             encoding_map[col] = {str(cls): int(idx) for idx, cls in enumerate(le.classes_)}
             encoded_cols.append(col)
 
-    for col in df.select_dtypes(include="number").columns:
-        if bool(df[col].isnull().any()):
-            df[col] = df[col].fillna(df[col].median())
+    # fill numeric nulls with median (vectorized — single pass)
+    num_cols = df.select_dtypes(include="number").columns
+    if len(num_cols) > 0:
+        medians = df[num_cols].median()
+        df[num_cols] = df[num_cols].fillna(medians)
 
     return df, encoding_map, encoded_cols
 
@@ -175,7 +177,7 @@ def _fit_predict_classifier(model_str: str, x_train: np.ndarray, x_test: np.ndar
         bst = xgb.train(params, dtrain, num_boost_round=10, evals=[], verbose_eval=False)
         preds = bst.predict(dtest)
         if nc > 2:
-            return np.asarray([np.argmax(row) for row in preds])
+            return np.argmax(preds, axis=1)
         return (preds > 0.5).astype(int)
 
     built = _build_classifier(model_str)
@@ -290,7 +292,7 @@ def _apply_op(df: pd.DataFrame, op: dict) -> tuple[pd.DataFrame, dict]:
         else:  # std
             mean, std = df[col].mean(), df[col].std()
             df = df[(df[col] >= mean - 3 * std) & (df[col] <= mean + 3 * std)].copy()  # type: ignore[assignment]
-        return df.copy(), {"op": op_name, "column": col, "method": method, "removed": before - len(df)}
+        return df, {"op": op_name, "column": col, "method": method, "removed": before - len(df)}
 
     elif op_name == "label_encode":
         col = op["column"]
@@ -322,7 +324,7 @@ def _apply_op(df: pd.DataFrame, op: dict) -> tuple[pd.DataFrame, dict]:
         subset = op.get("subset")
         before = len(df)
         df = df.drop_duplicates(subset=subset)
-        return df.copy(), {"op": op_name, "removed": before - len(df)}
+        return df, {"op": op_name, "removed": before - len(df)}
 
     elif op_name == "drop_column":
         col = op["column"]

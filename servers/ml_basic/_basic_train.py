@@ -7,7 +7,6 @@ from ._basic_helpers import (
     ALLOWED_REGRESSORS,
     MIN_ROWS_CLASSIFIER,
     MIN_ROWS_REGRESSOR,
-    MODELS_DIR,
     SVC,
     UTC,
     Any,
@@ -32,6 +31,7 @@ from ._basic_helpers import (
     append_receipt,
     datetime,
     f1_score,
+    get_output_dir,
     logger,
     mean_squared_error,
     np,
@@ -204,7 +204,7 @@ def train_classifier(
             xgb_model = xgb.train(params, dtrain, num_boost_round=10)
             preds = xgb_model.predict(dtest)
             if nc > 2:
-                y_pred = np.asarray([np.argmax(line) for line in preds])
+                y_pred = np.argmax(preds, axis=1)
             else:
                 y_pred = (preds > 0.5).astype(int)
             model_class_name = "XGBClassifier"
@@ -232,7 +232,7 @@ def train_classifier(
                 trained.predict(x_train_s if model in ("svm", "knn") else x_train)
                 if model != "xgb"
                 else (
-                    np.asarray([np.argmax(row) for row in trained.predict(xgb.DMatrix(x_train))])
+                    np.argmax(trained.predict(xgb.DMatrix(x_train)), axis=1)
                     if int(n_classes) > 2
                     else (trained.predict(xgb.DMatrix(x_train)) > 0.5).astype(int)
                 )
@@ -247,8 +247,7 @@ def train_classifier(
 
         # --- save model ---
         ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
-        models_dir = path.parent / MODELS_DIR
-        models_dir.mkdir(exist_ok=True)
+        models_dir = get_output_dir()
         model_filename = f"{path.stem}_{model}_{ts}.pkl"
         model_path = models_dir / model_filename
 
@@ -452,8 +451,7 @@ def train_regressor(
         progress.append(ok(f"Trained {model_class_name}", f"r2={r2:.3f}, rmse={rmse:.2f}"))
 
         ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
-        models_dir = path.parent / MODELS_DIR
-        models_dir.mkdir(exist_ok=True)
+        models_dir = get_output_dir()
         model_path = models_dir / f"{path.stem}_{model}_{ts}.pkl"
 
         if model_path.exists():

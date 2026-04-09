@@ -15,7 +15,6 @@ import sklearn
 from ._medium_helpers import (
     ALLOWED_CLASSIFIERS,
     ALLOWED_REGRESSORS,
-    MODELS_DIR,
     KFold,
     StratifiedKFold,
     _auto_preprocess,
@@ -28,6 +27,7 @@ from ._medium_helpers import (
     fail,
     get_cv_folds,
     get_max_models,
+    get_output_dir,
     mean_squared_error,
     ok,
     r2_score,
@@ -173,8 +173,7 @@ def train_with_cv(
         }
 
     ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
-    models_dir = path.parent / MODELS_DIR
-    models_dir.mkdir(exist_ok=True)
+    models_dir = get_output_dir()
     model_path = models_dir / f"{path.stem}_{model}_cv_{ts}.pkl"
     manifest_path = model_path.with_suffix(".manifest.json")
 
@@ -346,8 +345,7 @@ def compare_models(
     backup = ""
     if best and not results[0].get("error"):
         ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
-        models_dir = path.parent / MODELS_DIR
-        models_dir.mkdir(exist_ok=True)
+        models_dir = get_output_dir()
         mp = models_dir / f"{path.stem}_{best}_best_{ts}.pkl"
 
         if mp.exists():
