@@ -878,6 +878,7 @@ def generate_training_report(
             color_continuous_scale="Blues",
         )
         fig_fi.update_layout(
+            yaxis=dict(autorange="reversed"),
             height=max(300, len(fi_pairs) * 28 + 80),
             margin=dict(l=10, r=10, t=50, b=10),
         )
