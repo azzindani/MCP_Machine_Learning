@@ -204,7 +204,7 @@ def train_classifier(
             xgb_model = xgb.train(params, dtrain, num_boost_round=10)
             preds = xgb_model.predict(dtest)
             if nc > 2:
-                y_pred = np.asarray([np.argmax(line) for line in preds])
+                y_pred = np.argmax(preds, axis=1)
             else:
                 y_pred = (preds > 0.5).astype(int)
             model_class_name = "XGBClassifier"
@@ -232,7 +232,7 @@ def train_classifier(
                 trained.predict(x_train_s if model in ("svm", "knn") else x_train)
                 if model != "xgb"
                 else (
-                    np.asarray([np.argmax(row) for row in trained.predict(xgb.DMatrix(x_train))])
+                    np.argmax(trained.predict(xgb.DMatrix(x_train)), axis=1)
                     if int(n_classes) > 2
                     else (trained.predict(xgb.DMatrix(x_train)) > 0.5).astype(int)
                 )

@@ -62,7 +62,7 @@ def get_predictions(
         encoding_map: dict = metadata.get("encoding_map", {})
         for col, mapping in encoding_map.items():
             if col in df.columns:
-                df[col] = df[col].astype(str).map({str(k): v for k, v in mapping.items()}).fillna(-1).astype(int)
+                df[col] = df[col].astype(str).map(mapping).fillna(-1).astype(int)
 
         feature_cols: list[str] = metadata.get("feature_columns", [])
         missing = [c for c in feature_cols if c not in df.columns]

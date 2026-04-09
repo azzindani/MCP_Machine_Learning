@@ -101,10 +101,11 @@ def _auto_preprocess(df: pd.DataFrame, target_column: str) -> tuple[pd.DataFrame
             encoding_map[col] = {str(cls): int(idx) for idx, cls in enumerate(le.classes_)}
             encoded_cols.append(col)
 
-    # fill numeric nulls with median
-    for col in df.select_dtypes(include="number").columns:
-        if bool(df[col].isnull().any()):
-            df[col] = df[col].fillna(df[col].median())
+    # fill numeric nulls with median (vectorized — single pass)
+    num_cols = df.select_dtypes(include="number").columns
+    if len(num_cols) > 0:
+        medians = df[num_cols].median()
+        df[num_cols] = df[num_cols].fillna(medians)
 
     return df, encoding_map, encoded_cols
 
