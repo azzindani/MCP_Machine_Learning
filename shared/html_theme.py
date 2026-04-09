@@ -236,47 +236,115 @@ def report_css(vars_block: str) -> str:
     return f"""{vars_block}
 *{{box-sizing:border-box;margin:0;padding:0}}
 html{{scroll-behavior:smooth}}
-body{{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;transition:background 0.2s,color 0.2s}}
-::-webkit-scrollbar{{width:6px}}::-webkit-scrollbar-track{{background:var(--bg)}}::-webkit-scrollbar-thumb{{background:var(--border);border-radius:3px}}
-.sidebar{{width:260px;background:var(--surface);border-right:1px solid var(--border);position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100}}
-.sidebar-hdr{{padding:20px;border-bottom:1px solid var(--border)}}
-.sidebar-hdr h2{{color:var(--accent);font-size:16px;margin-bottom:4px}}
-.sidebar-hdr .meta{{color:var(--text-muted);font-size:12px}}
+body{{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);
+  min-height:100vh;transition:background 0.2s,color 0.2s;line-height:1.5;
+  overflow-wrap:break-word;word-break:break-word}}
+::-webkit-scrollbar{{width:6px}}
+::-webkit-scrollbar-track{{background:var(--bg)}}
+::-webkit-scrollbar-thumb{{background:var(--border);border-radius:3px}}
+
+/* Sidebar */
+.sidebar{{width:260px;background:var(--surface);border-right:1px solid var(--border);
+  position:fixed;top:0;left:0;bottom:0;overflow-y:auto;z-index:100}}
+.sidebar-hdr{{padding:20px;border-bottom:1px solid var(--border);overflow:hidden}}
+.sidebar-hdr h2{{color:var(--accent);font-size:16px;margin-bottom:4px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+.sidebar-hdr .meta{{color:var(--text-muted);font-size:12px;line-height:1.4;
+  overflow-wrap:break-word;word-break:break-word}}
 .nav{{padding:8px 0}}
-.nav a{{display:block;padding:7px 20px;color:var(--text-muted);text-decoration:none;font-size:13px;border-left:3px solid transparent;transition:all 0.15s}}
-.nav a:hover,.nav a.active{{color:var(--accent);background:rgba(88,166,255,0.06);border-left-color:var(--accent)}}
-.nav .st{{padding:14px 20px 4px;color:var(--border);font-size:10px;text-transform:uppercase;letter-spacing:1px;font-weight:600}}
-.main{{margin-left:260px;padding:32px;min-height:100vh;overflow-x:auto}}
+.nav a{{display:block;padding:7px 20px;color:var(--text-muted);text-decoration:none;
+  font-size:13px;border-left:3px solid transparent;transition:all 0.15s;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+.nav a:hover,.nav a.active{{color:var(--accent);background:rgba(88,166,255,0.06);
+  border-left-color:var(--accent)}}
+.nav .st{{padding:14px 20px 4px;color:var(--border);font-size:10px;
+  text-transform:uppercase;letter-spacing:1px;font-weight:600}}
+
+/* Main content */
+.main{{margin-left:260px;padding:32px;min-height:100vh;overflow-x:hidden;
+  max-width:100%}}
 .section{{margin-bottom:48px}}
-.section>h2{{color:var(--accent);font-size:20px;margin-bottom:20px;padding-bottom:10px;border-bottom:2px solid var(--border);font-weight:600}}
-.cards{{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:24px}}
-.card{{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;text-align:center;transition:transform 0.15s,border-color 0.15s}}
+.section>h2{{color:var(--accent);font-size:20px;margin-bottom:20px;padding-bottom:10px;
+  border-bottom:2px solid var(--border);font-weight:600;
+  overflow-wrap:break-word;word-break:break-word}}
+
+/* Metric cards */
+.cards{{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));
+  gap:12px;margin-bottom:24px}}
+.card{{background:var(--surface);border:1px solid var(--border);border-radius:10px;
+  padding:16px;text-align:center;transition:transform 0.15s,border-color 0.15s;
+  overflow:hidden;min-width:0}}
 .card:hover{{transform:translateY(-2px);border-color:var(--accent)}}
-.card .num{{font-size:28px;font-weight:700;color:var(--accent);line-height:1.2}}
-.card .lbl{{font-size:11px;color:var(--text-muted);margin-top:4px;text-transform:uppercase;letter-spacing:0.8px}}
-.card.good .num{{color:var(--green)}}.card.warn .num{{color:var(--orange)}}.card.bad .num{{color:var(--red)}}
-table{{width:100%;border-collapse:collapse;margin:12px 0;font-size:13px;background:var(--surface);border-radius:8px;overflow:hidden}}
-th,td{{padding:10px 14px;text-align:left;border-bottom:1px solid var(--border)}}
-th{{background:rgba(88,166,255,0.08);color:var(--accent);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:0.5px}}
+.card .num{{font-size:28px;font-weight:700;color:var(--accent);line-height:1.2;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+.card .lbl{{font-size:11px;color:var(--text-muted);margin-top:4px;
+  text-transform:uppercase;letter-spacing:0.8px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+.card.good .num{{color:var(--green)}}
+.card.warn .num{{color:var(--orange)}}
+.card.bad .num{{color:var(--red)}}
+
+/* Tables */
+table{{width:100%;border-collapse:collapse;margin:12px 0;font-size:13px;
+  background:var(--surface);border-radius:8px;overflow:hidden;
+  table-layout:auto}}
+th,td{{padding:10px 14px;text-align:left;border-bottom:1px solid var(--border);
+  overflow-wrap:break-word;word-break:break-word;max-width:320px}}
+th{{background:rgba(88,166,255,0.08);color:var(--accent);font-weight:600;
+  font-size:11px;text-transform:uppercase;letter-spacing:0.5px;white-space:nowrap}}
+td{{line-height:1.4}}
 tr:hover{{background:rgba(88,166,255,0.03)}}
+
+/* Status colors */
 .good{{color:var(--green)}}.warn{{color:var(--orange)}}.bad{{color:var(--red)}}
-.badge{{font-size:11px;padding:2px 8px;border-radius:10px;background:var(--border);color:var(--text-muted);font-weight:500}}
+.badge{{font-size:11px;padding:2px 8px;border-radius:10px;background:var(--border);
+  color:var(--text-muted);font-weight:500}}
 .stats-cell{{font-size:12px;color:var(--text-muted);font-family:monospace}}
+
+/* Insights list */
 .insights{{list-style:none;padding:0}}
-.insights li{{padding:10px 14px;margin:6px 0;background:var(--surface);border-radius:8px;border-left:4px solid var(--accent);font-size:13px;line-height:1.5}}
-.insights li.warn{{border-left-color:var(--orange)}}.insights li.bad{{border-left-color:var(--red)}}.insights li.good{{border-left-color:var(--green)}}
+.insights li{{padding:10px 14px;margin:6px 0;background:var(--surface);border-radius:8px;
+  border-left:4px solid var(--accent);font-size:13px;line-height:1.5;
+  overflow-wrap:break-word;word-break:break-word}}
+.insights li.warn{{border-left-color:var(--orange)}}
+.insights li.bad{{border-left-color:var(--red)}}
+.insights li.good{{border-left-color:var(--green)}}
+
+/* Progress bars */
 .mbar{{height:24px;background:var(--border);border-radius:6px;overflow:hidden;margin:4px 0}}
 .mbar-fill{{height:100%;background:linear-gradient(90deg,var(--orange),var(--red));border-radius:6px}}
-.chart-container{{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;margin:16px 0;min-height:420px;overflow:hidden;max-width:100%}}
-pre{{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px;overflow-x:auto;font-size:13px;line-height:1.5;color:var(--text)}}
+
+/* Chart containers */
+.chart-container{{background:var(--surface);border:1px solid var(--border);border-radius:10px;
+  padding:12px;margin:16px 0;min-height:420px;overflow-x:auto;max-width:100%}}
+
+/* Code blocks */
+pre{{background:var(--surface);border:1px solid var(--border);border-radius:8px;
+  padding:12px;overflow-x:auto;font-size:13px;line-height:1.5;color:var(--text);
+  white-space:pre-wrap;word-break:break-all}}
+
+/* Alert panels */
 .alert-panel{{border-radius:10px;overflow:hidden;margin-bottom:20px}}
-.alert-item{{padding:10px 14px;margin:3px 0;font-size:13px;border-radius:8px;display:flex;align-items:flex-start;gap:10px;background:var(--surface);border:1px solid var(--border)}}
-.alert-item.error{{border-left:4px solid var(--red)}}.alert-item.warning{{border-left:4px solid var(--orange)}}.alert-item.info{{border-left:4px solid var(--green)}}
-.alert-badge{{font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;white-space:nowrap;flex-shrink:0;margin-top:1px}}
-.alert-badge.error{{background:var(--red);color:#fff}}.alert-badge.warning{{background:var(--orange);color:#fff}}.alert-badge.info{{background:var(--green);color:#fff}}
+.alert-item{{padding:10px 14px;margin:3px 0;font-size:13px;border-radius:8px;
+  display:flex;align-items:flex-start;gap:10px;background:var(--surface);
+  border:1px solid var(--border);line-height:1.5;
+  overflow-wrap:break-word;word-break:break-word}}
+.alert-item.error{{border-left:4px solid var(--red)}}
+.alert-item.warning{{border-left:4px solid var(--orange)}}
+.alert-item.info{{border-left:4px solid var(--green)}}
+.alert-badge{{font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;
+  white-space:nowrap;flex-shrink:0;margin-top:2px}}
+.alert-badge.error{{background:var(--red);color:#fff}}
+.alert-badge.warning{{background:var(--orange);color:#fff}}
+.alert-badge.info{{background:var(--green);color:#fff}}
+.alert-item span:last-child{{min-width:0}}
+
+/* Responsive */
 @media(max-width:1100px){{.sidebar{{width:220px}}.main{{margin-left:220px}}}}
-@media(max-width:768px){{.sidebar{{display:none}}.main{{margin-left:0;padding:16px}}.cards{{grid-template-columns:repeat(2,1fr)}}}}
-@media(max-width:480px){{.cards{{grid-template-columns:1fr}}th,td{{padding:8px 10px;font-size:12px}}}}"""  # noqa: E501
+@media(max-width:768px){{.sidebar{{display:none}}.main{{margin-left:0;padding:16px}}
+  .cards{{grid-template-columns:repeat(2,1fr)}}th,td{{max-width:200px}}}}
+@media(max-width:480px){{.cards{{grid-template-columns:1fr}}
+  th,td{{padding:8px 10px;font-size:12px;max-width:150px}}}}"""  # noqa: E501
 
 
 # ---------------------------------------------------------------------------
@@ -324,7 +392,7 @@ def build_html_report(
 </style></head><body>
 <div class="sidebar">
   <div class="sidebar-hdr">
-    <h2>{sb_title}</h2>
+    <h2 title="{sb_title}">{sb_title}</h2>
     {sb_meta}
   </div>
   <div class="nav">
@@ -378,10 +446,14 @@ def data_table_html(rows: list[dict], max_rows: int = 50) -> str:
     if not rows:
         return "<p>No data.</p>"
     headers = list(rows[0].keys())
-    th = "".join(f"<th>{h}</th>" for h in headers)
+    th = "".join(f"<th>{h.replace('_', ' ')}</th>" for h in headers)
     trs = ""
     for row in rows[:max_rows]:
-        tds = "".join(f"<td>{row.get(h, '')}</td>" for h in headers)
+        tds = ""
+        for h in headers:
+            val = row.get(h, "")
+            cell = str(val) if val is not None else ""
+            tds += f"<td>{cell}</td>"
         trs += f"<tr>{tds}</tr>"
     if len(rows) > max_rows:
         remaining = len(rows) - max_rows
