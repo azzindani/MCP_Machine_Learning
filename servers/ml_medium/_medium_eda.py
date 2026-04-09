@@ -32,9 +32,13 @@ def _run_quality_alerts(df: pd.DataFrame, target_column: str = "") -> list[dict]
     alerts: list[dict] = []
     numeric_cols = df.select_dtypes(include="number").columns.tolist()
 
+    # Pre-compute stats in bulk (vectorized — single pass each)
+    nunique_all = df.nunique(dropna=False)
+    null_pcts = df.isnull().mean() * 100
+
     # 1. Constant columns (single unique value)
-    for col in df.columns:
-        if df[col].nunique(dropna=False) <= 1:
+    for col in nunique_all.index:
+        if nunique_all[col] <= 1:
             alerts.append(
                 {
                     "type": "constant_column",
@@ -46,8 +50,8 @@ def _run_quality_alerts(df: pd.DataFrame, target_column: str = "") -> list[dict]
             )
 
     # 2. High missing data (>20%)
-    for col in df.columns:
-        miss_pct = df[col].isnull().mean() * 100
+    for col in null_pcts.index:
+        miss_pct = float(null_pcts[col])
         if miss_pct > 20:
             alerts.append(
                 {
@@ -60,27 +64,28 @@ def _run_quality_alerts(df: pd.DataFrame, target_column: str = "") -> list[dict]
                 }
             )
 
-    # 3. Zero-inflated distributions
-    for col in numeric_cols:
-        if col == target_column:
-            continue
-        zero_pct = (df[col] == 0).mean() * 100
-        if zero_pct > 50:
-            alerts.append(
-                {
-                    "type": "zero_inflated",
-                    "severity": "medium",
-                    "column": col,
-                    "zero_pct": round(zero_pct, 1),
-                    "message": f"Column '{col}' is {zero_pct:.1f}% zeros — may need log transform.",
-                    "recommendation": "Consider log1p transform or treat zeros as a separate indicator.",
-                }
-            )
+    # 3. Zero-inflated distributions (vectorized)
+    feat_num = [c for c in numeric_cols if c != target_column]
+    if feat_num:
+        zero_pcts = (df[feat_num] == 0).mean() * 100
+        for col in feat_num:
+            zp = float(zero_pcts[col])
+            if zp > 50:
+                alerts.append(
+                    {
+                        "type": "zero_inflated",
+                        "severity": "medium",
+                        "column": col,
+                        "zero_pct": round(zp, 1),
+                        "message": f"Column '{col}' is {zp:.1f}% zeros — may need log transform.",
+                        "recommendation": "Consider log1p transform or treat zeros as a separate indicator.",
+                    }
+                )
 
-    # 4. High cardinality in categoricals
+    # 4. High cardinality in categoricals (use pre-computed nunique)
     cat_cols = [c for c in df.columns if c not in numeric_cols and c != target_column]
     for col in cat_cols:
-        n_unique = df[col].nunique()
+        n_unique = int(nunique_all[col])
         ratio = n_unique / max(len(df), 1)
         if ratio > 0.5 and n_unique > 20:
             alerts.append(
@@ -112,26 +117,28 @@ def _run_quality_alerts(df: pd.DataFrame, target_column: str = "") -> list[dict]
                 }
             )
 
-    # 6. Extreme skewness (|skew| > 2)
-    for col in numeric_cols:
-        if col == target_column:
-            continue
+    # 6. Extreme skewness (|skew| > 2) — vectorized
+    if feat_num:
         try:
-            skew = float(df[col].skew())
+            skews = df[feat_num].skew()
+            for col in feat_num:
+                skew = float(skews[col])
+                if abs(skew) > 2:
+                    direction = "right" if skew > 0 else "left"
+                    alerts.append(
+                        {
+                            "type": "extreme_skewness",
+                            "severity": "medium",
+                            "column": col,
+                            "skewness": round(skew, 2),
+                            "message": f"Column '{col}' is {direction}-skewed "
+                            f"(skew={skew:.2f}) — may hurt linear models.",
+                            "recommendation": "Apply log transform or use "
+                            "run_preprocessing 'cap_outliers' to reduce skew.",
+                        }
+                    )
         except Exception:
-            continue
-        if abs(skew) > 2:
-            direction = "right" if skew > 0 else "left"
-            alerts.append(
-                {
-                    "type": "extreme_skewness",
-                    "severity": "medium",
-                    "column": col,
-                    "skewness": round(skew, 2),
-                    "message": f"Column '{col}' is {direction}-skewed (skew={skew:.2f}) — may hurt linear models.",
-                    "recommendation": "Apply log transform or use run_preprocessing 'cap_outliers' to reduce skew.",
-                }
-            )
+            pass
 
     # 7. Multicollinearity (|r| > 0.9 between feature pairs)
     if len(numeric_cols) >= 2:
