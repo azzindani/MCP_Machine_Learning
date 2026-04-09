@@ -193,7 +193,12 @@ def save_chart(
     html = fig.to_html(  # type: ignore[attr-defined]
         include_plotlyjs=True,
         full_html=True,
-        config={"responsive": True, "displayModeBar": True, "scrollZoom": True},
+        config={
+            "responsive": True,
+            "displayModeBar": True,
+            "scrollZoom": True,
+            "plotGlPixelRatio": 0,
+        },
     )
 
     # Inject viewport meta
@@ -482,6 +487,7 @@ def plotly_div(fig: object, height: int = 450) -> str:
                 "responsive": True,
                 "displayModeBar": True,
                 "scrollZoom": True,
+                "plotGlPixelRatio": 0,
             },
         )
         + "</div>"
