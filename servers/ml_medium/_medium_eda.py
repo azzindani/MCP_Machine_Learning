@@ -202,9 +202,11 @@ def _alerts_html(alerts: list[dict], t: dict) -> str:
         label = sev_label.get(sev, lambda x: "INFO")(a)
         msg = a.get("message", "")
         rec = a.get("recommendation", "")
-        full_msg = f"{msg} &mdash; {rec}" if rec else msg
+        full_msg = f"{msg}<br><small style='color:var(--text-muted)'>{rec}</small>" if rec else msg
         parts.append(
-            f'<div class="alert-item {badge_cls}"><span class="alert-badge {badge_cls}">{label}</span> {full_msg}</div>'
+            f'<div class="alert-item {badge_cls}">'
+            f'<span class="alert-badge {badge_cls}">{label}</span>'
+            f"<span>{full_msg}</span></div>"
         )
     return f'<div class="alert-panel">{"".join(parts)}</div>'
 
@@ -349,6 +351,7 @@ def generate_eda_report(
         )
         fig_miss.update_coloraxes(colorbar_title="% Missing")
         fig_miss.update_layout(
+            yaxis=dict(autorange="reversed"),
             height=max(300, len(null_series) * 30 + 80),
             margin=dict(l=10, r=10, t=40, b=10),
         )
@@ -461,6 +464,7 @@ def generate_eda_report(
                 color_continuous_scale="Blues",
             )
             fig_cat.update_layout(
+                yaxis=dict(autorange="reversed"),
                 height=max(250, len(vc) * 25 + 80),
                 margin=dict(l=10, r=10, t=40, b=10),
                 showlegend=False,
