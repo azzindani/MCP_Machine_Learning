@@ -106,6 +106,7 @@ def run_clustering(
     if algorithm == "kmeans":
         if len(x_scaled) > 50_000:
             from sklearn.cluster import MiniBatchKMeans
+
             clf = MiniBatchKMeans(n_clusters=n_clusters, max_iter=100, random_state=42, batch_size=1024)
         else:
             clf = KMeans(n_clusters=n_clusters, max_iter=100, random_state=42)
