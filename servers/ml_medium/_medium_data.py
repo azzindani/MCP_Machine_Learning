@@ -271,6 +271,7 @@ def find_optimal_clusters(
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
     from sklearn.cluster import KMeans as _KMeans
+    from sklearn.cluster import MiniBatchKMeans as _MBKMeans
     from sklearn.metrics import silhouette_score
 
     from shared.html_theme import get_theme, plotly_template, save_chart
@@ -303,12 +304,25 @@ def find_optimal_clusters(
     max_k = min(max_k, x_scaled.shape[0] - 1, 15)
     k_range = list(range(2, max_k + 1))
 
+    # Use MiniBatchKMeans for large datasets (much faster)
+    use_mini = len(x_scaled) > 50_000
+    # Subsample for silhouette (O(n²) — impractical on large data)
+    sil_cap = min(len(x_scaled), 10_000)
+    if len(x_scaled) > sil_cap:
+        rng = np.random.RandomState(42)
+        sil_idx = rng.choice(len(x_scaled), sil_cap, replace=False)
+    else:
+        sil_idx = np.arange(len(x_scaled))
+
     inertias, silhouettes = [], []
     for k in k_range:
-        km = _KMeans(n_clusters=k, random_state=42, max_iter=100)
+        if use_mini:
+            km = _MBKMeans(n_clusters=k, random_state=42, max_iter=100, batch_size=1024)
+        else:
+            km = _KMeans(n_clusters=k, random_state=42, max_iter=100)
         labels = km.fit_predict(x_scaled)
         inertias.append(float(km.inertia_))
-        silhouettes.append(float(silhouette_score(x_scaled, labels)))
+        silhouettes.append(float(silhouette_score(x_scaled[sil_idx], labels[sil_idx])))
         progress.append(info(f"k={k}", f"inertia={km.inertia_:.1f} sil={silhouettes[-1]:.3f}"))
 
     best_k = k_range[int(np.argmax(silhouettes))]
@@ -537,7 +551,7 @@ def evaluate_model(
         # Encode categoricals using stored map
         for col, mapping in encoding_map.items():
             if col in df.columns and col != target_column:
-                df[col] = df[col].astype(str).map({str(k): v for k, v in mapping.items()}).fillna(-1).astype(int)
+                df[col] = df[col].astype(str).map(mapping).fillna(-1).astype(int)
 
         available = [c for c in feature_columns if c in df.columns]
         if not available:
@@ -571,7 +585,7 @@ def evaluate_model(
             n_classes = metadata.get("n_classes", 2)
             if task == "classification":
                 if n_classes > 2:
-                    y_pred = np.asarray([np.argmax(line) for line in raw])
+                    y_pred = np.argmax(raw, axis=1)
                 else:
                     y_pred = (raw > 0.5).astype(int)
             else:
@@ -711,7 +725,7 @@ def batch_predict(
 
         for col, mapping in encoding_map.items():
             if col in df.columns:
-                df[col] = df[col].astype(str).map({str(k): v for k, v in mapping.items()}).fillna(-1).astype(int)
+                df[col] = df[col].astype(str).map(mapping).fillna(-1).astype(int)
 
         available = [c for c in feature_columns if c in df.columns]
         X = df[available].fillna(0).values.astype(float)
@@ -725,7 +739,7 @@ def batch_predict(
             raw = model_obj.predict(dmat)
             if task == "classification":
                 if n_classes > 2:
-                    preds = np.asarray([np.argmax(line) for line in raw])
+                    preds = np.argmax(raw, axis=1)
                 else:
                     preds = (raw > 0.5).astype(int)
             else:
@@ -818,9 +832,15 @@ def check_data_quality(file_path: str) -> dict:
     alerts = []
     score = 100.0
 
+    # Compute stats in bulk (vectorized — single pass each)
+    nunique_all = df.nunique(dropna=True)
+    null_counts = df.isnull().sum()
+    num_cols = df.select_dtypes(include="number").columns.tolist()
+    cat_cols = df.select_dtypes(include=["object", "string"]).columns.tolist()
+
     # 1. Constant columns
-    for col in df.columns:
-        if df[col].nunique(dropna=True) <= 1:
+    for col in nunique_all.index:
+        if nunique_all[col] <= 1:
             alerts.append(
                 {
                     "type": "constant_column",
@@ -834,11 +854,11 @@ def check_data_quality(file_path: str) -> dict:
 
     # 2. High missing
     null_summary = []
-    for col in df.columns:
-        null_count = int(df[col].isnull().sum())
-        null_pct = null_count / n_rows * 100 if n_rows > 0 else 0
+    for col in null_counts.index:
+        nc = int(null_counts[col])
+        null_pct = nc / n_rows * 100 if n_rows > 0 else 0
         if null_pct > 0:
-            null_summary.append({"column": col, "null_count": null_count, "null_pct": round(null_pct, 2)})
+            null_summary.append({"column": col, "null_count": nc, "null_pct": round(null_pct, 2)})
         if null_pct > 20:
             alerts.append(
                 {
@@ -865,24 +885,26 @@ def check_data_quality(file_path: str) -> dict:
         )
         score -= min(10, dup_pct * 0.3)
 
-    # 4. Zero-inflated numeric
-    for col in df.select_dtypes(include="number").columns:
-        zero_pct = (df[col] == 0).sum() / n_rows * 100 if n_rows > 0 else 0
-        if zero_pct > 50:
-            alerts.append(
-                {
-                    "type": "zero_inflated",
-                    "severity": "medium",
-                    "column": col,
-                    "message": f"Column '{col}' is {zero_pct:.1f}% zeros.",
-                    "recommendation": f"Consider log_transform or separate zero/nonzero modeling for '{col}'.",
-                }
-            )
-            score -= 8
+    # 4. Zero-inflated numeric (vectorized)
+    if num_cols and n_rows > 0:
+        zero_pcts = (df[num_cols] == 0).sum() / n_rows * 100
+        for col in num_cols:
+            zp = float(zero_pcts[col])
+            if zp > 50:
+                alerts.append(
+                    {
+                        "type": "zero_inflated",
+                        "severity": "medium",
+                        "column": col,
+                        "message": f"Column '{col}' is {zp:.1f}% zeros.",
+                        "recommendation": f"Consider log_transform or separate zero/nonzero modeling for '{col}'.",
+                    }
+                )
+                score -= 8
 
-    # 5. High cardinality
-    for col in df.select_dtypes(include=["object", "string"]).columns:
-        n_unique = df[col].nunique()
+    # 5. High cardinality (use pre-computed nunique)
+    for col in cat_cols:
+        n_unique = int(nunique_all[col])
         ratio = n_unique / n_rows if n_rows > 0 else 0
         if ratio > 0.5 and n_unique > 20:
             alerts.append(
@@ -896,26 +918,27 @@ def check_data_quality(file_path: str) -> dict:
             )
             score -= 8
 
-    # 6. Extreme skewness
-    for col in df.select_dtypes(include="number").columns:
+    # 6. Extreme skewness (vectorized)
+    if num_cols:
         try:
-            skew = float(df[col].skew())
+            skews = df[num_cols].skew()
+            for col in num_cols:
+                skew = float(skews[col])
+                if abs(skew) > 2:
+                    alerts.append(
+                        {
+                            "type": "extreme_skewness",
+                            "severity": "medium",
+                            "column": col,
+                            "message": f"Column '{col}' skewness = {skew:.2f}.",
+                            "recommendation": f"Apply log_transform to column '{col}' before training.",
+                        }
+                    )
+                    score -= 8
         except Exception:
-            continue
-        if abs(skew) > 2:
-            alerts.append(
-                {
-                    "type": "extreme_skewness",
-                    "severity": "medium",
-                    "column": col,
-                    "message": f"Column '{col}' skewness = {skew:.2f}.",
-                    "recommendation": f"Apply log_transform to column '{col}' before training.",
-                }
-            )
-            score -= 8
+            pass
 
     # 7. Multicollinearity
-    num_cols = df.select_dtypes(include="number").columns.tolist()
     if len(num_cols) >= 2:
         try:
             corr_matrix = df[num_cols].corr(method="pearson").abs()

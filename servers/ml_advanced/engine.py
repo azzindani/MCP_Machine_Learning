@@ -26,7 +26,6 @@ from ._adv_helpers import (
     ALLOWED_CLASSIFIERS,
     ALLOWED_REGRESSORS,
     DEFAULT_PARAMS,
-    MODELS_DIR,
     _auto_preprocess,
     _build_estimator,
     _error,
@@ -170,8 +169,7 @@ def tune_hyperparameters(
 
     # Save best model
     ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
-    models_dir = path.parent / MODELS_DIR
-    models_dir.mkdir(exist_ok=True)
+    models_dir = get_output_dir()
     mp = models_dir / f"{path.stem}_{model}_tuned_{ts}.pkl"
 
     backup = ""
