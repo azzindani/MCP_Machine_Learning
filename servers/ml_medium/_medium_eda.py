@@ -349,6 +349,7 @@ def generate_eda_report(
         )
         fig_miss.update_coloraxes(colorbar_title="% Missing")
         fig_miss.update_layout(
+            yaxis=dict(autorange="reversed"),
             height=max(300, len(null_series) * 30 + 80),
             margin=dict(l=10, r=10, t=40, b=10),
         )
@@ -461,6 +462,7 @@ def generate_eda_report(
                 color_continuous_scale="Blues",
             )
             fig_cat.update_layout(
+                yaxis=dict(autorange="reversed"),
                 height=max(250, len(vc) * 25 + 80),
                 margin=dict(l=10, r=10, t=40, b=10),
                 showlegend=False,

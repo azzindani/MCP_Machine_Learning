@@ -579,7 +579,6 @@ def generate_cluster_report(
         _open_file,
         build_html_report,
         data_table_html,
-        get_theme,
         metrics_cards_html,
         plotly_div,
         plotly_template,
@@ -638,12 +637,11 @@ def generate_cluster_report(
         labels = df[label_column].astype(str)
         n_clusters = labels.nunique()
 
-        t = get_theme(theme)
         tmpl = plotly_template(theme)
         sections = []
 
         # --- Summary cards ---
-        label_counts = labels.value_counts().to_dict()
+        label_counts = labels.value_counts().sort_values(ascending=False).to_dict()
         summary = {
             "n_clusters": n_clusters,
             "n_samples": len(df),
@@ -720,18 +718,22 @@ def generate_cluster_report(
             }
         )
 
-        # --- Bar chart: cluster sizes ---
+        # --- Bar chart: cluster sizes (sorted highest first) ---
+        sorted_labels = sorted(label_counts.items(), key=lambda x: x[1], reverse=True)
+        bar_x = [str(k) for k, _ in sorted_labels]
+        bar_y = [v for _, v in sorted_labels]
         fig_bar = go.Figure(
             go.Bar(
-                x=list(label_counts.keys()),
-                y=list(label_counts.values()),
-                marker_color=t["accent"],
+                x=bar_x,
+                y=bar_y,
+                marker=dict(color=bar_y, colorscale="Blues", reversescale=False),
             )
         )
         fig_bar.update_layout(
             title="Cluster Sizes",
             xaxis_title="Cluster",
             yaxis_title="Count",
+            xaxis=dict(categoryorder="array", categoryarray=bar_x),
             template=tmpl,
         )
         sections.append(
