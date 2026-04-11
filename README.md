@@ -1,49 +1,144 @@
 # MCP Machine Learning
 
-A self-hosted **Model Context Protocol** server that gives local LLMs structured access to the full supervised + unsupervised machine learning pipeline — without any cloud dependency, API key, or subscription.
+A self-hosted MCP server that gives local LLMs structured access to the full supervised + unsupervised machine learning pipeline. No cloud APIs, no API keys — everything runs on your machine.
 
-All computation runs on your CPU/GPU using scikit-learn, XGBoost, pandas, and numpy. Your data never leaves your machine.
+## Features
 
----
+- **35 tools** across 3 tiers: basic (11), medium (14), advanced (10)
+- **LOCATE → INSPECT → PATCH → VERIFY** workflow for surgical ML operations
+- **Automatic version control** — every write is snapshotted and fully restorable
+- **Operation receipt logging** — full audit trail of all modifications
+- **Constrained mode** — reduces row/result limits for lower-memory machines
+- **Interactive HTML reports** — EDA, training metrics, clustering, ROC curves, learning curves
+- **Full ML pipeline** — inspect → preprocess → train → evaluate → tune
+- **7 classification algorithms** — LR, SVM, RF, DTC, KNN, NB, XGBoost
+- **7 regression algorithms** — Linear, Polynomial, Lasso, Ridge, DT, RF, XGBoost
+- **3 clustering algorithms** — K-Means, Mean-Shift, DBSCAN
+- **Dimensionality reduction** — PCA and ICA
+- **Hyperparameter tuning** — GridSearch and RandomSearch
+- **Light / dark theme** — all HTML outputs accept `theme: "dark" | "light"`
+- **100% local execution** — your data never leaves your machine
 
-## Why MCP Machine Learning?
+## Important: File Path Only
 
-| Capability | This project |
+> **Do not attach files via the LM Studio attachment button.**
+>
+> LM Studio will RAG-chunk any attached file and send fragments to the model — the MCP tools will never see the actual data. This MCP works exclusively through **absolute file paths**.
+>
+> Always tell the model where the file lives on disk:
+> ```
+> Train a classifier on C:\Users\you\data\churn.csv
+> ```
+> The model will pass that path directly to the MCP tools. Attachment-based workflows are not supported and will silently produce wrong results.
+
+## Quick Install (LM Studio)
+
+> **Tested on Windows 11** with LM Studio 0.4.x and uv 0.5+.
+
+### Requirements
+
+- **Git** — `git --version`
+- **Python 3.12 or higher** — `python --version`
+- **uv** — `uv --version` ([install guide](https://docs.astral.sh/uv/getting-started/installation/))
+- **LM Studio** with a model that supports tool calling (Gemma 4, Qwen 3.5, etc.)
+
+### Platform Support
+
+| Platform | Status |
 |---|---|
-| 100% local execution | ✓ Works offline after first install |
-| Full ML pipeline | ✓ Inspect → Preprocess → Train → Evaluate → Tune |
-| Interactive HTML reports | ✓ EDA, Training, Clustering, ROC, Learning Curves |
-| Version control | ✓ Automatic snapshots before every write |
-| Audit log | ✓ Per-file operation receipt |
-| Constrained mode | ✓ Optimised for 8 GB VRAM / 9B models |
-| No cloud APIs | ✓ No OpenAI, SageMaker, Vertex, Azure ML |
+| Windows | Tested — real-world verified (Windows 11) |
+| macOS | Untested — CI/CD pipeline passes |
+| Linux | Untested — CI/CD pipeline passes |
+
+> Real-world usage has only been verified on Windows. macOS and Linux are supported by design and pass the automated CI pipeline, but have not been tested by hand. Reports from non-Windows users are welcome.
+
+### First Run
+
+The first launch clones the repo and installs dependencies (~200 MB including XGBoost). Subsequent launches are instant.
+
+> **Pre-install recommended:** To avoid the 60-second LM Studio connection timeout on first launch, run this once in PowerShell before connecting:
+> ```powershell
+> $d = Join-Path $env:USERPROFILE '.mcp_servers\MCP_Machine_Learning'
+> git clone https://github.com/azzindani/MCP_Machine_Learning.git $d
+> Set-Location $d; uv sync
+> ```
+> If you skip this step and LM Studio times out, press **Restart** in the MCP Servers panel — it will reconnect and complete the install immediately.
+
+### Steps
+
+1. Open LM Studio → **Developer** tab (`</>` icon) or you can find via **Integrations**
+2. Find **mcp.json** or **Edit mcp.json** → click to open
+3. Paste this config:
+
+```json
+{
+  "mcpServers": {
+    "ml-basic": {
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d } else { Set-Location $d; git pull --quiet }; Set-Location (Join-Path $d 'servers\\ml_basic'); uv run python server.py"
+      ],
+      "env": { "MCP_CONSTRAINED_MODE": "0" },
+      "timeout": 600000
+    },
+    "ml-medium": {
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d } else { Set-Location $d; git pull --quiet }; Set-Location (Join-Path $d 'servers\\ml_medium'); uv run python server.py"
+      ],
+      "env": { "MCP_CONSTRAINED_MODE": "0" },
+      "timeout": 600000
+    },
+    "ml-advanced": {
+      "command": "powershell",
+      "args": [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d } else { Set-Location $d; git pull --quiet }; Set-Location (Join-Path $d 'servers\\ml_advanced'); uv run python server.py"
+      ],
+      "env": { "MCP_CONSTRAINED_MODE": "0" },
+      "timeout": 600000
+    }
+  }
+}
+```
+
+4. Wait for the blue dot next to each server
+5. Start chatting — the model will see all 35 tools
+
+> **Low-memory machines:** Set `MCP_CONSTRAINED_MODE` to `"1"` in all `env` blocks and omit `ml-advanced` if needed. See [Configuration](#configuration) for details.
+
+### macOS / Linux
+
+Replace `powershell` / `args` with:
+
+```json
+{
+  "command": "bash",
+  "args": [
+    "-c",
+    "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; if [ ! -d \"$d\" ]; then git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\"; else cd \"$d\" && git pull --quiet; fi; cd \"$d/servers/ml_basic\"; uv run python server.py"
+  ]
+}
+```
+
+Repeat for `ml_medium` and `ml_advanced`, adjusting the server directory in the path.
 
 ---
 
-## Three-Tier Architecture
+## Available Tools
 
-The server suite is split into three focused tiers. Load only what you need — each tier has a strict tool-count budget to stay within LLM context limits.
-
-| Tier | Server | Tools | Purpose |
-|---|---|---|---|
-| 1 | `ml-basic` | 11 | Dataset inspection + single-model training + prediction |
-| 2 | `ml-medium` | 14 | Preprocessing pipelines + CV + clustering + EDA + batch predict |
-| 3 | `ml-advanced` | 10 | Tuning + export + evaluation charts + profiling |
-
-**Recommended loading by hardware:**
-
-| VRAM | Recommended load | Total tools |
-|---|---|---|
-| 4–6 GB | ml-basic only | 11 |
-| 8 GB | ml-basic + ml-medium | 25 |
-| 12–16 GB | all three tiers | 35 |
-| 24 GB+ | all three tiers | 35 |
-
----
-
-## Tool Reference
-
-### Tier 1 — ml-basic
+### Tier 1 — ml-basic (11 tools)
 
 | # | Tool | Category | Description |
 |---|---|---|---|
@@ -59,7 +154,7 @@ The server suite is split into three focused tiers. Load only what you need — 
 | 10 | `list_models` | LOCATE | List all saved `.pkl` models with metadata |
 | 11 | `split_dataset` | PATCH | Split CSV into train/test files |
 
-### Tier 2 — ml-medium
+### Tier 2 — ml-medium (14 tools)
 
 | # | Tool | Category | Description |
 |---|---|---|---|
@@ -78,7 +173,7 @@ The server suite is split into three focused tiers. Load only what you need — 
 | 13 | `evaluate_model` | VERIFY | Score saved model on external labeled test CSV |
 | 14 | `batch_predict` | PATCH | Predict all rows, save predictions CSV — no row limit |
 
-### Tier 3 — ml-advanced
+### Tier 3 — ml-advanced (10 tools)
 
 | # | Tool | Category | Description |
 |---|---|---|---|
@@ -157,280 +252,6 @@ Pass an `ops` array to apply a pipeline in one call:
 
 ---
 
-## Installation
-
-### Requirements
-
-- Python 3.12+
-- [uv](https://github.com/astral-sh/uv) package manager
-- Git
-
-### First-Time Setup (run once before configuring your MCP client)
-
-This downloads the repo and pre-installs all packages (~200 MB including xgboost). You **MUST** do this before adding the MCP config to LM Studio, because LM Studio has a 60-second startup timeout and the initial package download will exceed that.
-
-**Windows (PowerShell):**
-```powershell
-$d = "$env:USERPROFILE\.mcp_servers\MCP_Machine_Learning"
-git clone https://github.com/azzindani/MCP_Machine_Learning.git $d
-Set-Location $d
-uv sync
-```
-
-**macOS / Linux:**
-```bash
-d="$HOME/.mcp_servers/MCP_Machine_Learning"
-git clone https://github.com/azzindani/MCP_Machine_Learning.git "$d"
-cd "$d" && uv sync
-```
-
-Wait for `uv sync` to finish completely (you'll see `Installed X packages`), **then** add the MCP config below and restart your client.
-
----
-
-## MCP Configuration
-
-Copy the JSON config for your platform into your MCP client config file. On each start the server pulls latest changes and launches.
-
-### Where to add this configuration
-
-| Client | Config file location |
-|---|---|
-| **LM Studio** (Windows) | `%APPDATA%\LM-Studio\mcp-config.json` |
-| **LM Studio** (macOS/Linux) | `~/.lmstudio/mcp-config.json` |
-| **Claude Desktop** (Windows) | `%APPDATA%\Claude\claude_desktop_config.json` |
-| **Claude Desktop** (macOS) | `~/Library/Application Support/Claude/claude_desktop_config.json` |
-| **Cursor** | `~/.cursor/mcp.json` |
-| **Windsurf** | `~/.codeium/windsurf/mcp_config.json` |
-
-### Windows (PowerShell)
-
-Set `MCP_CONSTRAINED_MODE` to `1` for 8 GB VRAM or less.
-
-**All three tiers (12+ GB VRAM)**
-
-```json
-{
-  "mcpServers": {
-    "ml-basic": {
-      "command": "powershell",
-      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
-        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d } else { Set-Location $d; git pull --quiet }; Set-Location (Join-Path $d 'servers\\ml_basic'); uv run python server.py"
-      ],
-      "env": { "MCP_CONSTRAINED_MODE": "0" },
-      "timeout": 600000
-    },
-    "ml-medium": {
-      "command": "powershell",
-      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
-        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d } else { Set-Location $d; git pull --quiet }; Set-Location (Join-Path $d 'servers\\ml_medium'); uv run python server.py"
-      ],
-      "env": { "MCP_CONSTRAINED_MODE": "0" },
-      "timeout": 600000
-    },
-    "ml-advanced": {
-      "command": "powershell",
-      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
-        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d } else { Set-Location $d; git pull --quiet }; Set-Location (Join-Path $d 'servers\\ml_advanced'); uv run python server.py"
-      ],
-      "env": { "MCP_CONSTRAINED_MODE": "0" },
-      "timeout": 600000
-    }
-  }
-}
-```
-
-**Basic only (4-6 GB VRAM)**
-
-```json
-{
-  "mcpServers": {
-    "ml-basic": {
-      "command": "powershell",
-      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
-        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d } else { Set-Location $d; git pull --quiet }; Set-Location (Join-Path $d 'servers\\ml_basic'); uv run python server.py"
-      ],
-      "env": { "MCP_CONSTRAINED_MODE": "1" },
-      "timeout": 600000
-    }
-  }
-}
-```
-
-**Basic + Medium (8 GB VRAM)**
-
-```json
-{
-  "mcpServers": {
-    "ml-basic": {
-      "command": "powershell",
-      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
-        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d } else { Set-Location $d; git pull --quiet }; Set-Location (Join-Path $d 'servers\\ml_basic'); uv run python server.py"
-      ],
-      "env": { "MCP_CONSTRAINED_MODE": "1" },
-      "timeout": 600000
-    },
-    "ml-medium": {
-      "command": "powershell",
-      "args": ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
-        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d } else { Set-Location $d; git pull --quiet }; Set-Location (Join-Path $d 'servers\\ml_medium'); uv run python server.py"
-      ],
-      "env": { "MCP_CONSTRAINED_MODE": "1" },
-      "timeout": 600000
-    }
-  }
-}
-```
-
-### macOS / Linux (bash)
-
-**All three tiers (12+ GB VRAM)**
-
-```json
-{
-  "mcpServers": {
-    "ml-basic": {
-      "command": "bash",
-      "args": ["-c",
-        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; if [ ! -d \"$d\" ]; then git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\"; else cd \"$d\" && git pull --quiet; fi; cd \"$d/servers/ml_basic\"; uv run python server.py"
-      ],
-      "env": { "MCP_CONSTRAINED_MODE": "0" },
-      "timeout": 600000
-    },
-    "ml-medium": {
-      "command": "bash",
-      "args": ["-c",
-        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; if [ ! -d \"$d\" ]; then git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\"; else cd \"$d\" && git pull --quiet; fi; cd \"$d/servers/ml_medium\"; uv run python server.py"
-      ],
-      "env": { "MCP_CONSTRAINED_MODE": "0" },
-      "timeout": 600000
-    },
-    "ml-advanced": {
-      "command": "bash",
-      "args": ["-c",
-        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; if [ ! -d \"$d\" ]; then git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\"; else cd \"$d\" && git pull --quiet; fi; cd \"$d/servers/ml_advanced\"; uv run python server.py"
-      ],
-      "env": { "MCP_CONSTRAINED_MODE": "0" },
-      "timeout": 600000
-    }
-  }
-}
-```
-
-**Basic only (4-6 GB VRAM)**
-
-```json
-{
-  "mcpServers": {
-    "ml-basic": {
-      "command": "bash",
-      "args": ["-c",
-        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; if [ ! -d \"$d\" ]; then git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\"; else cd \"$d\" && git pull --quiet; fi; cd \"$d/servers/ml_basic\"; uv run python server.py"
-      ],
-      "env": { "MCP_CONSTRAINED_MODE": "1" },
-      "timeout": 600000
-    }
-  }
-}
-```
-
-**Basic + Medium (8 GB VRAM)**
-
-```json
-{
-  "mcpServers": {
-    "ml-basic": {
-      "command": "bash",
-      "args": ["-c",
-        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; if [ ! -d \"$d\" ]; then git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\"; else cd \"$d\" && git pull --quiet; fi; cd \"$d/servers/ml_basic\"; uv run python server.py"
-      ],
-      "env": { "MCP_CONSTRAINED_MODE": "1" },
-      "timeout": 600000
-    },
-    "ml-medium": {
-      "command": "bash",
-      "args": ["-c",
-        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; if [ ! -d \"$d\" ]; then git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\"; else cd \"$d\" && git pull --quiet; fi; cd \"$d/servers/ml_medium\"; uv run python server.py"
-      ],
-      "env": { "MCP_CONSTRAINED_MODE": "1" },
-      "timeout": 600000
-    }
-  }
-}
-```
-
-
-### Constrained Mode
-
-Set `MCP_CONSTRAINED_MODE` to `"1"` in the `env` block for machines with 8 GB VRAM or less. This automatically reduces row limits, search results, CV folds, and model comparison counts.
-
----
-
-## Example Workflows
-
-### Classification — End to End
-
-```
-User: "Train a random forest on my churn.csv to predict the 'churned' column"
-
-1. inspect_dataset("churn.csv")
-   → 5,000 rows × 18 cols, target candidates: ["churned"]
-
-2. read_column_profile("churn.csv", "churned")
-   → bool dtype, 482 True / 4518 False, balance_ratio: 0.107
-
-3. run_preprocessing("churn.csv", [
-     {"op": "fill_nulls", "column": "tenure", "strategy": "median"},
-     {"op": "label_encode", "column": "contract_type"}
-   ])
-   → saved churn_preprocessed.csv
-
-4. train_classifier("churn_preprocessed.csv", "churned", "rf")
-   → accuracy: 0.89, f1_weighted: 0.87
-   → model_path: .mcp_models/churn_rf_2026-04-06T10-30-00Z.pkl
-
-5. generate_training_report(".mcp_models/churn_rf_....pkl")
-   → Opens browser: confusion matrix, feature importance chart
-```
-
-### Regression — With Hyperparameter Tuning
-
-```
-1. inspect_dataset("housing.csv")
-2. read_column_profile("housing.csv", "price")
-3. train_regressor("housing.csv", "price", "rfr")
-   → R²: 0.81, RMSE: 42300
-
-4. tune_hyperparameters("housing.csv", "price", "rfr", "regression",
-                        search="grid", cv=5)
-   → best_params: {n_estimators: 100, max_depth: 10}
-   → best_score: 0.87
-
-5. plot_predictions_vs_actual(".mcp_models/housing_rfr_tuned.pkl", "housing.csv")
-   → Opens browser: scatter plot with R²
-```
-
-### EDA + Clustering
-
-```
-1. generate_eda_report("customers.csv", target_column="segment", theme="dark")
-   → Opens browser: quality score 78/100, 3 alerts, histograms, correlations
-
-2. find_optimal_clusters("customers.csv", ["age", "spend", "tenure"], max_k=10)
-   → best_k: 4 (highest silhouette score 0.42)
-   → Opens browser: elbow + silhouette chart
-
-3. run_clustering("customers.csv", ["age", "spend", "tenure"],
-                  "kmeans", n_clusters=4, save_labels=True)
-   → cluster_label column added to customers.csv
-
-4. generate_cluster_report("customers.csv", ["age", "spend", "tenure"],
-                           "cluster_label", theme="dark")
-   → Opens browser: PCA scatter, cluster profiles, size chart
-```
-
----
-
 ## HTML Reports
 
 All visualization tools save standalone interactive HTML files that open automatically in your browser. No server required — files work fully offline.
@@ -469,6 +290,95 @@ Each alert includes a **recommendation** — actionable next steps to fix the is
 
 ---
 
+## Usage Examples
+
+### Inspect a dataset
+
+```
+Inspect the file C:\data\churn.csv and tell me about its schema
+```
+
+### Find problem columns
+
+```
+Search for columns in C:\data\churn.csv that have null values
+```
+
+### Train a classifier
+
+```
+Train a random forest on C:\data\churn.csv to predict the churned column
+```
+
+### Full classification workflow
+
+```
+Inspect C:\data\churn.csv, preprocess it to fill nulls and encode categoricals,
+then train a random forest and show me the training report
+```
+
+### Regression with tuning
+
+```
+Train a random forest regressor on C:\data\housing.csv to predict price,
+then tune it with grid search and plot predictions vs actual
+```
+
+### Clustering + EDA
+
+```
+Run EDA on C:\data\customers.csv, find the optimal number of clusters,
+then cluster with K-Means and generate a cluster report
+```
+
+### Undo a change
+
+```
+Restore C:\data\churn.csv to the previous version
+```
+
+### Full four-tool pattern
+
+```
+1. inspect_dataset("churn.csv")         → schema, row count, target candidates
+2. read_column_profile("churned")       → class balance, null count
+3. train_classifier("rf", "churned")    → accuracy 0.89, f1 0.87
+4. generate_training_report(model_path) → confusion matrix, feature importance
+```
+
+---
+
+## Configuration
+
+### Constrained Mode
+
+For lower-memory machines, set `MCP_CONSTRAINED_MODE=1` in the `env` section of `mcp.json`. This reduces:
+
+| Resource | Standard | Constrained |
+|---|---|---|
+| Rows returned per call | 100 | 20 |
+| Search results | 50 | 10 |
+| Columns returned | 50 | 20 |
+| CV folds | 5 | 3 |
+| Max models in compare | 7 | 3 |
+| ydata-profiling mode | full | minimal |
+
+### Recommended Loading by Available Memory
+
+| Available RAM | Recommended load | Total tools |
+|---|---|---|
+| 4–8 GB | ml-basic only | 11 |
+| 8–16 GB | ml-basic + ml-medium | 25 |
+| 16 GB+ | all three tiers | 35 |
+
+### Environment Variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `MCP_CONSTRAINED_MODE` | `0` | Set to `1` for low-memory machines |
+
+---
+
 ## Version Control & Audit
 
 Every write operation:
@@ -476,53 +386,120 @@ Every write operation:
 2. Returns a `"backup"` key with the snapshot path
 3. Appends an entry to the file's `.mcp_receipt.json` audit log
 
-To view history: `read_receipt("mydata.csv")`
+To view history: `read_receipt("mydata.csv")`  
 To rollback: `restore_version("mydata.csv", timestamp="2026-04-06T10-30-00Z")`
 
 ---
 
-## The Four-Tool Pattern
+## Uninstall
 
-All ML workflows follow this pattern:
+**Step 1:** Remove from LM Studio
+1. Open LM Studio → Developer tab (`</>`)
+2. Delete `ml-basic`, `ml-medium`, `ml-advanced` from MCP Servers
+3. Restart LM Studio
+
+**Step 2:** Delete installed files
+
+```cmd
+rmdir /s /q %USERPROFILE%\.mcp_servers\MCP_Machine_Learning
+```
+
+Or run the uninstall script:
+
+```bash
+# Windows
+%USERPROFILE%\.mcp_servers\MCP_Machine_Learning\install\install.bat
+
+# macOS / Linux
+~/.mcp_servers/MCP_Machine_Learning/install/install.sh
+```
+
+---
+
+## Architecture
 
 ```
-LOCATE  →  inspect_dataset()           # What does my data look like?
-INSPECT →  read_column_profile()       # What are the details of this column?
-PATCH   →  train_classifier()          # Train, preprocess, or transform
-VERIFY  →  generate_training_report()  # Was the result good?
+MCP_Machine_Learning/
+├── servers/
+│   ├── ml_basic/
+│   │   ├── server.py          ← thin MCP wrapper (zero domain logic)
+│   │   ├── engine.py          ← public API re-exports
+│   │   ├── _basic_helpers.py  ← shared helpers
+│   │   ├── _basic_train.py    ← train_classifier + train_regressor
+│   │   ├── _basic_predict.py  ← get_predictions + predict_single
+│   │   └── pyproject.toml
+│   ├── ml_medium/
+│   │   ├── server.py
+│   │   ├── engine.py          ← public API re-exports
+│   │   ├── _medium_helpers.py ← shared helpers
+│   │   ├── _medium_preprocess.py ← run_preprocessing ops
+│   │   ├── _medium_train.py   ← train_with_cv + compare_models
+│   │   ├── _medium_cluster.py ← run_clustering + find_optimal_clusters
+│   │   ├── _medium_data.py    ← filter_rows + merge_datasets + batch_predict
+│   │   ├── _medium_eda.py     ← generate_eda_report + check_data_quality
+│   │   └── pyproject.toml
+│   └── ml_advanced/
+│       ├── server.py
+│       ├── engine.py          ← public API re-exports
+│       ├── _adv_helpers.py    ← tuning + export + model report helpers
+│       ├── _adv_viz.py        ← all HTML chart and report generation
+│       └── pyproject.toml
+├── shared/
+│   ├── version_control.py     ← snapshot() and restore()
+│   ├── patch_validator.py     ← validate op arrays
+│   ├── file_utils.py          ← path resolution, atomic writes
+│   ├── platform_utils.py      ← constrained mode, row limits
+│   ├── progress.py            ← ok/fail/info/warn helpers
+│   ├── receipt.py             ← operation receipt logging
+│   └── html_theme.py          ← CSS vars, Plotly templates
+├── install/
+│   ├── install.sh             ← macOS/Linux installer
+│   ├── install.bat            ← Windows installer
+│   └── mcp_config_writer.py   ← writes LM Studio / Claude Desktop / Cursor config
+├── tests/
+│   ├── fixtures/              ← classification, regression, clustering, large CSVs
+│   ├── conftest.py
+│   ├── test_ml_basic.py
+│   ├── test_ml_medium.py
+│   └── test_ml_advanced.py
+├── pyproject.toml             ← root workspace
+├── uv.lock
+└── .python-version            ← 3.12
 ```
-
-This keeps each LLM tool call focused on a single operation, minimising token use and maximising traceability.
 
 ---
 
 ## Development
 
+### Local Testing
+
 ```bash
-# Run tests
+# Install dependencies
+uv sync
+
+# Run all tests (Windows)
+set PYTHONPATH=. && set MCP_CONSTRAINED_MODE=1 && python -m pytest tests/ -v
+
+# Run all tests (Linux/macOS)
 PYTHONPATH=. MCP_CONSTRAINED_MODE=1 uv run python -m pytest tests/ -q
+
+# Lint
+uvx ruff check servers/ shared/ tests/ --exclude "**/.venv/**"
 
 # Type check
 uv run pyright servers/ shared/
-
-# Lint
-uv run ruff check .
 ```
 
----
+### Run a single tier server locally
 
-## Hardware Sovereignty
-
-This project is built on the principle that **your data belongs to you**:
-
-- All ML computation is local (scikit-learn, XGBoost, numpy)
-- No data is sent to any cloud service
-- No API keys, no subscriptions, no usage limits
-- Works on air-gapped machines after first install
-- Model weights are stored on your disk under `.mcp_models/`
+```bash
+cd servers/ml_basic
+uv sync
+uv run python server.py
+```
 
 ---
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
+MIT
