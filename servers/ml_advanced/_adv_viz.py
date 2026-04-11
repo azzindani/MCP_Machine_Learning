@@ -501,13 +501,24 @@ def plot_predictions_vs_actual(
         rmse = float(np.sqrt(mse))
         r2 = float(r2_score(y_true, y_pred))
 
+        # Subsample for scatter readability (>10K markers are unreadable)
+        scat_cap = min(len(y_true), 10_000)
+        if len(y_true) > scat_cap:
+            rng = np.random.RandomState(42)
+            idx = rng.choice(len(y_true), scat_cap, replace=False)
+            plot_true = y_true[idx]
+            plot_pred = y_pred[idx]
+        else:
+            plot_true = y_true
+            plot_pred = y_pred
+
         t = get_theme(theme)
         tmpl = plotly_template(theme)
         fig = go.Figure()
         fig.add_trace(
             go.Scatter(
-                x=y_true.tolist(),
-                y=y_pred.tolist(),
+                x=plot_true.tolist(),
+                y=plot_pred.tolist(),
                 mode="markers",
                 name="Predictions",
                 marker=dict(color=t["accent"], opacity=0.6, size=6),
@@ -667,7 +678,7 @@ def generate_cluster_report(
             }
         )
 
-        # --- PCA scatter (2D) ---
+        # --- PCA scatter (2D) — subsample for readability ---
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(X)
         n_comp = min(2, X_scaled.shape[1])
@@ -676,11 +687,24 @@ def generate_cluster_report(
             coords = pca.fit_transform(X_scaled)
             explained = [round(float(v), 3) for v in pca.explained_variance_ratio_]
 
+            # Subsample for scatter readability (>10K points are unreadable)
+            scat_cap = min(len(coords), 10_000)
+            if len(coords) > scat_cap:
+                rng = np.random.RandomState(42)
+                idx = rng.choice(len(coords), scat_cap, replace=False)
+                scat_coords = coords[idx]
+                scat_labels = labels.values[idx]
+                scat_note = f" (sampled {scat_cap:,}/{len(coords):,})"
+            else:
+                scat_coords = coords
+                scat_labels = labels.values
+                scat_note = ""
+
             scatter_df = pd.DataFrame(
                 {
-                    "PC1": coords[:, 0],
-                    "PC2": coords[:, 1],
-                    "cluster": labels.values,
+                    "PC1": scat_coords[:, 0],
+                    "PC2": scat_coords[:, 1],
+                    "cluster": scat_labels,
                 }
             )
             fig_scatter = px.scatter(
@@ -688,7 +712,8 @@ def generate_cluster_report(
                 x="PC1",
                 y="PC2",
                 color="cluster",
-                title=f"PCA Scatter — {explained[0] * 100:.1f}%/{explained[1] * 100:.1f}% variance",
+                render_mode="svg",
+                title=f"PCA Scatter — {explained[0] * 100:.1f}%/{explained[1] * 100:.1f}% variance{scat_note}",
                 template=tmpl,
             )
             sections.append(
