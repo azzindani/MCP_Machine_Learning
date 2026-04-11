@@ -39,9 +39,7 @@ def resolve_path(
         raise ValueError(f"Path resolves to filesystem root: {file_path}")
 
     if allowed_extensions and path.suffix.lower() not in allowed_extensions:
-        raise ValueError(
-            f"Extension {path.suffix!r} not allowed. Expected one of: {', '.join(allowed_extensions)}"
-        )
+        raise ValueError(f"Extension {path.suffix!r} not allowed. Expected one of: {', '.join(allowed_extensions)}")
 
     return path
 
