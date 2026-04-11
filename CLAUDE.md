@@ -304,16 +304,18 @@ Always set annotations on every `@mcp.tool()` decorator:
 ### Path Traversal Prevention
 
 All file paths from tool parameters must be validated through `resolve_path()`
-before any I/O:
+before any I/O. The check blocks null bytes and bare filesystem roots while
+allowing any absolute path the user explicitly provides — including paths on
+different drives (e.g. `D:\` on Windows):
 
 ```python
 def resolve_path(file_path: str, allowed_extensions: tuple[str, ...] = ()) -> Path:
-    path = Path(file_path).resolve()
-    home = Path.home().resolve()
-    try:
-        path.relative_to(home)
-    except ValueError:
-        raise ValueError(f"Path outside allowed directory: {file_path}")
+    raw = str(file_path)
+    if "\x00" in raw:
+        raise ValueError(f"Invalid path (null byte): {file_path}")
+    path = Path(raw).resolve()
+    if path.parent == path:   # True only for roots like '/' or 'C:\'
+        raise ValueError(f"Path resolves to filesystem root: {file_path}")
     if allowed_extensions and path.suffix.lower() not in allowed_extensions:
         raise ValueError(
             f"Extension {path.suffix!r} not allowed. Expected: {allowed_extensions}"

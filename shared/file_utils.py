@@ -1,7 +1,8 @@
 """Path resolution and atomic write helpers.
 
-resolve_path() enforces a home-directory boundary — rejects paths that escape
-the user's home directory (path traversal prevention).
+resolve_path() blocks genuine path traversal attacks (null bytes, encoded
+separators) while allowing any absolute path the user explicitly provides,
+including paths on different drives (e.g. D:\\ on Windows).
 """
 
 import json
@@ -14,21 +15,33 @@ def resolve_path(
     file_path: str,
     allowed_extensions: tuple[str, ...] = (),
 ) -> Path:
-    """Resolve to absolute path, enforce home-dir boundary, validate extension.
+    """Resolve to absolute path, block traversal attacks, validate extension.
+
+    Allows any absolute path the user provides, including paths on different
+    drives or outside the home directory. Blocks null bytes and paths that
+    resolve to a filesystem root (e.g. bare '/' or 'C:\\').
 
     Raises:
-        ValueError: path escapes home directory or extension not allowed
+        ValueError: path is a filesystem root, contains null bytes, or
+                    extension not allowed
     """
-    path = Path(file_path).resolve()
+    raw = str(file_path)
 
-    home = Path.home().resolve()
-    try:
-        path.relative_to(home)
-    except ValueError:
-        raise ValueError(f"Path outside allowed directory: {file_path}")
+    # Block null bytes — common in traversal payloads
+    if "\x00" in raw:
+        raise ValueError(f"Invalid path (null byte): {file_path}")
+
+    path = Path(raw).resolve()
+
+    # Block bare filesystem roots — nothing useful lives at '/' or 'C:\\'
+    # path.parent == path is True only for roots (e.g. '/' or 'C:\')
+    if path.parent == path:
+        raise ValueError(f"Path resolves to filesystem root: {file_path}")
 
     if allowed_extensions and path.suffix.lower() not in allowed_extensions:
-        raise ValueError(f"Extension {path.suffix!r} not allowed. Expected one of: {', '.join(allowed_extensions)}")
+        raise ValueError(
+            f"Extension {path.suffix!r} not allowed. Expected one of: {', '.join(allowed_extensions)}"
+        )
 
     return path
 

@@ -1,8 +1,4 @@
-"""Test configuration and fixtures.
-
-All CSV fixtures are copied to a temp directory inside the user's home dir so
-that resolve_path()'s security boundary check (home-dir enforcement) passes.
-"""
+"""Test configuration and fixtures."""
 
 import shutil
 import tempfile
@@ -11,14 +7,12 @@ from pathlib import Path
 import pytest
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
-# Use home-dir-based tmpdir so resolve_path() security check passes
-_HOME = Path.home()
 
 
 @pytest.fixture
 def home_tmp():
-    """A temporary directory inside the user's home directory."""
-    with tempfile.TemporaryDirectory(dir=_HOME) as td:
+    """A temporary directory for test files and outputs."""
+    with tempfile.TemporaryDirectory() as td:
         yield Path(td)
 
 
