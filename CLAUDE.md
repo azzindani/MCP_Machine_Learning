@@ -1,11 +1,7 @@
 # CLAUDE.md — MCP Machine Learning Server Development Guide
 
 This document is the authoritative development guide for AI coding agents working on
-this repository. Read it completely before writing any code. All rules here are
-binding. Where this file conflicts with STANDARDS.md, this file takes precedence.
-
-**Reference:** [STANDARDS.md](./STANDARDS.md) — General-purpose MCP server standards  
-**Reference:** [ML_Lookup.ipynb](./ML_Lookup.ipynb) — ML pipeline reference implementations
+this repository. Read it completely before writing any code. All rules here are binding.
 
 ---
 
@@ -32,7 +28,6 @@ binding. Where this file conflicts with STANDARDS.md, this file takes precedence
 19. [Shared Module Contracts](#19-shared-module-contracts)
 20. [Testing Standards for ML](#20-testing-standards-for-ml)
 21. [What the AI Must Never Do](#21-what-the-ai-must-never-do)
-22. [Progress Tracker](#22-progress-tracker)
 
 ---
 
@@ -42,7 +37,7 @@ This is a **self-hosted, local-first MCP (Model Context Protocol) server project
 for machine learning. It exposes ML operations as structured tools that a local
 language model calls with JSON arguments and receives JSON results from.
 
-The ML pipeline this project covers — derived from ML_Lookup.ipynb:
+The ML pipeline this project covers:
 
 - **Data inspection** — schema discovery, column profiling, row sampling
 - **Data preprocessing** — null handling, outlier detection, type conversion, encoding, scaling
@@ -51,9 +46,10 @@ The ML pipeline this project covers — derived from ML_Lookup.ipynb:
 - **Model evaluation** — accuracy, F1, confusion matrix, MSE, R², cross-validation
 - **Hyperparameter tuning** — GridSearchCV, RandomizedSearchCV
 - **Model persistence** — pickle serialization, version snapshots
+- **HTML reports** — EDA, training metrics, ROC, learning curves, cluster visualization
 
 All execution is **100% local**. No data leaves the user's machine. No cloud APIs.
-No API keys. No subscriptions. The tools run on the user's CPU/GPU using scikit-learn,
+No API keys. No subscriptions. The tools run on the user's CPU using scikit-learn,
 XGBoost, pandas, and numpy.
 
 ---
@@ -63,7 +59,7 @@ XGBoost, pandas, and numpy.
 ### Goals
 
 - Provide a local LLM with clean, surgical ML tools that stay within a 10,000-token
-  context window on 8 GB VRAM hardware
+  context window on memory-constrained hardware
 - Support the full supervised + unsupervised ML pipeline through three focused servers
 - Make every tool testable without starting an MCP server process
 - Snapshot model artifacts before any overwrite
@@ -91,63 +87,79 @@ MCP_Machine_Learning/
 │   ├── file_utils.py                   # resolve_path(), atomic writes, JSON helpers
 │   ├── platform_utils.py               # is_constrained_mode(), get_max_rows(), etc.
 │   ├── progress.py                     # ok() / fail() / info() / warn() / undo()
-│   └── receipt.py                      # append_receipt() / read_receipt_log()
+│   ├── receipt.py                      # append_receipt() / read_receipt_log()
+│   └── html_theme.py                   # CSS vars, Plotly templates, responsive HTML helpers
 │
 ├── servers/
 │   ├── ml_basic/                       # Tier 1 — dataset inspection + single-model training
 │   │   ├── __init__.py
 │   │   ├── server.py                   # FastMCP tool definitions (thin wrappers only)
-│   │   ├── engine.py                   # Pure ML logic (zero MCP imports)
+│   │   ├── engine.py                   # Public API re-exports from sub-modules
+│   │   ├── _basic_helpers.py           # Shared helpers, path resolution, data loading
+│   │   ├── _basic_train.py             # train_classifier + train_regressor
+│   │   ├── _basic_predict.py           # get_predictions + predict_single
 │   │   └── pyproject.toml
 │   │
 │   ├── ml_medium/                      # Tier 2 — preprocessing pipeline + CV + multi-model
 │   │   ├── __init__.py
 │   │   ├── server.py
 │   │   ├── engine.py
+│   │   ├── _medium_helpers.py          # Shared helpers
+│   │   ├── _medium_preprocess.py       # run_preprocessing ops
+│   │   ├── _medium_train.py            # train_with_cv + compare_models
+│   │   ├── _medium_cluster.py          # run_clustering + find_optimal_clusters
+│   │   ├── _medium_data.py             # filter_rows + merge_datasets + batch_predict
+│   │   ├── _medium_eda.py              # generate_eda_report + check_data_quality
 │   │   └── pyproject.toml
 │   │
 │   └── ml_advanced/                    # Tier 3 — tuning, export, evaluation reports
 │       ├── __init__.py
 │       ├── server.py
 │       ├── engine.py
+│       ├── _adv_helpers.py             # tune / export / read_model_report / profiling / reduction
+│       ├── _adv_viz.py                 # all HTML chart and report generation
 │       └── pyproject.toml
 │
 ├── tests/
 │   ├── fixtures/
-│   │   ├── classification_simple.csv   # clean binary classification dataset
-│   │   ├── classification_messy.csv    # nulls, mixed types, class imbalance
-│   │   ├── regression_simple.csv       # clean continuous target dataset
-│   │   ├── regression_messy.csv        # outliers, skewed distributions
-│   │   ├── clustering_simple.csv       # 2D points with clear cluster structure
-│   │   └── large_10k.csv               # 10,000 rows for truncation tests
+│   │   ├── classification_simple.csv
+│   │   ├── classification_messy.csv
+│   │   ├── regression_simple.csv
+│   │   ├── regression_messy.csv
+│   │   ├── clustering_simple.csv
+│   │   └── large_10k.csv
+│   ├── __init__.py
 │   ├── conftest.py
 │   ├── test_ml_basic.py
 │   ├── test_ml_medium.py
 │   └── test_ml_advanced.py
 │
 ├── install/
-│   ├── install.sh                      # Linux/macOS — POSIX sh compatible
-│   ├── install.bat                     # Windows CMD
-│   └── mcp_config_writer.py            # writes to LM Studio / Claude Desktop / Cursor
+│   ├── install.sh                      # macOS/Linux installer
+│   ├── install.bat                     # Windows installer
+│   └── mcp_config_writer.py            # writes LM Studio / Claude Desktop / Cursor config
+│
+├── .github/
+│   └── workflows/
+│       ├── ci.yml
+│       └── release.yml
 │
 ├── pyproject.toml                      # root workspace
+├── pyrightconfig.json
 ├── uv.lock
 ├── .python-version                     # 3.12
 ├── .gitattributes
-├── CLAUDE.md                           # this file
-├── STANDARDS.md                        # general MCP server standards
-└── README.md
+├── verify_tool_docstrings.py
+└── CLAUDE.md                           # this file
 ```
 
 ### File ownership rules
 
-- `engine.py` owns all ML logic: data loading, preprocessing, model training,
-  evaluation, serialization. Zero MCP imports.
+- `engine.py` owns all ML logic via re-exports from sub-modules. Zero MCP imports.
 - `server.py` owns all MCP protocol concerns: `@mcp.tool()` decorators, `FastMCP`
   setup, `main()` entry point. Zero domain logic — every tool body is one line
   calling `engine.py`.
 - `shared/` is imported by both. Never duplicate shared logic in engine files.
-
 
 ---
 
@@ -160,8 +172,7 @@ comply with all of them.
 
 Every tool must complete its primary operation with the machine **disconnected from
 the internet**. No scikit-learn tool calls an external API. No XGBoost tool sends
-data to a cloud endpoint. Model weight downloads (first-run only) are the only
-permitted network operations, and they must be cached locally and documented.
+data to a cloud endpoint.
 
 **The test:** Disconnect from the network. Run the tool. It must succeed.
 
@@ -209,20 +220,12 @@ export in one call. Each step is a separate tool.
 ### 4.5 Snapshot Before Write
 
 Every tool that writes to disk calls `shared.version_control.snapshot()` before
-writing. This includes:
-- Tools that save trained models (overwriting an existing `model.pkl`)
-- Tools that modify dataset files in place
-- Tools that write preprocessed datasets
-
-The `"backup"` key must appear in every write tool's success response.
+writing. The `"backup"` key must appear in every write tool's success response.
 
 ### 4.6 Token Budget Discipline
 
-The target hardware is 8 GB VRAM with a 9B model. Effective context: ~10,000–12,000
-tokens. Tool schemas + history consume ~2,000–3,000 tokens minimum.
-
 Rules:
-- Tool docstrings ≤ 80 characters (enforced by CI)
+- Tool docstrings ≤ 80 characters (enforced by `verify_tool_docstrings.py`)
 - Read tool responses ≤ 500 tokens
 - Write confirmations ≤ 150 tokens
 - Never return raw DataFrames, weight arrays, or confusion matrix arrays as nested lists
@@ -236,48 +239,29 @@ hardcode row/result limits:
 ```python
 from shared.platform_utils import get_max_rows, get_max_results, is_constrained_mode
 
-# In engine functions:
 max_rows = get_max_rows()        # 20 in constrained, 100 in standard
 max_results = get_max_results()  # 10 in constrained, 50 in standard
 ```
 
-
 ---
 
 ## 5. MCP Primitives — Tools, Resources, and Prompts
-
-The MCP protocol defines three primitives. Use each for what it is designed for.
 
 ### Tools
 
 **Tools** are called by the model with arguments and return structured JSON. Use
 tools for all operations that read, transform, write, or execute something.
 
-Tools are the right choice for:
-- Reading a file or dataset (result changes between calls)
-- Applying preprocessing or training a model
-- Running evaluation or generating a report
-
 ### Resources
 
 **Resources** expose stable, re-readable context without a tool call. Use resources
-for reference data the model needs repeatedly (e.g. supported algorithm lists,
-dataset schema that rarely changes). Resources are read-only and stateless.
-
-```python
-@mcp.resource("schema://{file_path}")
-def get_schema_resource(file_path: str) -> str:
-    """Expose dataset schema as a resource for repeated model reference."""
-    return engine.get_schema_json(file_path)
-```
-
-Do not use Resources for data that changes between calls — that must be a tool.
+for reference data the model needs repeatedly (e.g. supported algorithm lists).
+Resources are read-only and stateless.
 
 ### Prompts
 
 **Prompts** are reusable workflow templates. Use sparingly — only when you need
-a structured starting workflow (e.g. a "run full ML pipeline" prompt). Most
-servers do not need prompts.
+a structured starting workflow. Most servers do not need prompts.
 
 ### Rule of thumb
 
@@ -291,8 +275,7 @@ User needs a starting workflow template    → Prompt
 
 ## 6. Tool Annotations
 
-FastMCP supports tool annotations that help AI clients display and reason about
-tools correctly. **Always set these on every `@mcp.tool()` decorator.**
+Always set annotations on every `@mcp.tool()` decorator:
 
 ```python
 @mcp.tool(
@@ -303,9 +286,6 @@ tools correctly. **Always set these on every `@mcp.tool()` decorator.**
         "openWorldHint": False,     # does not interact with external services
     }
 )
-def inspect_dataset(file_path: str) -> dict:
-    """Inspect dataset schema, row count, dtypes, null summary."""
-    return engine.inspect_dataset(file_path)
 ```
 
 ### Annotation rules by ML tool type
@@ -316,10 +296,6 @@ def inspect_dataset(file_path: str) -> dict:
 | train / preprocess / cluster (with snapshot) | False | False | False | False |
 | drop column / delete rows | False | True | False | False |
 | export / generate report | False | False | True | False |
-| download weights (first-run only) | False | False | False | True |
-
-`destructiveHint=True` triggers an extra confirmation in most AI clients. Use it
-for any tool that permanently removes data.
 
 ---
 
@@ -328,8 +304,7 @@ for any tool that permanently removes data.
 ### Path Traversal Prevention
 
 All file paths from tool parameters must be validated through `resolve_path()`
-before any I/O. The `shared/file_utils.py` implementation must include a home
-directory boundary check:
+before any I/O:
 
 ```python
 def resolve_path(file_path: str, allowed_extensions: tuple[str, ...] = ()) -> Path:
@@ -351,28 +326,14 @@ calls without first calling `resolve_path()`.
 
 ### No eval() / exec()
 
-For any tool that evaluates expressions (filter expressions, formula strings),
-never use `eval()` or `exec()`. Parse with AST and an allowlist:
-
-```python
-# Wrong
-result = eval(user_expression)
-
-# Correct — parse against allowlist
-ALLOWED_OPS = {"+", "-", "*", "/"}
-result = _safe_eval_expr(user_expression, df.columns, ALLOWED_OPS)
-```
+For any tool that evaluates expressions, never use `eval()` or `exec()`. Parse
+with AST and an allowlist.
 
 ### Subprocess Safety
 
-ML tools that invoke subprocesses (model export tools, profiling) must use
-argument lists with `shell=False` and `timeout`:
+Use argument lists with `shell=False` and `timeout`:
 
 ```python
-# Wrong
-subprocess.run(f"some_cmd {user_input}", shell=True)
-
-# Correct
 subprocess.run(
     ["some_cmd", str(validated_path)],
     shell=False, capture_output=True, timeout=300,
@@ -388,602 +349,145 @@ responses. Always use `Path(x).name` (filename only) in progress messages.
 
 ## 8. Engine Sub-Module Pattern
 
-When `engine.py` grows beyond ~400–500 lines, split it into focused sub-modules.
+When `engine.py` grows beyond ~400–500 lines, split into focused sub-modules.
 The engine entry point becomes a thin router.
-
-### Sub-module layout for ML servers
-
-```
-servers/ml_advanced/
-├── server.py              ← MCP wrapper (unchanged)
-├── engine.py              ← thin router: re-exports from sub-modules
-├── _adv_tuning.py         ← tune_hyperparameters logic
-├── _adv_export.py         ← export_model + manifest writing
-├── _adv_report.py         ← read_model_report + feature importance
-├── _adv_profiling.py      ← run_profiling_report (ydata-profiling)
-└── _adv_reduction.py      ← apply_dimensionality_reduction (PCA/ICA)
-```
 
 ### engine.py as thin router
 
 ```python
 # engine.py — thin router, zero MCP imports
-from ._adv_tuning    import tune_hyperparameters
-from ._adv_export    import export_model
-from ._adv_report    import read_model_report
-from ._adv_profiling import run_profiling_report
-from ._adv_reduction import apply_dimensionality_reduction
+from ._adv_helpers import tune_hyperparameters, export_model, read_model_report
+from ._adv_viz    import generate_training_report, plot_roc_curve
 
-__all__ = [
-    "tune_hyperparameters", "export_model", "read_model_report",
-    "run_profiling_report", "apply_dimensionality_reduction",
-]
+__all__ = ["tune_hyperparameters", "export_model", ...]
 ```
 
 Tests still import from `engine.py` — sub-module structure is invisible to tests.
 
 ### Lazy imports for heavy ML libraries
 
-Sub-modules that depend on large libraries (sklearn, xgboost, ydata_profiling)
-should import those libraries **inside** the function, not at module level:
+Sub-modules that depend on large libraries should import inside the function:
 
 ```python
-# _adv_profiling.py — lazy import
 def run_profiling_report(file_path: str, ...) -> dict:
     from ydata_profiling import ProfileReport   # lazy — only when called
     import pandas as pd
     ...
 ```
 
-This avoids paying the full import cost when the server loads other tools that
-don't need those libraries.
-
 ---
 
 ## 9. Three-Tier ML Server Design
 
-### Tier 1 — ml_basic
-
-**Purpose:** Dataset inspection + single-model training + prediction.
-A user doing basic classification or regression should never need tier 2 or 3.
-
-**Tool count target: 8 tools**
-
-| # | Tool name | Category | Description |
+| Tier | Server | Tools | Purpose |
 |---|---|---|---|
-| 1 | `inspect_dataset` | LOCATE | Schema, row count, dtypes, null summary |
-| 2 | `read_column_profile` | INSPECT | Stats for one column (mean, std, nulls, unique) |
-| 3 | `search_columns` | LOCATE | Find columns matching a condition |
-| 4 | `read_rows` | INSPECT | Bounded row slice (respects get_max_rows) |
-| 5 | `train_classifier` | PATCH | Train classification model, return metrics + path |
-| 6 | `train_regressor` | PATCH | Train regression model, return metrics + path |
-| 7 | `get_predictions` | VERIFY | Run predictions with saved model on new data |
-| 8 | `restore_version` | CONTROL | Rollback model or dataset to previous snapshot |
+| 1 | `ml-basic` | 11 | Dataset inspection + single-model training + prediction |
+| 2 | `ml-medium` | 14 | Preprocessing + CV + clustering + EDA + batch predict |
+| 3 | `ml-advanced` | 10 | Tuning + export + evaluation charts + profiling |
 
 **Tier 1 must stand alone.** No cross-tier imports.
 
 ---
 
-### Tier 2 — ml_medium
-
-**Purpose:** Preprocessing pipelines + cross-validation training + model comparison +
-clustering. Loaded alongside tier 1; combined total must not exceed 15 tools.
-
-**Tool count target: 6 tools**
-
-| # | Tool name | Category | Description |
-|---|---|---|---|
-| 1 | `run_preprocessing` | PATCH | Encode + scale + fill nulls pipeline |
-| 2 | `detect_outliers` | INSPECT | IQR and std-dev outlier report per column |
-| 3 | `train_with_cv` | PATCH | Train with K-fold cross-validation |
-| 4 | `compare_models` | PATCH | Train multiple algorithms, return sorted metrics |
-| 5 | `run_clustering` | PATCH | K-Means / Mean-Shift / DBSCAN clustering |
-| 6 | `read_receipt` | CONTROL | Read operation history for a file |
-
----
-
-### Tier 3 — ml_advanced
-
-**Purpose:** Hyperparameter tuning, model export, evaluation reports. Load standalone
-in dedicated sessions — these tools require significant compute and context.
-
-**Tool count target: 5 tools**
-
-| # | Tool name | Category | Description |
-|---|---|---|---|
-| 1 | `tune_hyperparameters` | OPTIMIZE | GridSearch or RandomSearch tuning |
-| 2 | `export_model` | EXPORT | Pickle export with metadata manifest |
-| 3 | `read_model_report` | VERIFY | Feature importance, confusion matrix, metrics |
-| 4 | `run_profiling_report` | ANALYZE | ydata-profiling HTML report for dataset |
-| 5 | `apply_dimensionality_reduction` | TRANSFORM | PCA or ICA, return reduced dataset path |
-
-
----
-
 ## 10. Tool Catalogue — ml_basic (Tier 1)
 
-### 6.1 inspect_dataset
+| # | Tool | Category | Signature summary |
+|---|---|---|---|
+| 1 | `inspect_dataset` | LOCATE | `(file_path)` → schema, row count, dtypes, null summary |
+| 2 | `read_column_profile` | INSPECT | `(file_path, column_name)` → stats for one column |
+| 3 | `search_columns` | LOCATE | `(file_path, has_nulls, dtype, name_contains, max_results)` → names only |
+| 4 | `read_rows` | INSPECT | `(file_path, start, end)` → bounded row slice |
+| 5 | `train_classifier` | PATCH | `(file_path, target_column, model, test_size, random_state, class_weight, return_train_score, dry_run)` |
+| 6 | `train_regressor` | PATCH | `(file_path, target_column, model, degree, alpha, n_estimators, test_size, random_state, dry_run)` |
+| 7 | `get_predictions` | VERIFY | `(model_path, file_path, max_rows, return_proba)` → bounded predictions |
+| 8 | `restore_version` | CONTROL | `(file_path, timestamp)` → rollback or list snapshots |
+| 9 | `predict_single` | VERIFY | `(model_path, input_data)` → predict one JSON record |
+| 10 | `list_models` | LOCATE | `(directory)` → list all `.pkl` models with metadata |
+| 11 | `split_dataset` | PATCH | `(file_path, test_size, stratify_column, output_dir, random_state)` → saves train/test CSVs |
 
-```python
-@mcp.tool()
-def inspect_dataset(file_path: str) -> dict:
-    """Inspect dataset schema, row count, dtypes, null summary."""
-```
+### Key implementation rules for Tier 1
 
-**Engine behaviour:**
-- Load CSV with pandas (no full data in memory beyond header scan for large files)
-- Return: `columns` (list of `{name, dtype, null_count, null_pct}`), `row_count`,
-  `file_size_kb`, candidate target columns (columns with ≤ 20 unique values or dtype bool)
-- Enforce: never return actual row data
-- Constrained mode: column list capped at `get_max_results()` with truncation flag
-
-**Return skeleton:**
-```python
-{
-    "success": True,
-    "op": "inspect_dataset",
-    "file": "customer_churn.csv",
-    "row_count": 5000,
-    "column_count": 18,
-    "columns": [
-        {"name": "churned", "dtype": "bool", "null_count": 0, "null_pct": 0.0},
-        ...
-    ],
-    "target_candidates": ["churned", "active"],
-    "progress": [...],
-    "token_estimate": 210,
-    "truncated": False
-}
-```
-
----
-
-### 6.2 read_column_profile
-
-```python
-@mcp.tool()
-def read_column_profile(file_path: str, column_name: str) -> dict:
-    """Profile one column. Returns stats, null count, top values."""
-```
-
-**Engine behaviour:**
-- Numeric: mean, std, min, max, median, 25th/75th percentile, null_count, skewness
-- Categorical: unique_count, top_values (up to 10), null_count, mode
-- Boolean: true_count, false_count, null_count, balance_ratio
-- Never return raw value arrays — always aggregated stats
-
----
-
-### 6.3 search_columns
-
-```python
-@mcp.tool()
-def search_columns(
-    file_path: str,
-    has_nulls: bool = False,
-    dtype: str = "",          # "numeric", "categorical", "bool", "datetime"
-    name_contains: str = "",
-    max_results: int = 20,
-) -> dict:
-    """Search columns by condition. Returns names only, no data."""
-```
-
-**Engine behaviour:**
-- Returns list of column names matching the given filters
-- Never returns column data — addresses only
-
----
-
-### 6.4 read_rows
-
-```python
-@mcp.tool()
-def read_rows(file_path: str, start: int, end: int) -> dict:
-    """Read bounded row slice. Max rows enforced by hardware mode."""
-```
-
-**Engine behaviour:**
-- Hard limit: `min(end - start, get_max_rows())`
-- If requested range exceeds limit, return limit rows + `"truncated": True`
-- Return rows as list of dicts (one dict per row)
-
----
-
-### 6.5 train_classifier
-
-```python
-@mcp.tool()
-def train_classifier(
-    file_path: str,
-    target_column: str,
-    model: str,               # "lr" "svm" "rf" "dtc" "knn" "nb" "xgb"
-    test_size: float = 0.2,
-    random_state: int = 42,
-    dry_run: bool = False,
-) -> dict:
-    """Train classifier on CSV. model: lr svm rf dtc knn nb xgb."""
-```
-
-**Engine behaviour:**
-1. Resolve path, validate file exists and is `.csv`
-2. Check available RAM via `psutil` — fail fast if insufficient
-3. Snapshot any existing model file before overwriting
-4. Load data, auto-encode categoricals (LabelEncoder), drop rows with null target
-5. Split: `train_test_split(test_size=test_size, random_state=random_state, stratify=y)`
-6. Train selected algorithm (see section 10 for parameters)
-7. Evaluate: accuracy, F1 (weighted), confusion matrix (as counts dict, not raw array)
-8. Save model via pickle to `.mcp_models/{file_stem}_{model}_{timestamp}.pkl`
-9. Append receipt, return success dict
-
-**`dry_run=True`:** Skip steps 6–9, return what would be done.
-
----
-
-### 6.6 train_regressor
-
-```python
-@mcp.tool()
-def train_regressor(
-    file_path: str,
-    target_column: str,
-    model: str,               # "lir" "pr" "lar" "rr" "dtr" "rfr" "xgb"
-    degree: int = 5,          # polynomial degree (only used when model="pr")
-    alpha: float = 0.01,      # regularization (lasso/ridge only)
-    n_estimators: int = 10,   # tree ensemble size
-    test_size: float = 0.2,
-    random_state: int = 42,
-    dry_run: bool = False,
-) -> dict:
-    """Train regressor on CSV. model: lir pr lar rr dtr rfr xgb."""
-```
-
-**Engine behaviour:** Same pipeline as classifier. Metrics: MSE, RMSE, R² (no confusion matrix).
-
----
-
-### 6.7 get_predictions
-
-```python
-@mcp.tool()
-def get_predictions(
-    model_path: str,
-    file_path: str,
-    max_rows: int = 20,
-) -> dict:
-    """Run predictions with saved model. Returns bounded prediction list."""
-```
-
-**Engine behaviour:**
-- Load model from pickle
-- Load data, apply same encoding as training (stored in model metadata)
-- Return predictions capped at `min(max_rows, get_max_rows())`
-- Never return the full prediction array — always bounded
-
----
-
-### 6.8 restore_version
-
-```python
-@mcp.tool()
-def restore_version(file_path: str, timestamp: str = "") -> dict:
-    """Restore file/model to previous snapshot. Empty timestamp = latest."""
-```
-
-**Engine behaviour:**
-- Lists available snapshots if `timestamp` is empty (returns list, no restoration)
-- Restores from `.mcp_versions/` backup matching timestamp
-- Delegates to `shared.version_control.restore_version()`
-
+- `inspect_dataset`: never return actual row data; cap column list at `get_max_results()`
+- `read_column_profile`: numeric → mean/std/min/max/median/percentiles/skewness; categorical → top_values (≤10); bool → balance_ratio
+- `search_columns`: return column names only, never column data
+- `read_rows`: hard limit `min(end - start, get_max_rows())`; return `"truncated": True` when capped
+- `train_classifier` / `train_regressor`: auto-encode categoricals (LabelEncoder), fill numeric nulls with median, stratify split for classification, save model + manifest
+- `get_predictions`: cap at `min(max_rows, get_max_rows())`; apply stored encoding from metadata
+- `predict_single`: parse `input_data` as JSON string, apply same encoding as training
+- `list_models`: scan `directory` (default: home dir `.mcp_models/`), return metadata list
+- `split_dataset`: snapshot before writing; support `stratify_column` for classification splits
 
 ---
 
 ## 11. Tool Catalogue — ml_medium (Tier 2)
 
-### 7.1 run_preprocessing
+| # | Tool | Category | Signature summary |
+|---|---|---|---|
+| 1 | `run_preprocessing` | PATCH | `(file_path, ops, output_path, dry_run)` → apply op pipeline |
+| 2 | `detect_outliers` | INSPECT | `(file_path, columns, method, th1, th3)` → per-column outlier report |
+| 3 | `train_with_cv` | PATCH | `(file_path, target_column, model, task, n_splits, random_state, dry_run)` |
+| 4 | `compare_models` | PATCH | `(file_path, target_column, task, models, test_size, random_state, dry_run)` |
+| 5 | `run_clustering` | PATCH | `(file_path, feature_columns, algorithm, n_clusters, eps, min_samples, reduce_dims, n_components, save_labels, dry_run)` |
+| 6 | `read_receipt` | CONTROL | `(file_path)` → operation history log |
+| 7 | `generate_eda_report` | ANALYZE | `(file_path, target_column, theme, output_path, open_browser, dry_run)` → HTML EDA |
+| 8 | `filter_rows` | PATCH | `(file_path, column, operator, value, output_path, dry_run)` → filtered CSV |
+| 9 | `merge_datasets` | PATCH | `(file_path_1, file_path_2, on, how, output_path, dry_run)` → merged CSV |
+| 10 | `find_optimal_clusters` | ANALYZE | `(file_path, feature_columns, max_k, theme, output_path, open_browser)` → elbow chart |
+| 11 | `anomaly_detection` | INSPECT | `(file_path, feature_columns, method, contamination, save_labels, dry_run)` |
+| 12 | `check_data_quality` | INSPECT | `(file_path)` → quality score 0–100 with typed alerts |
+| 13 | `evaluate_model` | VERIFY | `(model_path, test_file_path, target_column)` → metrics on external test set |
+| 14 | `batch_predict` | PATCH | `(model_path, file_path, output_path, dry_run)` → all rows, saves CSV |
 
-```python
-@mcp.tool()
-def run_preprocessing(
-    file_path: str,
-    ops: list[dict],
-    output_path: str = "",
-    dry_run: bool = False,
-) -> dict:
-    """Apply preprocessing pipeline ops to dataset. Snapshot before write."""
-```
+### Key implementation rules for Tier 2
 
-**Supported ops (patch protocol format):**
-
-```python
-[
-    {"op": "fill_nulls",     "column": "revenue",   "strategy": "median"},
-    {"op": "fill_nulls",     "column": "region",    "strategy": "mode"},
-    {"op": "drop_outliers",  "column": "age",       "method": "iqr",  "replace": False},
-    {"op": "label_encode",   "column": "gender"},
-    {"op": "onehot_encode",  "column": "region"},
-    {"op": "scale",          "columns": ["age", "salary"], "method": "standard"},
-    {"op": "scale",          "columns": ["price"],          "method": "minmax"},
-    {"op": "drop_duplicates","subset": ["customer_id"]},
-    {"op": "drop_column",    "column": "id"},
-    {"op": "rename_column",  "from": "rev",         "to": "revenue_usd"},
-    {"op": "convert_dtype",  "column": "date",      "to": "datetime"},
-]
-```
-
-Allowed `fill_nulls` strategies: `mean`, `median`, `mode`, `ffill`, `bfill`, `zero`  
-Allowed `scale` methods: `standard` (StandardScaler), `minmax` (MinMaxScaler)  
-Max ops per batch: 50. Validate entire array before applying any operation.
-
----
-
-### 7.2 detect_outliers
-
-```python
-@mcp.tool()
-def detect_outliers(
-    file_path: str,
-    columns: list[str],
-    method: str = "iqr",      # "iqr" or "std"
-    th1: float = 0.25,        # IQR lower quantile
-    th3: float = 0.75,        # IQR upper quantile
-) -> dict:
-    """Detect outliers in numeric columns. method: iqr std."""
-```
-
-**Engine behaviour:**
-- IQR method: lower = Q1 - 1.5×IQR, upper = Q3 + 1.5×IQR (using `th1`/`th3` quantiles)
-- Std method: mean ± 3σ thresholds
-- Returns per-column report: `outlier_count`, `lower_bound`, `upper_bound`, `sample_outliers`
-  (up to 5 example values)
-- Never returns the full outlier row list — counts and bounds only
-
----
-
-### 7.3 train_with_cv
-
-```python
-@mcp.tool()
-def train_with_cv(
-    file_path: str,
-    target_column: str,
-    model: str,
-    task: str,                # "classification" or "regression"
-    n_splits: int = 5,
-    random_state: int = 42,
-    dry_run: bool = False,
-) -> dict:
-    """Train with K-fold cross-validation. Returns per-fold and mean scores."""
-```
-
-**Engine behaviour:**
-- Classification: StratifiedKFold with `n_splits`; reports accuracy and F1 per fold
-- Regression: KFold with `n_splits`; reports R² and RMSE per fold
-- Returns mean ± std across folds, plus per-fold scores array
-- Saves best-fold model to `.mcp_models/`
-
----
-
-### 7.4 compare_models
-
-```python
-@mcp.tool()
-def compare_models(
-    file_path: str,
-    target_column: str,
-    task: str,                # "classification" or "regression"
-    models: list[str],        # e.g. ["lr", "rf", "xgb"]
-    test_size: float = 0.2,
-    random_state: int = 42,
-    dry_run: bool = False,
-) -> dict:
-    """Train multiple models, return sorted comparison table."""
-```
-
-**Engine behaviour:**
-- Train each model sequentially on the same train/test split
-- Classification ranking: F1 weighted (primary), accuracy (secondary)
-- Regression ranking: R² (primary), RMSE (secondary)
-- Return sorted results table (list of dicts, one per model)
-- Max models per call: 7 (all supported algorithm families)
-- Save **only the best model** to disk — do not save all variants
-
----
-
-### 7.5 run_clustering
-
-```python
-@mcp.tool()
-def run_clustering(
-    file_path: str,
-    feature_columns: list[str],
-    algorithm: str,           # "kmeans" "meanshift" "dbscan"
-    n_clusters: int = 3,      # kmeans only
-    eps: float = 3.0,         # dbscan only
-    min_samples: int = 5,     # dbscan only
-    reduce_dims: str = "",    # "pca" or "ica" or "" (none)
-    n_components: int = 2,
-    save_labels: bool = False,
-    dry_run: bool = False,
-) -> dict:
-    """Cluster dataset. algorithm: kmeans meanshift dbscan."""
-```
-
-**Engine behaviour:**
-- Scale features with StandardScaler before clustering
-- Optionally reduce dimensions with PCA or FastICA before clustering
-- Return: cluster label counts, inertia (K-Means), n_clusters found (Mean-Shift/DBSCAN)
-- If `save_labels=True`, append cluster label column to dataset and snapshot
-
----
-
-### 7.6 read_receipt
-
-```python
-@mcp.tool()
-def read_receipt(file_path: str) -> dict:
-    """Read operation history for a file. Returns log entries."""
-```
-
-Delegates to `shared.receipt.read_receipt_log()`.
-
+- `run_preprocessing`: validate all ops before applying any; snapshot before write; max 50 ops per call
+- `detect_outliers`: IQR (th1/th3 quantiles ± 1.5×IQR) or std (mean ± 3σ); return counts and bounds, not full row list; up to 5 sample outlier values
+- `train_with_cv`: StratifiedKFold for classification, KFold for regression; save best-fold model; return per-fold scores + mean ± std
+- `compare_models`: same train/test split for all; rank by F1 weighted (classification) or R² (regression); save only best model; max 7 models (3 in constrained)
+- `run_clustering`: StandardScaler before fitting; optional PCA/ICA reduction before clustering; `save_labels=True` snapshots before appending column
+- `generate_eda_report`: 8 quality checks (constant, high_missing, zero_inflated, high_cardinality, class_imbalance, extreme_skewness, multicollinearity, duplicate_rows); each alert includes recommendation
+- `anomaly_detection`: Isolation Forest or LOF; `save_labels=True` appends `_anomaly` column with snapshot
+- `batch_predict`: no row limit; applies stored encoding from model metadata
 
 ---
 
 ## 12. Tool Catalogue — ml_advanced (Tier 3)
 
-### 8.1 tune_hyperparameters
+| # | Tool | Category | Signature summary |
+|---|---|---|---|
+| 1 | `tune_hyperparameters` | OPTIMIZE | `(file_path, target_column, model, task, search, param_grid, cv, n_iter, dry_run)` |
+| 2 | `export_model` | EXPORT | `(model_path, output_dir, format, dry_run)` → copy + manifest |
+| 3 | `read_model_report` | VERIFY | `(model_path)` → feature importance, confusion matrix, metrics |
+| 4 | `run_profiling_report` | ANALYZE | `(file_path, output_path, sample_rows, dry_run)` → ydata-profiling HTML |
+| 5 | `apply_dimensionality_reduction` | TRANSFORM | `(file_path, feature_columns, method, n_components, output_path, dry_run)` |
+| 6 | `generate_training_report` | ANALYZE | `(model_path, theme, output_path, open_browser, dry_run)` → full HTML |
+| 7 | `plot_roc_curve` | ANALYZE | `(model_path, file_path, theme, output_path, open_browser, dry_run)` → HTML |
+| 8 | `plot_learning_curve` | ANALYZE | `(file_path, target_column, model, task, cv, theme, output_path, open_browser, dry_run)` |
+| 9 | `plot_predictions_vs_actual` | ANALYZE | `(model_path, file_path, theme, output_path, open_browser, dry_run)` → HTML |
+| 10 | `generate_cluster_report` | ANALYZE | `(file_path, feature_columns, label_column, theme, output_path, open_browser, dry_run)` |
 
-```python
-@mcp.tool()
-def tune_hyperparameters(
-    file_path: str,
-    target_column: str,
-    model: str,
-    task: str,                # "classification" or "regression"
-    search: str = "grid",     # "grid" or "random"
-    param_grid: str = "",     # JSON string of param grid, or "" for defaults
-    cv: int = 5,
-    n_iter: int = 10,         # random search only
-    dry_run: bool = False,
-) -> dict:
-    """Tune hyperparameters via grid or random search. search: grid random."""
-```
+### Key implementation rules for Tier 3
 
-**Engine behaviour:**
-- `param_grid` is a JSON string parsed inside engine (not a `dict` parameter — see STANDARDS §10)
-- Default param grids per model are defined as constants in `engine.py`
-- Return: `best_score`, `best_params`, top-5 results table (sorted by score)
-- Save best model as snapshot
-- Cap `cv_results_` to top 20 rows — never return full grid results
-
-**Default param grids (constants in engine.py):**
-```python
-DEFAULT_PARAMS = {
-    "svm":  {"C": [0.1, 1, 10], "kernel": ["rbf", "linear"]},
-    "rf":   {"n_estimators": [10, 50, 100], "max_depth": [None, 5, 10]},
-    "xgb":  {"max_depth": [3, 5, 7], "eta": [0.1, 0.3], "n_estimators": [50, 100]},
-    "knn":  {"n_neighbors": [3, 5, 7, 11]},
-    "lr":   {"C": [0.01, 0.1, 1, 10]},
-}
-```
-
----
-
-### 8.2 export_model
-
-```python
-@mcp.tool()
-def export_model(
-    model_path: str,
-    output_dir: str = "",
-    format: str = "pickle",   # "pickle" only for v1; "onnx" reserved for future
-    dry_run: bool = False,
-) -> dict:
-    """Export trained model with metadata manifest. format: pickle."""
-```
-
-**Engine behaviour:**
-- Copy model `.pkl` to `output_dir` (default: same directory)
-- Write companion `{model_name}.manifest.json` with: model type, training date,
-  feature columns, target column, training metrics, Python + library versions
-- Snapshot before overwrite if output file already exists
-
-**Manifest schema:**
-```json
-{
-    "model_type": "RandomForestClassifier",
-    "task": "classification",
-    "trained_on": "customer_churn.csv",
-    "training_date": "2026-04-06T10:30:00Z",
-    "feature_columns": ["age", "tenure", "monthly_charges"],
-    "target_column": "churned",
-    "metrics": {"accuracy": 0.89, "f1_weighted": 0.87},
-    "python_version": "3.11.x",
-    "sklearn_version": "1.4.x",
-    "xgboost_version": "2.x.x"
-}
-```
-
----
-
-### 8.3 read_model_report
-
-```python
-@mcp.tool()
-def read_model_report(model_path: str) -> dict:
-    """Read model metrics, feature importance, confusion matrix summary."""
-```
-
-**Engine behaviour:**
-- Load model and its companion manifest
-- Classification: return confusion matrix as `{"TP": n, "FP": n, "FN": n, "TN": n}`
-  for binary, or per-class counts for multiclass (max 10 classes shown)
-- Return feature importances as top-10 list `[{feature, importance}]` (tree models only)
-- Return full classification report as text (sklearn format, bounded to 500 chars)
-- Never return raw weight matrices or full prediction arrays
-
----
-
-### 8.4 run_profiling_report
-
-```python
-@mcp.tool()
-def run_profiling_report(
-    file_path: str,
-    output_path: str = "",
-    sample_rows: int = 0,     # 0 = use all rows; >0 = sample for speed
-    dry_run: bool = False,
-) -> dict:
-    """Generate ydata-profiling HTML report for dataset."""
-```
-
-**Engine behaviour:**
-- Uses `ydata_profiling.ProfileReport` with `minimal=True` for constrained mode
-- Saves HTML to `output_path` (default: same dir as CSV, `.html` extension)
-- Returns: output path, file size, key stats summary (row count, column count,
-  missing cells pct, duplicate rows pct)
-- Never return raw profile data — return the path
-
----
-
-### 8.5 apply_dimensionality_reduction
-
-```python
-@mcp.tool()
-def apply_dimensionality_reduction(
-    file_path: str,
-    feature_columns: list[str],
-    method: str,              # "pca" or "ica"
-    n_components: int = 2,
-    output_path: str = "",
-    dry_run: bool = False,
-) -> dict:
-    """Reduce dimensions with PCA or ICA. Saves reduced dataset."""
-```
-
-**Engine behaviour:**
-- Scale features with StandardScaler before reduction
-- PCA: use `sklearn.decomposition.PCA`; return `explained_variance_ratio_` per component
-- ICA: use `sklearn.decomposition.FastICA`
-- Save reduced dataset as new CSV (original columns replaced with `component_1`, `component_2`, etc.)
-- Return: output path, variance explained (PCA only), n_components used
-
+- `tune_hyperparameters`: `param_grid` is a JSON string parsed inside engine; default grids defined as constants; cap `cv_results_` to top 20 rows; save best model as snapshot
+- `export_model`: write `{model_name}.manifest.json` alongside `.pkl`; snapshot before overwrite
+- `read_model_report`: confusion matrix as named dict (`{"TP": n, ...}` binary; per-class for multiclass up to 10 classes); feature importances as top-10 list; classification report bounded to 500 chars
+- `run_profiling_report`: `minimal=True` in constrained mode; return path + key stats summary, never raw profile data
+- `apply_dimensionality_reduction`: StandardScaler before reduction; PCA returns `explained_variance_ratio_`; ICA uses FastICA; save reduced dataset as new CSV
+- All HTML tools: support `theme="light"` or `theme="dark"`; `open_browser=True` opens result after save
 
 ---
 
 ## 13. ML Pipeline Implementation Rules
 
-### 9.1 Data Loading
+### 13.1 Data Loading
 
-Always use `pandas.read_csv()`. Do not use `polars` for this project — the ML
-libraries expect pandas DataFrames or numpy arrays.
+Always use `pandas.read_csv()`. Do not use `polars`.
 
 ```python
 df = pd.read_csv(path, low_memory=False)
 ```
 
-After loading, immediately call `check_memory()` to verify available RAM before
-any heavy computation:
+After loading, check available RAM before heavy computation:
 
 ```python
 required_gb = (df.memory_usage(deep=True).sum() / 1e9) * 3  # 3× for transforms
@@ -992,86 +496,64 @@ if mem_check:
     return mem_check  # early return with error dict
 ```
 
-### 9.2 Automatic Preprocessing Before Training
+### 13.2 Automatic Preprocessing Before Training
 
-When `train_classifier` or `train_regressor` is called, the engine **automatically**
-applies these steps in order (without the user needing to call `run_preprocessing`):
+When `train_classifier` or `train_regressor` is called, the engine **automatically**:
 
-1. Drop rows where `target_column` is null
-2. LabelEncode all object/category dtype columns (excluding target for regression)
-3. Fill remaining numeric nulls with column median
-4. Store encoding mapping in model metadata for use in `get_predictions`
+1. Drops rows where `target_column` is null
+2. LabelEncodes all object/category dtype columns
+3. Fills remaining numeric nulls with column median
+4. Stores encoding mapping in model metadata for use in `get_predictions`
 
-Do not scale features automatically in the basic tier — let the user call
-`run_preprocessing` with `scale` op if needed. Exception: KNN and SVM always
-scale internally within the engine before fitting, then inverse-transform is not
-needed since we only return predictions.
+Do not scale features automatically in the basic tier. Exception: KNN and SVM scale
+internally before fitting.
 
-### 9.3 Train/Test Split
-
-Always use `sklearn.model_selection.train_test_split`:
+### 13.3 Train/Test Split
 
 ```python
 from sklearn.model_selection import train_test_split
 
 x_train, x_test, y_train, y_test = train_test_split(
     x, y,
-    test_size=test_size,          # default 0.2
-    random_state=random_state,    # default 42
+    test_size=test_size,
+    random_state=random_state,
     stratify=y if task == "classification" else None,
 )
 ```
 
-Always pass `stratify=y` for classification to preserve class balance across splits.
-
-### 9.4 Minimum Dataset Size Guard
-
-Before training, validate dataset has enough rows:
+### 13.4 Minimum Dataset Size Guard
 
 ```python
 MIN_ROWS_CLASSIFIER = 20
 MIN_ROWS_REGRESSOR = 10
-
-if len(df) < MIN_ROWS_CLASSIFIER:
-    return {
-        "success": False,
-        "error": f"Dataset has only {len(df)} rows. Need at least {MIN_ROWS_CLASSIFIER}.",
-        "hint": "Provide a dataset with more samples before training.",
-    }
 ```
 
-Also validate target column has at least 2 unique values for classification.
+Validate before training. Also validate target column has at least 2 unique values
+for classification.
 
-### 9.5 Model Saving Convention
+### 13.5 Model Saving Convention
 
 ```
-.mcp_models/
-    {file_stem}_{model}_{YYYY-MM-DDTHH-MM-SSZ}.pkl
-    {file_stem}_{model}_{YYYY-MM-DDTHH-MM-SSZ}.manifest.json
+.mcp_models/{file_stem}_{model}_{YYYY-MM-DDTHH-MM-SSZ}.pkl
+.mcp_models/{file_stem}_{model}_{YYYY-MM-DDTHH-MM-SSZ}.manifest.json
 ```
 
 Save both files atomically. The `.manifest.json` companion is required alongside
 every `.pkl`. Never save a model without its manifest.
 
-Use `shared.version_control.snapshot()` before overwriting an existing model file.
+### 13.6 Score Formatting
 
-### 9.6 Score Formatting
-
-Return scores as floats in [0, 1] range. Do not format as percentage strings
-(the ML_Lookup.ipynb pattern of `str(round(score * 100, 2)) + '%'` is for human
-display, not for MCP tool returns).
+Return scores as floats in [0, 1] range. Do not format as percentage strings.
 
 ```python
-# Correct — return raw float
+# Correct
 {"accuracy": 0.89, "f1_weighted": 0.87}
 
-# Wrong — string percentage
+# Wrong
 {"accuracy": "89.0%"}
 ```
 
-### 9.7 Confusion Matrix Format
-
-Return confusion matrices as a summary dict, never as a raw 2D array:
+### 13.7 Confusion Matrix Format
 
 ```python
 # Binary classification
@@ -1081,14 +563,11 @@ Return confusion matrices as a summary dict, never as a raw 2D array:
 {"class_0": {"precision": 0.91, "recall": 0.88, "f1": 0.89, "support": 200}, ...}
 ```
 
-### 9.8 XGBoost Usage Pattern
-
-Follow the ML_Lookup.ipynb patterns exactly:
+### 13.8 XGBoost Usage Pattern
 
 ```python
 import xgboost as xgb
 
-# Classification
 dtrain = xgb.DMatrix(x_train, label=y_train)
 dtest  = xgb.DMatrix(x_test,  label=y_test)
 params = {
@@ -1099,22 +578,17 @@ params = {
 model = xgb.train(params, dtrain, num_boost_round=num_round)
 preds = model.predict(dtest)
 
-# Multiclass: argmax over probability columns
 if n_classes > 2:
     y_predicted = np.asarray([np.argmax(line) for line in preds])
 else:
     y_predicted = (preds > 0.5).astype(int)
 ```
 
-
 ---
 
 ## 14. Supported Algorithms Reference
 
-This table maps the short `model` parameter string to the scikit-learn / XGBoost
-class. Use these exact classes and default parameters unless overridden by the user.
-
-### Classification Algorithms
+### Classification
 
 | model string | Class | Default key params |
 |---|---|---|
@@ -1126,7 +600,7 @@ class. Use these exact classes and default parameters unless overridden by the u
 | `"nb"` | `GaussianNB` | *(no key params)* |
 | `"xgb"` | `xgb.train()` | `max_depth=3, eta=0.3, num_round=10` |
 
-### Regression Algorithms
+### Regression
 
 | model string | Class | Default key params |
 |---|---|---|
@@ -1138,7 +612,7 @@ class. Use these exact classes and default parameters unless overridden by the u
 | `"rfr"` | `RandomForestRegressor` | `n_estimators=10, random_state=42` |
 | `"xgb"` | `xgb.train()` | `objective='reg:squarederror', num_round=5` |
 
-### Clustering Algorithms
+### Clustering
 
 | algorithm string | Class | Default key params |
 |---|---|---|
@@ -1160,25 +634,29 @@ class. Use these exact classes and default parameters unless overridden by the u
 | `"grid"` | `GridSearchCV` | `cv=5, return_train_score=False` |
 | `"random"` | `RandomizedSearchCV` | `cv=5, n_iter=10, random_state=42` |
 
-### Evaluation Metrics — by Task
+### Default Tuning Param Grids (constants in engine)
 
-**Classification:** `accuracy_score`, `f1_score(average='weighted')`,
-`classification_report`, `confusion_matrix`
+```python
+DEFAULT_PARAMS = {
+    "svm":  {"C": [0.1, 1, 10], "kernel": ["rbf", "linear"]},
+    "rf":   {"n_estimators": [10, 50, 100], "max_depth": [None, 5, 10]},
+    "xgb":  {"max_depth": [3, 5, 7], "eta": [0.1, 0.3], "n_estimators": [50, 100]},
+    "knn":  {"n_neighbors": [3, 5, 7, 11]},
+    "lr":   {"C": [0.01, 0.1, 1, 10]},
+}
+```
 
-**Regression:** `mean_squared_error`, `r2_score`
-(RMSE = `np.sqrt(mean_squared_error(...))`)
+### Evaluation Metrics
 
-**Cross-validation:** `cross_val_score` with `scoring='accuracy'` (classification)
-or `scoring='r2'` (regression)
+**Classification:** `accuracy_score`, `f1_score(average='weighted')`, `classification_report`, `confusion_matrix`
 
+**Regression:** `mean_squared_error`, `r2_score` (RMSE = `np.sqrt(mean_squared_error(...))`)
 
 ---
 
 ## 15. Return Value Contracts for ML Tools
 
-### 11.1 Required Fields in Every Response
-
-Every tool returns a `dict`. No exceptions.
+### Required Fields in Every Response
 
 | Field | Type | When required |
 |---|---|---|
@@ -1192,7 +670,7 @@ Every tool returns a `dict`. No exceptions.
 | `"truncated"` | `bool` | On bounded reads — explicit, never absent |
 | `"dry_run"` | `bool` | When `dry_run=True` — confirms simulation |
 
-### 11.2 Train Tool Success Response
+### Train Tool Success Response
 
 ```python
 {
@@ -1215,155 +693,19 @@ Every tool returns a `dict`. No exceptions.
     "backup": ".mcp_versions/customer_churn_rf_prev.pkl.bak",
     "progress": [
         {"icon": "✔", "msg": "Loaded customer_churn.csv", "detail": "5,000 rows × 18 cols"},
-        {"icon": "✔", "msg": "Encoded 3 categorical columns", "detail": "LabelEncoder"},
-        {"icon": "✔", "msg": "Split dataset", "detail": "4,000 train / 1,000 test (stratified)"},
         {"icon": "✔", "msg": "Trained RandomForestClassifier", "detail": "n_estimators=100"},
-        {"icon": "✔", "msg": "Evaluated model", "detail": "accuracy=0.89, f1=0.87"},
         {"icon": "✔", "msg": "Saved model", "detail": ".mcp_models/customer_churn_rf_...pkl"},
     ],
     "token_estimate": 185
 }
 ```
 
-### 11.3 Regression Success Response
-
-```python
-{
-    "success": True,
-    "op": "train_regressor",
-    "model": "rfr",
-    "metrics": {
-        "mse": 142500.0,
-        "rmse": 377.5,
-        "r2": 0.84,
-    },
-    "model_path": "...",
-    "backup": "...",
-    "progress": [...],
-    "token_estimate": 140
-}
-```
-
-### 11.4 Compare Models Response
-
-```python
-{
-    "success": True,
-    "op": "compare_models",
-    "task": "classification",
-    "results": [
-        {"model": "xgb", "accuracy": 0.91, "f1_weighted": 0.90, "rank": 1},
-        {"model": "rf",  "accuracy": 0.89, "f1_weighted": 0.87, "rank": 2},
-        {"model": "lr",  "accuracy": 0.81, "f1_weighted": 0.80, "rank": 3},
-    ],
-    "best_model": "xgb",
-    "best_model_path": "...",
-    "backup": "...",
-    "progress": [...],
-    "token_estimate": 165
-}
-```
-
-### 11.5 Preprocessing Response
-
-```python
-{
-    "success": True,
-    "op": "run_preprocessing",
-    "applied": 4,
-    "ops_summary": [
-        {"op": "fill_nulls", "column": "revenue", "filled": 23},
-        {"op": "label_encode", "column": "gender", "classes": ["F", "M"]},
-        {"op": "scale", "columns": ["age", "salary"], "method": "standard"},
-        {"op": "drop_duplicates", "removed": 12},
-    ],
-    "output_path": "customer_churn_preprocessed.csv",
-    "backup": "...",
-    "progress": [...],
-    "token_estimate": 175
-}
-```
-
-
 ---
 
 ## 16. Error Handling — ML-Specific Patterns
 
 All exceptions are caught in `engine.py` and returned as error dicts. Never raise
-to the MCP layer. Use the standard patterns below.
-
-### 12.1 File Errors
-
-```python
-f"File not found: {file_path}"
-# hint: "Check that file_path is absolute and the CSV file exists."
-
-f"Expected .csv file, got .{ext}"
-# hint: "Provide a CSV file path. Use inspect_dataset() to verify the file."
-```
-
-### 12.2 Column Errors
-
-```python
-f"Column '{name}' not found. Available: {', '.join(columns[:10])}"
-# hint: "Use inspect_dataset() to list all column names."
-
-f"Target column '{name}' has only 1 unique value — cannot train classifier."
-# hint: "Choose a column with at least 2 distinct class values."
-
-f"Target column '{name}' has {n} unique values. For regression use train_regressor()."
-# hint: "Use task='regression' or choose a binary/categorical target column."
-```
-
-### 12.3 Resource Errors
-
-```python
-f"Insufficient RAM: need ~{required_gb:.1f} GB, available ~{available_gb:.1f} GB."
-# hint: "Use read_rows() to sample a subset, or increase system RAM."
-
-f"GPU not available. Set device='cpu' to run on CPU."
-# hint: "XGBoost will fall back to CPU automatically if tree_method is not set to 'gpu_hist'."
-```
-
-### 12.4 Data Quality Errors
-
-```python
-f"Dataset has {rows} rows but need at least {min_rows} to train reliably."
-# hint: "Provide a dataset with more samples before training."
-
-f"Column '{name}' is non-numeric. Encode it first with run_preprocessing()."
-# hint: "Use op 'label_encode' or 'onehot_encode' in run_preprocessing() first."
-
-f"All values in column '{name}' are null — cannot use as feature."
-# hint: "Drop this column or fill nulls with run_preprocessing() fill_nulls op."
-```
-
-### 12.5 Model Errors
-
-```python
-f"Model file not found: {model_path}"
-# hint: "Use train_classifier() or train_regressor() to train a model first."
-
-f"Model type mismatch: loaded '{loaded_task}' model, expected '{task}'."
-# hint: "Check model_path points to the correct model type."
-
-f"Unknown algorithm: '{model}'. Allowed: {', '.join(ALLOWED_CLASSIFIERS)}"
-# hint: "Use one of: lr svm rf dtc knn nb xgb"
-```
-
-### 12.6 Preprocessing Op Errors
-
-```python
-f"Unknown op: '{op}'. Allowed: {', '.join(ALLOWED_OPS)}"
-# hint: "Check the op name spelling. Use run_preprocessing() docstring for valid ops."
-
-f"Op '{op}' missing required field: '{field}'"
-# hint: f"Add '{field}' key to the op dict."
-
-f"Strategy '{strategy}' not valid for fill_nulls. Allowed: mean median mode ffill bfill zero"
-```
-
-### 12.7 Error Dict Template
+to the MCP layer.
 
 ```python
 def _error(error: str, hint: str, backup: str | None = None) -> dict:
@@ -1374,34 +716,58 @@ def _error(error: str, hint: str, backup: str | None = None) -> dict:
     return base
 ```
 
+### Standard error messages
+
+```python
+# File errors
+f"File not found: {file_path}"
+# hint: "Check that file_path is absolute and the CSV file exists."
+
+# Column errors
+f"Column '{name}' not found. Available: {', '.join(columns[:10])}"
+# hint: "Use inspect_dataset() to list all column names."
+
+# Data quality
+f"Dataset has {rows} rows but need at least {min_rows} to train reliably."
+# hint: "Provide a dataset with more samples before training."
+
+# Model errors
+f"Model file not found: {model_path}"
+# hint: "Use train_classifier() or train_regressor() to train a model first."
+
+# Algorithm errors
+f"Unknown algorithm: '{model}'. Allowed: {', '.join(ALLOWED_CLASSIFIERS)}"
+# hint: "Use one of: lr svm rf dtc knn nb xgb"
+
+# Resource errors
+f"Insufficient RAM: need ~{required_gb:.1f} GB, available ~{available_gb:.1f} GB."
+# hint: "Use read_rows() to sample a subset, or increase available memory."
+```
+
+Never use bare `except: pass`. Every `except` block must return an error dict.
 
 ---
 
 ## 17. Model Persistence and Versioning
 
-### 13.1 Model Storage Layout
+### Storage Layout
 
 ```
 {dataset_dir}/
-├── customer_churn.csv
-├── customer_churn.csv.mcp_state.json       # companion state
-├── customer_churn.csv.mcp_receipt.json     # operation receipt log
-│
+├── dataset.csv
+├── dataset.csv.mcp_state.json
+├── dataset.csv.mcp_receipt.json
 ├── .mcp_models/
-│   ├── customer_churn_rf_2026-04-06T10-30-00Z.pkl
-│   ├── customer_churn_rf_2026-04-06T10-30-00Z.manifest.json
-│   └── customer_churn_xgb_2026-04-06T11-00-00Z.pkl
-│
+│   ├── dataset_rf_2026-04-06T10-30-00Z.pkl
+│   └── dataset_rf_2026-04-06T10-30-00Z.manifest.json
 └── .mcp_versions/
-    ├── customer_churn_2026-04-06T09-00-00Z.csv.bak
-    └── customer_churn_rf_2026-04-05T14-00-00Z.pkl.bak
+    └── dataset_2026-04-06T09-00-00Z.csv.bak
 ```
 
-### 13.2 Pickle Saving Pattern
+### Pickle Saving Pattern
 
 ```python
 import pickle, tempfile, shutil
-from pathlib import Path
 
 def _save_model(model, path: Path, metadata: dict) -> None:
     payload = {"model": model, "metadata": metadata}
@@ -1410,12 +776,10 @@ def _save_model(model, path: Path, metadata: dict) -> None:
         pickle.dump(payload, tmp)
         tmp_path = tmp.name
     shutil.move(tmp_path, path)
-    # Write manifest alongside
-    manifest_path = path.with_suffix(".manifest.json")
-    manifest_path.write_text(json.dumps(metadata, indent=2))
+    path.with_suffix(".manifest.json").write_text(json.dumps(metadata, indent=2))
 ```
 
-### 13.3 Model Metadata (stored in pkl payload AND manifest.json)
+### Model Metadata (stored in pkl payload AND manifest.json)
 
 ```python
 metadata = {
@@ -1425,33 +789,19 @@ metadata = {
     "training_date": datetime.now(timezone.utc).isoformat(),
     "feature_columns": feature_columns,
     "target_column": target_column,
-    "encoding_map": encoding_map,          # {column_name: {original: encoded}}
-    "scaler": scaler_obj_or_None,          # embedded scaler if used
+    "encoding_map": encoding_map,
+    "scaler": scaler_obj_or_None,
     "metrics": metrics_dict,
     "python_version": sys.version,
     "sklearn_version": sklearn.__version__,
 }
 ```
 
-### 13.4 Loading Models for Prediction
-
-```python
-def _load_model(model_path: str) -> tuple[object, dict]:
-    path = resolve_path(model_path)
-    if not path.exists():
-        raise FileNotFoundError(f"Model file not found: {model_path}")
-    with open(path, "rb") as f:
-        payload = pickle.load(f)
-    return payload["model"], payload["metadata"]
-```
-
 ---
 
 ## 18. Hardware and Resource Constraints
 
-### 14.1 RAM Check Before Heavy Operations
-
-Always check before loading large datasets or training memory-intensive models:
+### RAM Check Before Heavy Operations
 
 ```python
 import psutil
@@ -1468,12 +818,9 @@ def check_memory(required_gb: float) -> dict | None:
     return None
 ```
 
-### 14.2 Constrained Mode Limits
+### Constrained Mode Limits
 
-Set `MCP_CONSTRAINED_MODE=1` on machines with ≤ 8 GB VRAM. The installer sets
-this automatically.
-
-| Resource | Standard | Constrained (≤8 GB VRAM) |
+| Resource | Standard | Constrained (`MCP_CONSTRAINED_MODE=1`) |
 |---|---|---|
 | Max rows returned per call | 100 | 20 |
 | Max search results | 50 | 10 |
@@ -1484,24 +831,20 @@ this automatically.
 | tune_hyperparameters cv | 5 | 3 |
 | tune_hyperparameters n_iter | 10 | 5 |
 
-### 14.3 ML Hardware Reference
+### Recommended Loading by Available RAM
 
-| VRAM | Recommended model | Max simultaneous tools | Tier recommendation |
-|---|---|---|---|
-| 4–6 GB | 3–7B models | 6 | ml_basic only |
-| 8 GB | 9B models (Q3/Q4) | 12 | ml_basic + ml_medium |
-| 12–16 GB | 14B models | 16 | all three tiers |
-| 24 GB+ | 32B models | 20 | all three tiers |
-
-Do not load ml_advanced alongside ml_basic + ml_medium on 8 GB VRAM.
-
+| Available RAM | Recommended load | Total tools |
+|---|---|---|
+| 4–8 GB | ml-basic only | 11 |
+| 8–16 GB | ml-basic + ml-medium | 25 |
+| 16 GB+ | all three tiers | 35 |
 
 ---
 
 ## 19. Shared Module Contracts
 
-Every shared module must be implemented exactly as specified. Do not modify
-interfaces — add new functions instead.
+Every shared module must be implemented exactly as specified. Add new functions
+rather than modifying existing interfaces.
 
 ### shared/version_control.py
 
@@ -1513,7 +856,7 @@ def restore_version(file_path: str, timestamp: str = "") -> dict:
     """Restore from snapshot. Empty timestamp = list available snapshots."""
 
 def list_snapshots(file_path: str) -> list[dict]:
-    """List available snapshots for file. Returns [{timestamp, path, size_kb}]."""
+    """List available snapshots. Returns [{timestamp, path, size_kb}]."""
 ```
 
 ### shared/platform_utils.py
@@ -1558,15 +901,6 @@ def read_receipt_log(file_path: str) -> list[dict]:
 ```python
 def resolve_path(file_path: str, allowed_extensions: tuple[str, ...] = ()) -> Path:
     """Resolve path, enforce home-dir boundary, validate extension."""
-    path = Path(file_path).resolve()
-    home = Path.home().resolve()
-    try:
-        path.relative_to(home)
-    except ValueError:
-        raise ValueError(f"Path outside allowed directory: {file_path}")
-    if allowed_extensions and path.suffix.lower() not in allowed_extensions:
-        raise ValueError(f"Extension {path.suffix!r} not allowed.")
-    return path
 
 def atomic_write_json(path: Path, data: dict) -> None:
     """Write JSON atomically via temp file + rename."""
@@ -1578,6 +912,7 @@ def atomic_write_json(path: Path, data: dict) -> None:
 ALLOWED_PREPROCESSING_OPS = {
     "fill_nulls", "drop_outliers", "label_encode", "onehot_encode",
     "scale", "drop_duplicates", "drop_column", "rename_column", "convert_dtype",
+    "bin_numeric", "add_date_parts", "log_transform", "drop_null_rows", "clip_column",
 }
 
 def validate_ops(ops: list[dict], allowed: set[str]) -> tuple[bool, str]:
@@ -1588,10 +923,9 @@ def validate_ops(ops: list[dict], allowed: set[str]) -> tuple[bool, str]:
 
 ## 20. Testing Standards for ML
 
-### 16.1 Test Engine Directly
+### Test Engine Directly
 
 ```python
-# tests/test_ml_basic.py
 from servers.ml_basic.engine import (
     inspect_dataset, train_classifier, train_regressor,
     get_predictions, restore_version
@@ -1600,38 +934,27 @@ from servers.ml_basic.engine import (
 
 Never start an MCP server process in tests.
 
-### 16.2 Required Fixtures
+### Required Tests Per Tool
 
-| Fixture | Rows | Features | Purpose |
-|---|---|---|---|
-| `classification_simple.csv` | 200 | 5 numeric | Happy path classification |
-| `classification_messy.csv` | 150 | 8 mixed | Nulls, imbalance, categoricals |
-| `regression_simple.csv` | 200 | 5 numeric | Happy path regression |
-| `regression_messy.csv` | 150 | 6 mixed | Outliers, skewed target |
-| `clustering_simple.csv` | 300 | 2 numeric | Clear cluster structure |
-| `large_10k.csv` | 10,000 | 10 mixed | Truncation and memory tests |
-
-### 16.3 Required Tests Per Tool
-
-**Every tool must have:**
+Every tool must have:
 1. `test_{tool}_success` — happy path, `"success": True`
 2. `test_{tool}_file_not_found` — error dict with hint
 3. `test_{tool}_token_estimate_present` — `"token_estimate"` key in response
 4. `test_{tool}_progress_present` — `"progress"` array in success response
 
-**Every write tool must additionally have:**
+Every write tool additionally:
 5. `test_{tool}_snapshot_created` — `.mcp_versions/` has new `.bak` file
-6. `test_{tool}_backup_in_response` — `"backup"` key present in success response
+6. `test_{tool}_backup_in_response` — `"backup"` key in success response
 7. `test_{tool}_dry_run` — `dry_run=True` returns without modifying any file
-8. `test_{tool}_constrained_mode` — set `MCP_CONSTRAINED_MODE=1`, verify limits enforced
+8. `test_{tool}_constrained_mode` — set `MCP_CONSTRAINED_MODE=1`, verify limits
 
-**train_classifier and train_regressor additionally:**
-9. `test_train_insufficient_rows` — < MIN_ROWS returns error dict
-10. `test_train_single_class_target` — 1 unique class value returns error dict
+`train_classifier` and `train_regressor` additionally:
+9. `test_train_insufficient_rows` — `< MIN_ROWS` returns error dict
+10. `test_train_single_class_target` — 1 unique class returns error dict
 11. `test_train_all_algorithms` — parametrize over all model strings
 12. `test_train_model_saved` — `.mcp_models/` has new `.pkl` and `.manifest.json`
 
-### 16.4 Coverage Requirements
+### Coverage Requirements
 
 | Module | Minimum coverage |
 |---|---|
@@ -1639,50 +962,37 @@ Never start an MCP server process in tests.
 | `servers/ml_basic/engine.py` | ≥ 90% |
 | `servers/ml_medium/engine.py` | ≥ 90% |
 | `servers/ml_advanced/engine.py` | ≥ 85% |
-| All error paths documented in §12 | Must be tested |
 
-### 16.5 CI Configuration
+### CI Configuration
 
 ```yaml
-# .github/workflows/test.yml
-jobs:
-  test:
-    strategy:
-      matrix:
-        os: [ubuntu-22.04, windows-latest, macos-13]
-    env:
-      MCP_CONSTRAINED_MODE: "1"
-      PYTHONPATH: "."          # required so shared/ imports resolve from repo root
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
-      - run: uv sync --frozen
-      - run: uv run ruff check .
-      - run: uv run ruff format --check .
-      - run: uv run pyright servers/ shared/   # covers engine sub-modules too
-      - run: uv run pytest tests/ --cov=servers --cov=shared --cov-fail-under=90
-      - run: python verify_tool_docstrings.py
+# .github/workflows/ci.yml
+env:
+  MCP_CONSTRAINED_MODE: "1"
+  PYTHONPATH: "."
+steps:
+  - run: uv sync --frozen
+  - run: uv run ruff check .
+  - run: uv run ruff format --check .
+  - run: uv run pyright servers/ shared/
+  - run: uv run pytest tests/ --cov=servers --cov=shared --cov-fail-under=90
+  - run: python verify_tool_docstrings.py
 ```
-
 
 ---
 
 ## 21. What the AI Must Never Do
 
-These are absolute prohibitions. Any generated code that violates them is a defect
-and must be corrected immediately.
-
 ### Protocol Violations
 
 1. **Never print to stdout in any engine or server module.**
-   `print()` corrupts the MCP stdio channel. Use `logger.debug()` to stderr only.
+   Use `logger.debug()` to stderr only.
 
 2. **Never return a plain string, list, None, or boolean from a tool.**
    Every tool returns a `dict` with `"success"` as the first key.
 
 3. **Never put domain logic in server.py.**
-   Tool bodies in `server.py` are single-line calls to `engine.py`. If you write
-   more than two lines in a `@mcp.tool()` function body, you are doing it wrong.
+   Tool bodies in `server.py` are single-line calls to `engine.py`.
 
 4. **Never import MCP modules in engine.py.**
    `from mcp import ...` and `from fastmcp import ...` are forbidden in engine files.
@@ -1690,168 +1000,54 @@ and must be corrected immediately.
 ### Data Safety Violations
 
 5. **Never write to any file without calling `snapshot()` first.**
-   This includes model saves, dataset modifications, and output file writes.
    No exceptions for "small changes".
 
 6. **Never swallow exceptions silently.**
-   Every `except` block must return an error dict with `"success": False`, `"error"`,
-   and `"hint"`. Never use bare `except: pass`.
+   Every `except` block must return `{"success": False, "error": ..., "hint": ...}`.
 
 7. **Never return raw DataFrames, model weight arrays, or full prediction arrays.**
    Return paths, metrics, and summaries. Bounded lists of row dicts are permitted
    within `get_max_rows()` limits.
 
 8. **Never return a raw numpy confusion matrix array.**
-   Convert to a named dict (`{"TP": n, ...}` for binary or per-class dicts for
-   multiclass) before returning.
+   Convert to a named dict before returning.
 
 ### Architecture Violations
 
-9. **Never exceed 10 tools in a single server.**
-   ml_basic: 8, ml_medium: 6, ml_advanced: 5. Exceeding this requires a new tier.
+9. **Never hardcode row/result limits as magic numbers.**
+   Always call `get_max_rows()`, `get_max_results()`, `get_max_columns()`.
 
-10. **Never hardcode row/result limits as magic numbers.**
-    Always call `get_max_rows()`, `get_max_results()`, `get_max_columns()` from
-    `shared/platform_utils.py`.
-
-11. **Never use string concatenation for file paths.**
+10. **Never use string concatenation for file paths.**
     Always use `pathlib.Path / operator` or `resolve_path()`.
 
-12. **Never combine LOCATE + INSPECT or INSPECT + PATCH in one tool.**
-    The four-tool pattern separation is mandatory. One operation per tool.
+11. **Never combine LOCATE + INSPECT or INSPECT + PATCH in one tool.**
+    The four-tool pattern separation is mandatory.
 
 ### ML-Specific Violations
 
-13. **Never call a cloud ML API as the primary execution engine.**
-    No boto3 for SageMaker, no google-cloud-aiplatform, no Azure ML SDK calls
-    for model training. Use scikit-learn and XGBoost locally.
+12. **Never call a cloud ML API as the primary execution engine.**
+    Use scikit-learn and XGBoost locally.
 
-14. **Never save a model without its `.manifest.json` companion.**
+13. **Never save a model without its `.manifest.json` companion.**
     Every `.pkl` file must have a corresponding `.manifest.json` written atomically.
 
-15. **Never use `Optional[T]`, `Union[T, S]`, `Any`, or `dict` without type
+14. **Never use `Optional[T]`, `Union[T, S]`, `Any`, or bare `dict` without type
     parameters in tool function signatures.**
-    Use `T = None`, split tools, or use `str` with enum values in docstring.
 
-16. **Never write a tool docstring longer than 80 characters.**
-    CI will fail. Run `verify_tool_docstrings.py` before committing.
+15. **Never write a tool docstring longer than 80 characters.**
+    `verify_tool_docstrings.py` enforces this.
 
-17. **Never train a model without first validating minimum row count and
-    target column cardinality.**
-    Guard clauses must come before any pandas or sklearn operations.
+16. **Never train a model without validating minimum row count and target column
+    cardinality first.**
 
-18. **Never return the full `cv_results_` dict from GridSearchCV.**
-    Cap to top 20 rows sorted by score. The full dict can contain thousands of
-    entries and will overflow the context window.
+17. **Never return the full `cv_results_` dict from GridSearchCV.**
+    Cap to top 20 rows sorted by score.
 
-19. **Never use `eval()` or `exec()` on any user-provided input.**
-    Parse expressions with AST and an operation allowlist. No exceptions.
+18. **Never use `eval()` or `exec()` on any user-provided input.**
 
-20. **Never pass user-provided strings into subprocess calls with `shell=True`.**
-    Always use an argument list, `shell=False`, `capture_output=True`, and
-    `timeout`. Shell injection is a real risk even in local tools.
+19. **Never pass user-provided strings into subprocess calls with `shell=True`.**
 
-21. **Never use raw `file_path` strings from tool parameters without calling
-    `resolve_path()` first.**
-    Path traversal attacks work against local tools. Validate every path against
-    the user's home directory before any I/O.
+20. **Never use raw `file_path` strings without calling `resolve_path()` first.**
 
-22. **Never mix async and sync tool definitions without verifying FastMCP
-    version compatibility.**
-    Either all tools are sync or you have a fully async-aware server setup.
-    Never return `None` from an async tool — all code paths must return a dict.
-
-23. **Never import heavy libraries (sklearn, xgboost, ydata_profiling) at
-    module level in sub-modules.**
-    Use lazy imports inside functions. This avoids paying the full import cost
-    when the server loads for tools that don't need those libraries.
-
----
-
-## 22. Progress Tracker
-
-Track implementation progress here. Update checkboxes as work completes.
-
-### Phase 0 — Shared Infrastructure
-- [x] `shared/__init__.py`
-- [x] `shared/version_control.py` — snapshot / restore / list
-- [x] `shared/patch_validator.py` — validate_ops + ALLOWED_PREPROCESSING_OPS
-- [x] `shared/file_utils.py` — resolve_path (with home-dir boundary check) / atomic_write_json
-- [x] `shared/platform_utils.py` — all constrained mode helpers
-- [x] `shared/progress.py` — ok / fail / info / warn / undo
-- [x] `shared/receipt.py` — append_receipt / read_receipt_log
-- [x] Unit tests for all shared modules (100% coverage)
-- [x] `resolve_path()` rejects paths outside home directory (security test)
-
-### Phase 1 — ml_basic (Tier 1)
-- [x] `servers/ml_basic/__init__.py`
-- [x] `servers/ml_basic/pyproject.toml` — `requires-python = ">=3.12"`, `fastmcp>=2.0,<3.0`
-- [x] `servers/ml_basic/engine.py` — inspect_dataset
-- [x] `servers/ml_basic/engine.py` — read_column_profile
-- [x] `servers/ml_basic/engine.py` — search_columns
-- [x] `servers/ml_basic/engine.py` — read_rows
-- [x] `servers/ml_basic/engine.py` — train_classifier (all 7 algorithms)
-- [x] `servers/ml_basic/engine.py` — train_regressor (all 7 algorithms)
-- [x] `servers/ml_basic/engine.py` — get_predictions
-- [x] `servers/ml_basic/engine.py` — restore_version
-- [x] `servers/ml_basic/server.py` — all @mcp.tool() wrappers with annotations
-- [x] `tests/fixtures/` — all 6 fixture CSVs
-- [x] `tests/test_ml_basic.py` — all required tests (§16.3)
-- [x] `uv run pytest tests/test_ml_basic.py` — all pass
-- [x] `uv run pyright servers/ml_basic/` — no errors (pyrightconfig.json)
-- [x] `verify_tool_docstrings.py` — all ≤ 80 chars
-- [ ] Manual test in LM Studio (9B model) — four-tool loop works
-
-### Phase 2 — ml_medium (Tier 2)
-- [x] `servers/ml_medium/__init__.py`
-- [x] `servers/ml_medium/pyproject.toml` — `requires-python = ">=3.12"`, `fastmcp>=2.0,<3.0`
-- [x] `servers/ml_medium/engine.py` — run_preprocessing + all ops
-- [x] `servers/ml_medium/engine.py` — detect_outliers (IQR + std)
-- [x] `servers/ml_medium/engine.py` — train_with_cv
-- [x] `servers/ml_medium/engine.py` — compare_models
-- [x] `servers/ml_medium/engine.py` — run_clustering (3 algorithms)
-- [x] `servers/ml_medium/engine.py` — read_receipt
-- [x] `servers/ml_medium/server.py` — all @mcp.tool() wrappers with annotations
-- [x] `tests/test_ml_medium.py` — all required tests
-- [x] `uv run pytest tests/test_ml_medium.py` — all pass
-- [ ] Manual test: ml_basic + ml_medium loaded together
-
-### Phase 3 — ml_advanced (Tier 3)
-- [x] `servers/ml_advanced/__init__.py`
-- [x] `servers/ml_advanced/pyproject.toml` — `requires-python = ">=3.12"`, `fastmcp>=2.0,<3.0`
-- [x] Sub-modules: `_adv_helpers.py` (train/eval), `_adv_viz.py` (report/chart generation)
-- [x] All heavy imports (sklearn, xgboost, ydata_profiling) are lazy (inside functions)
-- [x] `servers/ml_advanced/engine.py` — tune_hyperparameters (grid + random)
-- [x] `servers/ml_advanced/engine.py` — export_model + manifest
-- [x] `servers/ml_advanced/engine.py` — read_model_report
-- [x] `servers/ml_advanced/engine.py` — run_profiling_report
-- [x] `servers/ml_advanced/engine.py` — apply_dimensionality_reduction
-- [x] `servers/ml_advanced/server.py` — all @mcp.tool() wrappers with annotations
-- [x] `tests/test_ml_advanced.py` — all required tests
-- [x] `uv run pytest tests/test_ml_advanced.py` — all pass
-
-### Phase 4 — Installation and Distribution
-- [x] `install/install.sh` — Python 3.12 check, uv sync, VRAM detection, client config
-- [x] `install/install.bat` — Windows equivalent
-- [x] `install/mcp_config_writer.py` — LM Studio / Claude Desktop / Cursor / Windsurf
-- [x] `root pyproject.toml` — workspace with all three server members
-- [x] `uv.lock` committed
-- [x] `.python-version` = `3.12`
-- [x] `.gitattributes` — `* text=auto eol=lf`
-- [x] `.editorconfig` — consistent editor settings
-- [ ] Test install on clean machine / VM
-
-### Phase 5 — CI/CD
-- [x] `.github/workflows/ci.yml` — matrix: ubuntu + windows + macos
-- [x] `PYTHONPATH: "."` set in CI env so `shared/` imports resolve correctly
-- [x] `verify_tool_docstrings.py` — ≤ 80 char enforcement
-- [x] `MCP_CONSTRAINED_MODE=1` enforced in CI environment
-- [x] `pyright` covers all engine sub-modules (pyrightconfig.json — 0 errors)
-- [ ] All CI checks passing on all three platforms (pending remote run)
-
-### Phase 6 — Documentation
-- [x] `README.md` — full required sections
-- [x] Hardware sovereignty statement in README
-- [x] Tool reference table in README
-- [x] Usage examples showing four-tool loop for classification and regression
-
+21. **Never import heavy libraries (sklearn, xgboost, ydata_profiling) at module
+    level in sub-modules.** Use lazy imports inside functions.
