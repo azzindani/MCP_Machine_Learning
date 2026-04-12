@@ -4,14 +4,15 @@ plot_predictions_vs_actual, generate_cluster_report."""
 from __future__ import annotations
 
 import pickle
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
-from shared.file_utils import get_output_dir, resolve_path
-from shared.html_theme import get_theme, plotly_template, save_chart
+from shared.file_utils import atomic_write_text
+from shared.html_theme import apply_fig_theme, calc_chart_height, get_theme, plotly_template
 from shared.progress import info, ok
+
+from ._adv_helpers import _save_chart, get_output_path, resolve_path
 
 # ---------------------------------------------------------------------------
 # plot_roc_curve
@@ -21,9 +22,9 @@ from shared.progress import info, ok
 def plot_roc_curve(
     model_path: str,
     file_path: str,
-    theme: str = "light",
+    theme: str = "dark",
     output_path: str = "",
-    open_browser: bool = True,
+    open_after: bool = True,
     dry_run: bool = False,
 ) -> dict:
     """Plot ROC curve for a classifier model. Saves interactive HTML."""
@@ -203,18 +204,18 @@ def plot_roc_curve(
             yaxis_title="True Positive Rate",
             legend=dict(x=0.6, y=0.1),
             template=tmpl,
+            height=calc_chart_height(450, mode="fixed"),
+            margin=dict(l=10, r=10, t=50, b=10),
         )
 
-        out_path_str = output_path or str(get_output_dir() / f"{dp.stem}_roc_curve.html")
-        out_abs, out_name = save_chart(
-            fig, out_path_str, theme=theme, open_browser=open_browser, title=f"ROC Curve — {mp.stem}"
-        )
+        out_abs, out_name = _save_chart(fig, output_path, "roc_curve", dp, open_after, theme)
         progress.append(ok("Saved ROC curve", out_name))
 
         resp = {
             "success": True,
             "op": "plot_roc_curve",
             "output_path": out_abs,
+            "output_name": out_name,
             "auc_scores": auc_scores,
             "n_classes": n_classes,
             "progress": progress,
@@ -243,9 +244,9 @@ def plot_learning_curve(
     model: str,
     task: str,
     cv: int = 5,
-    theme: str = "light",
+    theme: str = "dark",
     output_path: str = "",
-    open_browser: bool = True,
+    open_after: bool = True,
     dry_run: bool = False,
 ) -> dict:
     """Plot learning curve (train vs val score vs training size). HTML output."""
@@ -369,18 +370,18 @@ def plot_learning_curve(
             xaxis_title="Training Examples",
             yaxis_title=scoring.upper(),
             template=tmpl,
+            height=calc_chart_height(450, mode="fixed"),
+            margin=dict(l=10, r=10, t=50, b=10),
         )
 
-        out_path_str = output_path or str(get_output_dir() / f"{dp.stem}_{model}_learning_curve.html")
-        out_abs, out_name = save_chart(
-            fig, out_path_str, theme=theme, open_browser=open_browser, title=f"Learning Curve — {model}"
-        )
+        out_abs, out_name = _save_chart(fig, output_path, f"{model}_learning_curve", dp, open_after, theme)
         progress.append(ok("Saved learning curve", out_name))
 
         resp = {
             "success": True,
             "op": "plot_learning_curve",
             "output_path": out_abs,
+            "output_name": out_name,
             "final_train_score": round(float(train_mean[-1]), 4),
             "final_val_score": round(float(val_mean[-1]), 4),
             "scoring": scoring,
@@ -407,9 +408,9 @@ def plot_learning_curve(
 def plot_predictions_vs_actual(
     model_path: str,
     file_path: str,
-    theme: str = "light",
+    theme: str = "dark",
     output_path: str = "",
-    open_browser: bool = True,
+    open_after: bool = True,
     dry_run: bool = False,
 ) -> dict:
     """Scatter plot of predicted vs actual values for regression. HTML."""
@@ -542,18 +543,18 @@ def plot_predictions_vs_actual(
             xaxis_title="Actual",
             yaxis_title="Predicted",
             template=tmpl,
+            height=calc_chart_height(450, mode="fixed"),
+            margin=dict(l=10, r=10, t=50, b=10),
         )
 
-        out_path_str = output_path or str(get_output_dir() / f"{dp.stem}_pred_vs_actual.html")
-        out_abs, out_name = save_chart(
-            fig, out_path_str, theme=theme, open_browser=open_browser, title="Predictions vs Actual"
-        )
+        out_abs, out_name = _save_chart(fig, output_path, "pred_vs_actual", dp, open_after, theme)
         progress.append(ok("Saved chart", out_name))
 
         resp = {
             "success": True,
             "op": "plot_predictions_vs_actual",
             "output_path": out_abs,
+            "output_name": out_name,
             "metrics": {"mse": round(mse, 4), "rmse": round(rmse, 4), "r2": round(r2, 4)},
             "n_points": len(y_true),
             "progress": progress,
@@ -580,9 +581,9 @@ def generate_cluster_report(
     file_path: str,
     feature_columns: list[str],
     label_column: str,
-    theme: str = "light",
+    theme: str = "dark",
     output_path: str = "",
-    open_browser: bool = True,
+    open_after: bool = True,
     dry_run: bool = False,
 ) -> dict:
     """Generate HTML cluster visualization report with scatter and profile."""
@@ -716,11 +717,12 @@ def generate_cluster_report(
                 title=f"PCA Scatter — {explained[0] * 100:.1f}%/{explained[1] * 100:.1f}% variance{scat_note}",
                 template=tmpl,
             )
+            apply_fig_theme(fig_scatter, theme)
             sections.append(
                 {
                     "id": "scatter",
                     "heading": "PCA Cluster Scatter",
-                    "html": plotly_div(fig_scatter, height=450),
+                    "html": plotly_div(fig_scatter, height=480, theme=theme),
                 }
             )
             progress.append(ok("PCA scatter", f"var explained: {sum(explained) * 100:.1f}%"))
@@ -754,45 +756,49 @@ def generate_cluster_report(
                 marker=dict(color=bar_y, colorscale="Blues", reversescale=False),
             )
         )
+        bar_h = calc_chart_height(len(bar_x), mode="bar", extra_base=40)
         fig_bar.update_layout(
             title="Cluster Sizes",
             xaxis_title="Cluster",
             yaxis_title="Count",
             xaxis=dict(categoryorder="array", categoryarray=bar_x),
             template=tmpl,
+            height=bar_h,
+            margin=dict(l=10, r=10, t=50, b=10),
         )
+        apply_fig_theme(fig_bar, theme)
         sections.append(
             {
                 "id": "size_chart",
                 "heading": "Cluster Size Chart",
-                "html": plotly_div(fig_bar, height=300),
+                "html": plotly_div(fig_bar, height=bar_h, theme=theme),
             }
         )
 
-        out_path_str = output_path or str(get_output_dir() / f"{dp.stem}_cluster_report.html")
         html = build_html_report(
             title=f"Cluster Report — {dp.name}",
             subtitle="",
             sections=sections,
             theme=theme,
-            open_browser=False,
+            open_after=False,
             output_path="",
             sidebar_title="Cluster Report",
             sidebar_meta=f"{dp.name}<br>Clusters: {n_clusters} &middot; Samples: {len(df):,}",
         )
 
-        out = Path(out_path_str).resolve()
+        out = get_output_path(output_path, dp, "cluster_report", "html")
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(html, encoding="utf-8")
+        atomic_write_text(out, html)
         progress.append(ok("Saved cluster report", out.name))
 
-        if open_browser:
+        if open_after:
             _open_file(out)
 
         resp = {
             "success": True,
             "op": "generate_cluster_report",
             "output_path": str(out),
+            "output_name": out.name,
             "n_clusters": n_clusters,
             "n_samples": len(df),
             "sections_generated": len(sections),

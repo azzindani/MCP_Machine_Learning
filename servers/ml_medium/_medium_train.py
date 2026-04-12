@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json as json_module
 import pickle
 import shutil
 import tempfile
@@ -11,6 +10,8 @@ from datetime import UTC, datetime
 import numpy as np
 import pandas as pd
 import sklearn
+
+from shared.file_utils import atomic_write_json
 
 from ._medium_helpers import (
     ALLOWED_CLASSIFIERS,
@@ -211,7 +212,7 @@ def train_with_cv(
         pickle.dump(payload, tmp)
         tmp_path = tmp.name
     shutil.move(tmp_path, model_path)
-    manifest_path.write_text(json_module.dumps(metadata, indent=2))
+    atomic_write_json(manifest_path, metadata)
     progress.append(ok("Saved best model", model_path.name))
 
     append_receipt(str(path), "train_with_cv", {"model": model, "task": task, "n_splits": n_splits}, "success", backup)
@@ -372,7 +373,7 @@ def compare_models(
             pickle.dump(payload, tmp)
             tmp_path = tmp.name
         shutil.move(tmp_path, mp)
-        mp.with_suffix(".manifest.json").write_text(json_module.dumps(metadata, indent=2))
+        atomic_write_json(mp.with_suffix(".manifest.json"), metadata)
         best_model_path = str(mp)
         progress.append(ok("Saved best model", mp.name))
 

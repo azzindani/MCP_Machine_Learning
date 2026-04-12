@@ -155,13 +155,13 @@ def read_receipt(file_path: str) -> dict:
 def generate_eda_report(
     file_path: str,
     target_column: str = "",
-    theme: str = "light",
+    theme: str = "dark",
     output_path: str = "",
-    open_browser: bool = True,
+    open_after: bool = True,
     dry_run: bool = False,
 ) -> dict:
     """Generate interactive HTML EDA report. theme: light dark."""
-    return engine.generate_eda_report(file_path, target_column, theme, output_path, open_browser, dry_run)
+    return engine.generate_eda_report(file_path, target_column, theme, output_path, open_after, dry_run)
 
 
 @mcp.tool(
@@ -216,12 +216,12 @@ def find_optimal_clusters(
     file_path: str,
     feature_columns: list[str],
     max_k: int = 10,
-    theme: str = "light",
+    theme: str = "dark",
     output_path: str = "",
-    open_browser: bool = True,
+    open_after: bool = True,
 ) -> dict:
     """Find optimal K via elbow + silhouette. Saves HTML chart."""
-    return engine.find_optimal_clusters(file_path, feature_columns, max_k, theme, output_path, open_browser)
+    return engine.find_optimal_clusters(file_path, feature_columns, max_k, theme, output_path, open_after)
 
 
 @mcp.tool(

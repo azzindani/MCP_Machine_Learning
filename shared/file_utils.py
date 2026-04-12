@@ -6,6 +6,7 @@ including paths on different drives (e.g. D:\\ on Windows).
 """
 
 import json
+import os
 import shutil
 import tempfile
 from pathlib import Path
@@ -44,13 +45,46 @@ def resolve_path(
     return path
 
 
+def get_default_output_dir(input_path: str | None = None) -> Path:
+    """Return default output dir: input file's parent if provided, else ~/Downloads."""
+    if input_path:
+        p = Path(input_path).resolve()
+        if p.parent.exists():
+            return p.parent
+    return Path.home() / "Downloads"
+
+
+def atomic_write(target: Path, content: bytes) -> None:
+    """Write bytes to target atomically via temp file + move."""
+    fd, tmp_path = tempfile.mkstemp(dir=target.parent)
+    try:
+        with os.fdopen(fd, "wb") as f:
+            f.write(content)
+        shutil.move(tmp_path, str(target))
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
+def atomic_write_text(target: Path, content: str, encoding: str = "utf-8") -> None:
+    """Write text to target atomically."""
+    atomic_write(target, content.encode(encoding))
+
+
 def get_output_dir() -> Path:
     """Return the standard output directory for generated files.
 
-    All generated outputs (models, HTML reports, charts, exported CSVs,
-    predictions) are saved directly to ~/Downloads/. The directory is
-    created automatically if it does not exist.
+    Checks MCP_OUTPUT_DIR env var first (used in tests to redirect to tmp_path),
+    then falls back to ~/Downloads/. The directory is created automatically.
     """
+    override = os.environ.get("MCP_OUTPUT_DIR")
+    if override:
+        out = Path(override)
+        out.mkdir(parents=True, exist_ok=True)
+        return out
     out = Path.home() / "Downloads"
     out.mkdir(parents=True, exist_ok=True)
     return out

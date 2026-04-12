@@ -38,7 +38,7 @@ from sklearn.preprocessing import (
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
-from shared.file_utils import get_output_dir, resolve_path
+from shared.file_utils import atomic_write_json, get_output_dir, resolve_path
 from shared.platform_utils import get_max_columns, get_max_results, get_max_rows
 from shared.progress import info, ok
 from shared.progress import name as pname
@@ -76,7 +76,7 @@ def _check_memory(required_gb: float) -> dict | None:
 
 
 def _error(error: str, hint: str, backup: str | None = None) -> dict:
-    base: dict = {"success": False, "error": error, "hint": hint}
+    base: dict = {"success": False, "error": error, "hint": hint, "progress": []}
     if backup:
         base["backup"] = backup
     base["token_estimate"] = len(str(base)) // 4
@@ -142,7 +142,7 @@ def _save_model(model: Any, path: Path, metadata: dict) -> None:
         tmp_path = tmp.name
     shutil.move(tmp_path, str(path))
     manifest_path = path.with_suffix(".manifest.json")
-    manifest_path.write_text(json.dumps(metadata, indent=2, default=str), encoding="utf-8")
+    atomic_write_json(manifest_path, metadata)
 
 
 def _load_model(model_path: str) -> tuple[Any, dict]:

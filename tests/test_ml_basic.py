@@ -386,6 +386,13 @@ def test_get_predictions_progress_present(classification_simple):
 # ============================================================
 
 
+def test_restore_version_file_not_found(tmp_path):
+    # Listing snapshots for a non-existent file returns success + empty list (no snapshots)
+    r = restore_version(str(tmp_path / "nonexistent.csv"))
+    assert "success" in r
+    assert "snapshots" in r or "error" in r
+
+
 def test_restore_version_list_when_no_timestamp(classification_simple):
     r = restore_version(classification_simple)
     assert r["success"] is True

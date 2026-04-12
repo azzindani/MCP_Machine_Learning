@@ -8,23 +8,38 @@ from pathlib import Path
 
 
 def ok(msg: str, detail: str = "") -> dict:
-    return {"icon": "✔", "msg": msg, "detail": detail}
+    entry: dict = {"status": "ok", "message": msg}
+    if detail:
+        entry["detail"] = detail
+    return entry
 
 
 def fail(msg: str, detail: str = "") -> dict:
-    return {"icon": "✘", "msg": msg, "detail": detail}
+    entry: dict = {"status": "fail", "message": msg}
+    if detail:
+        entry["detail"] = detail
+    return entry
 
 
 def info(msg: str, detail: str = "") -> dict:
-    return {"icon": "→", "msg": msg, "detail": detail}
+    entry: dict = {"status": "info", "message": msg}
+    if detail:
+        entry["detail"] = detail
+    return entry
 
 
 def warn(msg: str, detail: str = "") -> dict:
-    return {"icon": "⚠", "msg": msg, "detail": detail}
+    entry: dict = {"status": "warn", "message": msg}
+    if detail:
+        entry["detail"] = detail
+    return entry
 
 
 def undo(msg: str, detail: str = "") -> dict:
-    return {"icon": "↩", "msg": msg, "detail": detail}
+    entry: dict = {"status": "undo", "message": msg}
+    if detail:
+        entry["detail"] = detail
+    return entry
 
 
 def name(path: str) -> str:

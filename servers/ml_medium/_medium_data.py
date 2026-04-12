@@ -10,6 +10,7 @@ import pandas as pd
 
 from ._medium_helpers import (
     _error,
+    _save_chart,
     append_receipt,
     get_output_dir,
     info,
@@ -263,9 +264,9 @@ def find_optimal_clusters(
     file_path: str,
     feature_columns: list[str],
     max_k: int = 10,
-    theme: str = "light",
+    theme: str = "dark",
     output_path: str = "",
-    open_browser: bool = True,
+    open_after: bool = True,
 ) -> dict:
     """Find optimal K for K-Means via elbow + silhouette. Saves HTML chart."""
     import plotly.graph_objects as go
@@ -274,7 +275,7 @@ def find_optimal_clusters(
     from sklearn.cluster import MiniBatchKMeans as _MBKMeans
     from sklearn.metrics import silhouette_score
 
-    from shared.html_theme import get_theme, plotly_template, save_chart
+    from shared.html_theme import calc_chart_height, get_theme, plotly_template
 
     progress: list[dict] = []
     try:
@@ -342,14 +343,11 @@ def find_optimal_clusters(
     fig.update_layout(
         title=f"Optimal Clusters for {path.name}",
         template=tmpl,
-        height=420,
+        height=calc_chart_height(420, mode="fixed"),
         margin=dict(l=10, r=10, t=50, b=10),
     )
 
-    out_str = output_path or str(get_output_dir() / f"{path.stem}_optimal_k.html")
-    out_abs, out_name = save_chart(
-        fig, out_str, theme=theme, open_browser=open_browser, title=f"Optimal Clusters — {path.name}"
-    )
+    out_abs, out_name = _save_chart(fig, output_path, "optimal_k", path, open_after, theme)
     progress.append(ok("Saved elbow chart", out_name))
 
     resp: dict = {
@@ -360,6 +358,7 @@ def find_optimal_clusters(
         "inertias": [round(v, 2) for v in inertias],
         "silhouette_scores": [round(v, 4) for v in silhouettes],
         "output_path": out_abs,
+        "output_name": out_name,
         "progress": progress,
         "token_estimate": 0,
     }
