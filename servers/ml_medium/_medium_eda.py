@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pandas as pd
+
+from shared.file_utils import atomic_write_text
 
 from ._medium_helpers import (
     _error,
     append_receipt,
-    get_output_dir,
+    get_output_path,
     ok,
     resolve_path,
 )
@@ -240,9 +240,9 @@ def _quality_score_html(score: float, alerts: list[dict], t: dict) -> str:
 def generate_eda_report(
     file_path: str,
     target_column: str = "",
-    theme: str = "light",
+    theme: str = "dark",
     output_path: str = "",
-    open_browser: bool = True,
+    open_after: bool = True,
     dry_run: bool = False,
 ) -> dict:
     """Generate interactive HTML EDA report with Plotly charts."""
@@ -252,7 +252,9 @@ def generate_eda_report(
 
     from shared.html_theme import (
         _open_file,
+        apply_fig_theme,
         build_html_report,
+        calc_chart_height,
         data_table_html,
         get_theme,
         metrics_cards_html,
@@ -270,11 +272,7 @@ def generate_eda_report(
     if path.suffix.lower() != ".csv":
         return _error(f"Expected .csv file, got {path.suffix!r}", "Provide a CSV file path.")
 
-    out_path_str = output_path or str(get_output_dir() / f"{path.stem}_eda_report.html")
-    try:
-        out_path = resolve_path(out_path_str)
-    except ValueError:
-        out_path = Path(out_path_str)
+    out_path = get_output_path(output_path, path, "eda_report", "html")
 
     try:
         df = pd.read_csv(path, low_memory=False)
@@ -350,16 +348,18 @@ def generate_eda_report(
             color_continuous_scale="Reds",
         )
         fig_miss.update_coloraxes(colorbar_title="% Missing")
+        miss_h = calc_chart_height(len(null_series), mode="bar", extra_base=30)
         fig_miss.update_layout(
             yaxis=dict(autorange="reversed"),
-            height=max(300, len(null_series) * 30 + 80),
+            height=miss_h,
             margin=dict(l=10, r=10, t=40, b=10),
         )
+        apply_fig_theme(fig_miss, theme)
         sections.append(
             {
                 "id": "missing",
                 "heading": "Missing Values",
-                "html": plotly_div(fig_miss, height=max(300, len(null_series) * 30 + 80)),
+                "html": plotly_div(fig_miss, height=miss_h, theme=theme),
             }
         )
         progress.append(ok("Missing values chart", f"{len(null_series)} cols affected"))
@@ -391,17 +391,19 @@ def generate_eda_report(
                 row=r,
                 col=2,
             )
+        dist_h = calc_chart_height(rows_n, mode="subplot")
         fig_dist.update_layout(
             title="Numeric Distributions (Histogram + Box Plot)",
             template=tmpl,
-            height=220 * rows_n + 60,
+            height=dist_h,
             margin=dict(l=10, r=10, t=50, b=10),
         )
+        apply_fig_theme(fig_dist, theme)
         sections.append(
             {
                 "id": "distributions",
                 "heading": "Numeric Distributions",
-                "html": plotly_div(fig_dist, height=220 * rows_n + 100),
+                "html": plotly_div(fig_dist, height=dist_h, theme=theme),
             }
         )
         progress.append(ok("Distribution charts", f"{len(show_nums)} cols (histogram + box)"))
@@ -433,16 +435,18 @@ def generate_eda_report(
                 row=1,
                 col=col_idx,
             )
+        corr_h = calc_chart_height(len(feat_cols), mode="heatmap", extra_base=60)
         fig_corr.update_layout(
             template=tmpl,
-            height=max(450, len(feat_cols) * 28 + 100),
+            height=corr_h,
             margin=dict(l=10, r=10, t=50, b=10),
         )
+        apply_fig_theme(fig_corr, theme)
         sections.append(
             {
                 "id": "correlation",
                 "heading": "Correlation (Pearson + Spearman)",
-                "html": plotly_div(fig_corr, height=max(450, len(feat_cols) * 28 + 140)),
+                "html": plotly_div(fig_corr, height=corr_h, theme=theme),
             }
         )
         progress.append(ok("Correlation heatmaps", f"Pearson + Spearman, {len(feat_cols)} features"))
@@ -463,13 +467,15 @@ def generate_eda_report(
                 color=vc.values,
                 color_continuous_scale="Blues",
             )
+            cat_h = calc_chart_height(len(vc), mode="bar")
             fig_cat.update_layout(
                 yaxis=dict(autorange="reversed"),
-                height=max(250, len(vc) * 25 + 80),
+                height=cat_h,
                 margin=dict(l=10, r=10, t=40, b=10),
                 showlegend=False,
             )
-            cat_html += plotly_div(fig_cat, height=max(250, len(vc) * 25 + 80))
+            apply_fig_theme(fig_cat, theme)
+            cat_html += plotly_div(fig_cat, height=cat_h, theme=theme)
         sections.append({"id": "categorical", "heading": "Categorical Columns", "html": cat_html})
         progress.append(ok("Categorical charts", f"{len(show_cats)} cols"))
 
@@ -494,14 +500,15 @@ def generate_eda_report(
                 template=tmpl,
             )
         fig_tgt.update_layout(
-            height=380,
+            height=400,
             margin=dict(l=10, r=10, t=50, b=10),
         )
+        apply_fig_theme(fig_tgt, theme)
         sections.append(
             {
                 "id": "target",
                 "heading": f"Target Column: {target_column}",
-                "html": plotly_div(fig_tgt, height=420),
+                "html": plotly_div(fig_tgt, height=400, theme=theme),
             }
         )
         progress.append(ok("Target distribution", f"{tgt.nunique()} unique values"))
@@ -526,17 +533,17 @@ def generate_eda_report(
         subtitle="",
         sections=sections,
         theme=theme,
-        open_browser=False,
+        open_after=False,
         output_path="",
         sidebar_title="EDA Report",
         sidebar_meta=f"{path.name}<br>{len(df):,} rows &times; {len(df.columns)} cols",
     )
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(html, encoding="utf-8")
+    atomic_write_text(out_path, html)
     progress.append(ok("Saved HTML report", out_path.name))
 
-    if open_browser:
+    if open_after:
         _open_file(out_path)
 
     file_size_kb = out_path.stat().st_size // 1024
@@ -546,6 +553,7 @@ def generate_eda_report(
         "success": True,
         "op": "generate_eda_report",
         "output_path": str(out_path),
+        "output_name": out_path.name,
         "file_size_kb": file_size_kb,
         "quality_score": quality_score,
         "alerts_count": len(alerts),

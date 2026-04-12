@@ -31,7 +31,9 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler  # noqa: F401
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
-from shared.file_utils import get_output_dir, resolve_path
+from shared.file_utils import atomic_write_json, get_output_dir, resolve_path
+from shared.html_layout import get_output_path  # noqa: F401  (re-exported)
+from shared.html_theme import _open_file, save_chart  # noqa: F401  (re-exported)
 from shared.platform_utils import get_cv_folds, is_constrained_mode  # noqa: F401
 from shared.progress import info, ok, warn  # noqa: F401
 from shared.receipt import append_receipt  # noqa: F401
@@ -66,8 +68,20 @@ DEFAULT_PARAMS: dict[str, dict] = {
 # ---------------------------------------------------------------------------
 
 
+def _save_chart(
+    fig: object,
+    output_path: str,
+    stem_suffix: str,
+    input_path: Path,
+    open_after: bool,
+    theme: str,
+) -> tuple[str, str]:
+    """Thin wrapper — saves a Plotly chart via the shared save_chart helper."""
+    return save_chart(fig, output_path, stem_suffix, input_path, theme, open_after, _open_file)
+
+
 def _error(error: str, hint: str, backup: str | None = None) -> dict:
-    base: dict = {"success": False, "error": error, "hint": hint}
+    base: dict = {"success": False, "error": error, "hint": hint, "progress": []}
     if backup:
         base["backup"] = backup
     base["token_estimate"] = len(str(base)) // 4
@@ -140,7 +154,7 @@ def _save_model(model_obj: object, path: Path, metadata: dict) -> None:
         tmp_path = tmp.name
     shutil.move(tmp_path, path)
     manifest_path = path.with_suffix(".manifest.json")
-    manifest_path.write_text(json.dumps(metadata, indent=2, default=str))
+    atomic_write_json(manifest_path, metadata)
 
 
 def _load_model(model_path: str) -> tuple[object, dict]:
@@ -173,6 +187,7 @@ __all__ = [
     "append_receipt",
     "get_cv_folds",
     "get_output_dir",
+    "get_output_path",
     "info",
     "is_constrained_mode",
     "ok",
@@ -185,6 +200,7 @@ __all__ = [
     "_check_memory",
     "_error",
     "_load_model",
+    "_save_chart",
     "_save_model",
     # sklearn classes (used in engine.py tool bodies)
     "FastICA",

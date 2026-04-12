@@ -34,6 +34,8 @@ from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
 from shared.file_utils import get_output_dir, resolve_path
+from shared.html_layout import get_output_path
+from shared.html_theme import _open_file, save_chart
 from shared.platform_utils import get_cv_folds, get_max_models
 from shared.progress import fail, info, ok, warn
 from shared.receipt import append_receipt, read_receipt_log
@@ -75,8 +77,20 @@ MODELS_DIR = ".mcp_models"
 # ---------------------------------------------------------------------------
 
 
+def _save_chart(
+    fig: object,
+    output_path: str,
+    stem_suffix: str,
+    input_path: Path,
+    open_after: bool,
+    theme: str,
+) -> tuple[str, str]:
+    """Thin wrapper — saves a Plotly chart via the shared save_chart helper."""
+    return save_chart(fig, output_path, stem_suffix, input_path, theme, open_after, _open_file)
+
+
 def _error(error: str, hint: str, backup: str | None = None) -> dict:
-    base: dict = {"success": False, "error": error, "hint": hint}
+    base: dict = {"success": False, "error": error, "hint": hint, "progress": []}
     if backup:
         base["backup"] = backup
     base["token_estimate"] = len(str(base)) // 4
@@ -424,7 +438,10 @@ def _apply_op(df: pd.DataFrame, op: dict) -> tuple[pd.DataFrame, dict]:
 __all__ = [
     # re-exports from shared
     "get_output_dir",
+    "get_output_path",
     "resolve_path",
+    # chart helper
+    "_save_chart",
     "get_cv_folds",
     "get_max_models",
     "fail",

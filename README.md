@@ -9,15 +9,16 @@ A self-hosted MCP server that gives local LLMs structured access to the full sup
 - **Automatic version control** — every write is snapshotted and fully restorable
 - **Operation receipt logging** — full audit trail of all modifications
 - **Constrained mode** — reduces row/result limits for lower-memory machines
-- **Interactive HTML reports** — EDA, training metrics, clustering, ROC curves, learning curves
-- **Full ML pipeline** — inspect → preprocess → train → evaluate → tune
+- **Interactive HTML reports** — EDA, training metrics, clustering, ROC curves, learning curves, profiling
+- **Full ML pipeline** — inspect → preprocess → train → evaluate → tune → export
 - **7 classification algorithms** — LR, SVM, RF, DTC, KNN, NB, XGBoost
 - **7 regression algorithms** — Linear, Polynomial, Lasso, Ridge, DT, RF, XGBoost
 - **3 clustering algorithms** — K-Means, Mean-Shift, DBSCAN
 - **Dimensionality reduction** — PCA and ICA
 - **Hyperparameter tuning** — GridSearch and RandomSearch
-- **Light / dark theme** — all HTML outputs accept `theme: "dark" | "light"`
-- **100% local execution** — your data never leaves your machine
+- **Dark / light / device theme** — all HTML outputs accept `theme: "dark" | "light" | "device"`
+- **Mobile-responsive HTML** — viewport meta + CSS breakpoints on every report
+- **Modular architecture** — each engine split into focused sub-modules, all under 1 000 lines
 
 ## Important: File Path Only
 
@@ -54,13 +55,16 @@ A self-hosted MCP server that gives local LLMs structured access to the full sup
 
 ### First Run
 
-The first launch clones the repo and installs dependencies (~200 MB including XGBoost). Subsequent launches are instant.
+The first launch clones the repo and installs dependencies (~2–5 minutes). Subsequent launches are instant.
 
 > **Pre-install recommended:** To avoid the 60-second LM Studio connection timeout on first launch, run this once in PowerShell before connecting:
 > ```powershell
 > $d = Join-Path $env:USERPROFILE '.mcp_servers\MCP_Machine_Learning'
-> git clone https://github.com/azzindani/MCP_Machine_Learning.git $d
-> Set-Location $d; uv sync
+> $g = Join-Path $d '.git'
+> if (!(Test-Path $g)) { if (Test-Path $d) { Remove-Item -Recurse -Force $d }; git clone https://github.com/azzindani/MCP_Machine_Learning.git $d --quiet }
+> Set-Location "$d\servers\ml_basic"; uv sync
+> Set-Location "$d\servers\ml_medium"; uv sync
+> Set-Location "$d\servers\ml_advanced"; uv sync
 > ```
 > If you skip this step and LM Studio times out, press **Restart** in the MCP Servers panel — it will reconnect and complete the install immediately.
 
@@ -80,7 +84,7 @@ The first launch clones the repo and installs dependencies (~200 MB including XG
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
-        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d } else { Set-Location $d; git pull --quiet }; Set-Location (Join-Path $d 'servers\\ml_basic'); uv run python server.py"
+        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; $g = Join-Path $d '.git'; if (!(Test-Path $g)) { if (Test-Path $d) { Remove-Item -Recurse -Force $d }; git clone https://github.com/azzindani/MCP_Machine_Learning.git $d --quiet } else { Set-Location $d; git fetch origin --quiet; git reset --hard FETCH_HEAD --quiet }; Set-Location (Join-Path $d 'servers\\ml_basic'); uv sync --quiet; uv run python server.py"
       ],
       "env": { "MCP_CONSTRAINED_MODE": "0" },
       "timeout": 600000
@@ -92,7 +96,7 @@ The first launch clones the repo and installs dependencies (~200 MB including XG
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
-        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d } else { Set-Location $d; git pull --quiet }; Set-Location (Join-Path $d 'servers\\ml_medium'); uv run python server.py"
+        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; $g = Join-Path $d '.git'; if (!(Test-Path $g)) { if (Test-Path $d) { Remove-Item -Recurse -Force $d }; git clone https://github.com/azzindani/MCP_Machine_Learning.git $d --quiet } else { Set-Location $d; git fetch origin --quiet; git reset --hard FETCH_HEAD --quiet }; Set-Location (Join-Path $d 'servers\\ml_medium'); uv sync --quiet; uv run python server.py"
       ],
       "env": { "MCP_CONSTRAINED_MODE": "0" },
       "timeout": 600000
@@ -104,7 +108,7 @@ The first launch clones the repo and installs dependencies (~200 MB including XG
         "-ExecutionPolicy",
         "Bypass",
         "-Command",
-        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; if (!(Test-Path $d)) { git clone https://github.com/azzindani/MCP_Machine_Learning.git $d } else { Set-Location $d; git pull --quiet }; Set-Location (Join-Path $d 'servers\\ml_advanced'); uv run python server.py"
+        "$d = Join-Path $env:USERPROFILE '.mcp_servers\\MCP_Machine_Learning'; $g = Join-Path $d '.git'; if (!(Test-Path $g)) { if (Test-Path $d) { Remove-Item -Recurse -Force $d }; git clone https://github.com/azzindani/MCP_Machine_Learning.git $d --quiet } else { Set-Location $d; git fetch origin --quiet; git reset --hard FETCH_HEAD --quiet }; Set-Location (Join-Path $d 'servers\\ml_advanced'); uv sync --quiet; uv run python server.py"
       ],
       "env": { "MCP_CONSTRAINED_MODE": "0" },
       "timeout": 600000
@@ -120,75 +124,103 @@ The first launch clones the repo and installs dependencies (~200 MB including XG
 
 ### macOS / Linux
 
-Replace `powershell` / `args` with:
+Replace the `"command"` and `"args"` in each entry with the bash equivalent:
 
 ```json
 {
-  "command": "bash",
-  "args": [
-    "-c",
-    "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; if [ ! -d \"$d\" ]; then git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\"; else cd \"$d\" && git pull --quiet; fi; cd \"$d/servers/ml_basic\"; uv run python server.py"
-  ]
+  "mcpServers": {
+    "ml-basic": {
+      "command": "bash",
+      "args": [
+        "-c",
+        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; if [ ! -d \"$d/.git\" ]; then rm -rf \"$d\"; git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\" --quiet; else cd \"$d\" && git fetch origin --quiet && git reset --hard FETCH_HEAD --quiet; fi; cd \"$d/servers/ml_basic\"; uv sync --quiet; uv run python server.py"
+      ],
+      "env": { "MCP_CONSTRAINED_MODE": "0" },
+      "timeout": 600000
+    },
+    "ml-medium": {
+      "command": "bash",
+      "args": [
+        "-c",
+        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; if [ ! -d \"$d/.git\" ]; then rm -rf \"$d\"; git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\" --quiet; else cd \"$d\" && git fetch origin --quiet && git reset --hard FETCH_HEAD --quiet; fi; cd \"$d/servers/ml_medium\"; uv sync --quiet; uv run python server.py"
+      ],
+      "env": { "MCP_CONSTRAINED_MODE": "0" },
+      "timeout": 600000
+    },
+    "ml-advanced": {
+      "command": "bash",
+      "args": [
+        "-c",
+        "d=\"$HOME/.mcp_servers/MCP_Machine_Learning\"; if [ ! -d \"$d/.git\" ]; then rm -rf \"$d\"; git clone https://github.com/azzindani/MCP_Machine_Learning.git \"$d\" --quiet; else cd \"$d\" && git fetch origin --quiet && git reset --hard FETCH_HEAD --quiet; fi; cd \"$d/servers/ml_advanced\"; uv sync --quiet; uv run python server.py"
+      ],
+      "env": { "MCP_CONSTRAINED_MODE": "0" },
+      "timeout": 600000
+    }
+  }
 }
 ```
-
-Repeat for `ml_medium` and `ml_advanced`, adjusting the server directory in the path.
-
----
 
 ## Available Tools
 
 ### Tier 1 — ml-basic (11 tools)
 
-| # | Tool | Category | Description |
-|---|---|---|---|
-| 1 | `inspect_dataset` | LOCATE | Schema, row count, dtypes, null summary |
-| 2 | `read_column_profile` | INSPECT | Stats for one column (mean, std, nulls, unique) |
-| 3 | `search_columns` | LOCATE | Find columns matching a condition |
-| 4 | `read_rows` | INSPECT | Bounded row slice |
-| 5 | `train_classifier` | PATCH | Train classifier: `lr svm rf dtc knn nb xgb` — AUC-ROC + class_weight + train_score |
-| 6 | `train_regressor` | PATCH | Train regressor: `lir pr lar rr dtr rfr xgb` |
-| 7 | `get_predictions` | VERIFY | Run predictions — supports `return_proba=True` for probabilities |
-| 8 | `restore_version` | CONTROL | Rollback model or dataset to previous snapshot |
-| 9 | `predict_single` | VERIFY | Predict one JSON record — no CSV needed |
-| 10 | `list_models` | LOCATE | List all saved `.pkl` models with metadata |
-| 11 | `split_dataset` | PATCH | Split CSV into train/test files |
+| Tool | Purpose |
+|---|---|
+| `inspect_dataset` | Schema, row count, dtypes, null summary |
+| `read_column_profile` | Stats for one column: mean, std, nulls, unique, top values |
+| `search_columns` | Find columns by criteria: has_nulls, dtype, name_contains |
+| `read_rows` | Bounded row slice |
+| `train_classifier` | Train classifier: `lr svm rf dtc knn nb xgb` — AUC-ROC, class_weight, train_score |
+| `train_regressor` | Train regressor: `lir pr lar rr dtr rfr xgb` |
+| `get_predictions` | Run predictions on a CSV — supports `return_proba=True` for probabilities |
+| `restore_version` | Rollback model or dataset to any previous snapshot |
+| `predict_single` | Predict one JSON record — no CSV needed |
+| `list_models` | List all saved `.pkl` models with metadata |
+| `split_dataset` | Split CSV into train/test files |
 
 ### Tier 2 — ml-medium (14 tools)
 
-| # | Tool | Category | Description |
-|---|---|---|---|
-| 1 | `run_preprocessing` | PATCH | 14-op pipeline: encode, scale, fill, bin, log, date parts, drop nulls, clip |
-| 2 | `detect_outliers` | INSPECT | IQR and std-dev outlier report per column |
-| 3 | `train_with_cv` | PATCH | K-fold cross-validation training |
-| 4 | `compare_models` | PATCH | Train multiple algorithms, return sorted table |
-| 5 | `run_clustering` | PATCH | K-Means / Mean-Shift / DBSCAN — returns silhouette score |
-| 6 | `read_receipt` | CONTROL | Read operation history for a file |
-| 7 | `generate_eda_report` | ANALYZE | Interactive HTML EDA with quality score + alerts |
-| 8 | `filter_rows` | PATCH | Filter rows by column condition, save CSV |
-| 9 | `merge_datasets` | PATCH | Merge two CSVs on a key column |
-| 10 | `find_optimal_clusters` | ANALYZE | Elbow + silhouette chart to find best K |
-| 11 | `anomaly_detection` | INSPECT | Isolation Forest or LOF anomaly detection |
-| 12 | `check_data_quality` | INSPECT | JSON quality score 0-100 with typed alerts (model-readable) |
-| 13 | `evaluate_model` | VERIFY | Score saved model on external labeled test CSV |
-| 14 | `batch_predict` | PATCH | Predict all rows, save predictions CSV — no row limit |
+| Tool | Purpose |
+|---|---|
+| `run_preprocessing` | **15-op pipeline**: fill_nulls, drop_outliers, label_encode, onehot_encode, scale, drop_duplicates, drop_column, rename_column, convert_dtype, bin_numeric, add_date_parts, log_transform, drop_null_rows, clip_column |
+| `detect_outliers` | IQR and std-dev outlier report per column |
+| `train_with_cv` | K-fold cross-validation training — per-fold scores + mean ± std |
+| `compare_models` | Train multiple algorithms on the same split, return ranked table |
+| `run_clustering` | K-Means / Mean-Shift / DBSCAN — returns silhouette score |
+| `read_receipt` | Read operation history for a file |
+| `generate_eda_report` | Interactive HTML EDA with quality score + 8-alert panel |
+| `filter_rows` | Filter rows by column condition, save new CSV |
+| `merge_datasets` | Merge two CSVs on a key column |
+| `find_optimal_clusters` | Elbow + silhouette chart to find best K |
+| `anomaly_detection` | Isolation Forest or LOF anomaly detection |
+| `check_data_quality` | JSON quality score 0–100 with typed alerts (model-readable) |
+| `evaluate_model` | Score a saved model on an external labeled test CSV |
+| `batch_predict` | Predict all rows and save predictions CSV — no row limit |
 
 ### Tier 3 — ml-advanced (10 tools)
 
-| # | Tool | Category | Description |
-|---|---|---|---|
-| 1 | `tune_hyperparameters` | OPTIMIZE | GridSearch or RandomSearch tuning |
-| 2 | `export_model` | EXPORT | Pickle export with metadata manifest |
-| 3 | `read_model_report` | VERIFY | Feature importance, confusion matrix, metrics |
-| 4 | `run_profiling_report` | ANALYZE | ydata-profiling HTML report for dataset |
-| 5 | `apply_dimensionality_reduction` | TRANSFORM | PCA or ICA, return reduced dataset path |
-| 6 | `generate_training_report` | ANALYZE | Full HTML training report: metrics + charts |
-| 7 | `plot_roc_curve` | ANALYZE | Interactive ROC curve with AUC |
-| 8 | `plot_learning_curve` | ANALYZE | Train vs validation score by training size |
-| 9 | `plot_predictions_vs_actual` | ANALYZE | Scatter: predicted vs actual (regression) |
-| 10 | `generate_cluster_report` | ANALYZE | HTML cluster report with PCA scatter + profile |
+| Tool | Purpose |
+|---|---|
+| `tune_hyperparameters` | GridSearch or RandomSearch hyperparameter tuning |
+| `export_model` | Export `.pkl` with metadata manifest |
+| `read_model_report` | Feature importance, confusion matrix, metrics from saved model |
+| `run_profiling_report` | Interactive Plotly HTML profile: distributions, correlations, summary stats |
+| `apply_dimensionality_reduction` | PCA or ICA — returns reduced dataset path |
+| `generate_training_report` | Full HTML training report: metrics, confusion matrix, feature importance |
+| `plot_roc_curve` | Interactive ROC curve with AUC for classifiers |
+| `plot_learning_curve` | Train vs validation score by training size |
+| `plot_predictions_vs_actual` | Scatter: predicted vs actual for regressors |
+| `generate_cluster_report` | HTML cluster report with PCA scatter + cluster profiles |
 
----
+All chart-producing tools accept `theme: "dark" | "light" | "device"`, `output_path`, and `open_after`.
+
+### Theme options (all HTML outputs)
+
+| Value | Behaviour |
+|---|---|
+| `"dark"` | GitHub-style dark palette, Plotly dark template (default) |
+| `"light"` | Light palette, Plotly white template |
+| `"device"` | Auto-detects system `prefers-color-scheme`, switches at runtime via JS |
 
 ## Preprocessing Operations (`run_preprocessing`)
 
@@ -213,8 +245,6 @@ Pass an `ops` array to apply a pipeline in one call:
   {"op": "clip_column",    "column": "age", "lower": 0, "upper": 120}
 ]
 ```
-
----
 
 ## Supported Algorithms
 
@@ -250,27 +280,6 @@ Pass an `ops` array to apply a pipeline in one call:
 | `meanshift` | Mean-Shift |
 | `dbscan` | DBSCAN |
 
----
-
-## HTML Reports
-
-All visualization tools save standalone interactive HTML files that open automatically in your browser. No server required — files work fully offline.
-
-| Tool | Output |
-|---|---|
-| `generate_eda_report` | Dataset overview, quality score, alerts, distributions, correlations |
-| `generate_training_report` | Confusion matrix, feature importance, classification report |
-| `run_profiling_report` | Deep ydata-profiling report (or Plotly fallback) |
-| `plot_roc_curve` | ROC curve with AUC for classifiers |
-| `plot_learning_curve` | Train vs validation score by training size |
-| `plot_predictions_vs_actual` | Predicted vs actual scatter for regressors |
-| `find_optimal_clusters` | Elbow curve + silhouette score chart |
-| `generate_cluster_report` | PCA scatter, cluster profiles, size chart |
-
-All reports support `theme="light"` (default) or `theme="dark"`.
-
----
-
 ## EDA Quality Alerts
 
 `generate_eda_report` runs 8 automated checks and returns a **quality score 0–100**:
@@ -287,8 +296,6 @@ All reports support `theme="light"` (default) or `theme="dark"`.
 | `duplicate_rows` | Medium | Duplicate rows detected |
 
 Each alert includes a **recommendation** — actionable next steps to fix the issue.
-
----
 
 ## Usage Examples
 
@@ -346,8 +353,6 @@ Restore C:\data\churn.csv to the previous version
 4. generate_training_report(model_path) → confusion matrix, feature importance
 ```
 
----
-
 ## Configuration
 
 ### Constrained Mode
@@ -361,7 +366,6 @@ For lower-memory machines, set `MCP_CONSTRAINED_MODE=1` in the `env` section of 
 | Columns returned | 50 | 20 |
 | CV folds | 5 | 3 |
 | Max models in compare | 7 | 3 |
-| ydata-profiling mode | full | minimal |
 
 ### Recommended Loading by Available Memory
 
@@ -376,20 +380,6 @@ For lower-memory machines, set `MCP_CONSTRAINED_MODE=1` in the `env` section of 
 | Variable | Default | Description |
 |---|---|---|
 | `MCP_CONSTRAINED_MODE` | `0` | Set to `1` for low-memory machines |
-
----
-
-## Version Control & Audit
-
-Every write operation:
-1. Takes a snapshot to `.mcp_versions/` before overwriting
-2. Returns a `"backup"` key with the snapshot path
-3. Appends an entry to the file's `.mcp_receipt.json` audit log
-
-To view history: `read_receipt("mydata.csv")`  
-To rollback: `restore_version("mydata.csv", timestamp="2026-04-06T10-30-00Z")`
-
----
 
 ## Uninstall
 
@@ -413,8 +403,6 @@ Or run the uninstall script:
 # macOS / Linux
 ~/.mcp_servers/MCP_Machine_Learning/install/install.sh
 ```
-
----
 
 ## Architecture
 
@@ -451,23 +439,19 @@ MCP_Machine_Learning/
 │   ├── platform_utils.py      ← constrained mode, row limits
 │   ├── progress.py            ← ok/fail/info/warn helpers
 │   ├── receipt.py             ← operation receipt logging
-│   └── html_theme.py          ← CSS vars, Plotly templates
+│   ├── html_layout.py         ← output path helpers, Plotly layout base
+│   └── html_theme.py          ← CSS vars, Plotly templates, responsive HTML helpers
 ├── install/
 │   ├── install.sh             ← macOS/Linux installer
 │   ├── install.bat            ← Windows installer
 │   └── mcp_config_writer.py   ← writes LM Studio / Claude Desktop / Cursor config
-├── tests/
-│   ├── fixtures/              ← classification, regression, clustering, large CSVs
-│   ├── conftest.py
-│   ├── test_ml_basic.py
-│   ├── test_ml_medium.py
-│   └── test_ml_advanced.py
-├── pyproject.toml             ← root workspace
-├── uv.lock
-└── .python-version            ← 3.12
+└── tests/
+    ├── fixtures/              ← classification, regression, clustering, large CSVs
+    ├── conftest.py
+    ├── test_ml_basic.py
+    ├── test_ml_medium.py
+    └── test_ml_advanced.py
 ```
-
----
 
 ## Development
 
@@ -478,13 +462,16 @@ MCP_Machine_Learning/
 uv sync
 
 # Run all tests (Windows)
-set PYTHONPATH=. && set MCP_CONSTRAINED_MODE=1 && python -m pytest tests/ -v
+set PYTHONPATH=. && uv run python -m pytest tests/ -q --tb=short
 
 # Run all tests (Linux/macOS)
-PYTHONPATH=. MCP_CONSTRAINED_MODE=1 uv run python -m pytest tests/ -q
+PYTHONPATH=. uv run python -m pytest tests/ -q --tb=short
 
 # Lint
-uvx ruff check servers/ shared/ tests/ --exclude "**/.venv/**"
+uv run ruff check .
+
+# Format check
+uv run ruff format --check .
 
 # Type check
 uv run pyright servers/ shared/
@@ -497,8 +484,6 @@ cd servers/ml_basic
 uv sync
 uv run python server.py
 ```
-
----
 
 ## License
 

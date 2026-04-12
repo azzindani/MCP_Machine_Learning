@@ -1,17 +1,22 @@
-#!/usr/bin/env python3
 """Verify all @mcp.tool() docstrings are <= 80 characters.
 
-Run with: python verify_tool_docstrings.py
-Exits 1 if any violation is found.
+Run via pytest (auto-discovered) or directly:
+    python tests/verify_tool_docstrings.py
 """
 
 import ast
-import sys
 from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parents[1]
+_SERVER_DIRS = [
+    _ROOT / "servers" / "ml_basic",
+    _ROOT / "servers" / "ml_medium",
+    _ROOT / "servers" / "ml_advanced",
+]
 
 
 def check_file(path: Path) -> list[tuple[int, str, int]]:
-    """Return list of (line, docstring_text, length) for violations."""
+    """Return list of (line, description, length) for violations."""
     violations = []
     source = path.read_text(encoding="utf-8")
     tree = ast.parse(source, filename=str(path))
@@ -19,7 +24,6 @@ def check_file(path: Path) -> list[tuple[int, str, int]]:
     for node in ast.walk(tree):
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
-        # Check if decorated with @mcp.tool or @mcp.tool(...)
         for dec in node.decorator_list:
             is_tool = False
             if isinstance(dec, ast.Attribute) and dec.attr == "tool":
@@ -30,7 +34,6 @@ def check_file(path: Path) -> list[tuple[int, str, int]]:
                     is_tool = True
             if not is_tool:
                 continue
-            # Get docstring
             docstring = ast.get_docstring(node)
             if docstring is None:
                 violations.append((node.lineno, f"{node.name}: missing docstring", 0))
@@ -41,31 +44,41 @@ def check_file(path: Path) -> list[tuple[int, str, int]]:
     return violations
 
 
-def main() -> int:
-    server_dirs = [
-        Path("servers/ml_basic"),
-        Path("servers/ml_medium"),
-        Path("servers/ml_advanced"),
-    ]
+def collect_violations() -> list[tuple[Path, int, str, int]]:
     all_violations = []
-    for d in server_dirs:
+    for d in _SERVER_DIRS:
         server_py = d / "server.py"
         if server_py.exists():
             for lineno, text, length in check_file(server_py):
                 all_violations.append((server_py, lineno, text, length))
+    return all_violations
 
-    if not all_violations:
+
+def test_tool_docstrings_under_80_chars() -> None:
+    """All @mcp.tool() docstrings must be <= 80 characters (STANDARDS.md §11)."""
+    violations = collect_violations()
+    if violations:
+        lines = [f"Found {len(violations)} docstring violation(s):"]
+        for path, lineno, text, length in violations:
+            rel = path.relative_to(_ROOT)
+            if length == 0:
+                lines.append(f"  {rel}:{lineno}  {text}")
+            else:
+                lines.append(f"  {rel}:{lineno}  length={length}  {text}")
+        raise AssertionError("\n".join(lines))
+
+
+if __name__ == "__main__":
+    import sys
+
+    violations = collect_violations()
+    if not violations:
         print("All tool docstrings are within the 80-character limit.")
-        return 0
-
-    print(f"Found {len(all_violations)} docstring violation(s):\n")
-    for path, lineno, text, length in all_violations:
+        sys.exit(0)
+    print(f"Found {len(violations)} docstring violation(s):\n")
+    for path, lineno, text, length in violations:
         if length == 0:
             print(f"  {path}:{lineno}  {text}")
         else:
             print(f"  {path}:{lineno}  length={length}  {text}")
-    return 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(1)

@@ -16,7 +16,7 @@ from sklearn.decomposition import PCA, FastICA
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 from sklearn.preprocessing import StandardScaler
 
-from shared.file_utils import get_output_dir, resolve_path
+from shared.file_utils import atomic_write_json, atomic_write_text, get_output_dir, resolve_path
 from shared.platform_utils import get_cv_folds, is_constrained_mode
 from shared.progress import info, ok, warn
 from shared.receipt import append_receipt
@@ -31,6 +31,7 @@ from ._adv_helpers import (
     _error,
     _load_model,
     _save_model,
+    get_output_path,
 )
 from ._adv_viz import (
     generate_cluster_report,
@@ -301,7 +302,7 @@ def export_model(
         "sklearn_version": metadata.get("sklearn_version", sklearn.__version__),
         "xgboost_version": xgb.__version__,
     }
-    manifest_dst.write_text(json.dumps(manifest_data, indent=2, default=str))
+    atomic_write_json(manifest_dst, manifest_data)
     progress.append(ok("Exported model", dst_path.name))
     progress.append(ok("Wrote manifest", manifest_dst.name))
 
@@ -401,9 +402,10 @@ def run_profiling_report(
     file_path: str,
     output_path: str = "",
     sample_rows: int = 0,
+    open_after: bool = True,
     dry_run: bool = False,
 ) -> dict:
-    """Generate ydata-profiling HTML report for dataset."""
+    """Generate Plotly HTML profile report for a dataset."""
     progress: list[dict] = []
     try:
         path = resolve_path(file_path)
@@ -414,11 +416,7 @@ def run_profiling_report(
     if path.suffix.lower() != ".csv":
         return _error(f"Expected .csv file, got {path.suffix!r}", "Provide a CSV file path.")
 
-    out_path = Path(output_path) if output_path else get_output_dir() / f"{path.stem}_profile.html"
-    try:
-        out_path_resolved = resolve_path(str(out_path))
-    except ValueError:
-        out_path_resolved = out_path
+    out_path_resolved = get_output_path(output_path, path, "profile", "html")
 
     if dry_run:
         resp: dict = {
@@ -442,127 +440,124 @@ def run_profiling_report(
         df = df.sample(sample_rows, random_state=42)
         progress.append(info("Sampled dataset", f"{sample_rows} rows"))
 
-    # Try ydata-profiling first; fall back to built-in Plotly report
-    try:
-        from ydata_profiling import ProfileReport
+    import plotly.graph_objects as go
 
-        minimal = is_constrained_mode()
-        profile = ProfileReport(df, minimal=minimal, title=path.name)
-        out_path_resolved.parent.mkdir(parents=True, exist_ok=True)
-        profile.to_file(str(out_path_resolved))
-        progress.append(ok("Saved ydata-profiling report", out_path_resolved.name))
-        ydata_used = True
-    except ImportError:
-        ydata_used = False
-        progress.append(info("ydata-profiling not installed", "Using built-in Plotly report"))
+    from shared.html_theme import (
+        apply_fig_theme,
+        build_html_report,
+        calc_chart_height,
+        data_table_html,
+        get_theme,
+        metrics_cards_html,
+        plotly_div,
+        plotly_template,
+    )
 
-    if not ydata_used:
-        # Built-in Plotly-based profiling report
-        import plotly.graph_objects as go
+    t = get_theme("dark")
+    tmpl = plotly_template("dark")
+    sections: list[dict] = []
+    numeric_cols = df.select_dtypes(include="number").columns.tolist()
 
-        from shared.html_theme import (
-            build_html_report,
-            data_table_html,
-            get_theme,
-            metrics_cards_html,
-            plotly_div,
-            plotly_template,
+    # Overview cards
+    missing_total = int(df.isnull().sum().sum())
+    total_cells = len(df) * len(df.columns)
+    miss_pct = round(missing_total / total_cells * 100, 2) if total_cells else 0.0
+    dup_rows_n = int(df.duplicated().sum())
+    sections.append(
+        {
+            "id": "overview",
+            "heading": "Overview",
+            "html": metrics_cards_html(
+                {
+                    "rows": f"{len(df):,}",
+                    "columns": len(df.columns),
+                    "numeric_cols": len(numeric_cols),
+                    "missing_cells": f"{miss_pct}%",
+                    "duplicate_rows": dup_rows_n,
+                }
+            ),
+        }
+    )
+
+    # Distributions
+    if numeric_cols:
+        from plotly.subplots import make_subplots
+
+        show = numeric_cols[:12]
+        cols_n = min(3, len(show))
+        rows_n = (len(show) + cols_n - 1) // cols_n
+        fig = make_subplots(rows=rows_n, cols=cols_n, subplot_titles=show)
+        for i, col in enumerate(show):
+            fig.add_trace(
+                go.Histogram(x=df[col].dropna(), name=col, showlegend=False, marker_color=t["accent"]),
+                row=i // cols_n + 1,
+                col=i % cols_n + 1,
+            )
+        prof_dist_h = calc_chart_height(rows_n, mode="subplot")
+        fig.update_layout(
+            title="Distributions",
+            template=tmpl,
+            height=prof_dist_h,
+            margin=dict(l=10, r=10, t=50, b=10),
+        )
+        apply_fig_theme(fig, "dark")
+        sections.append(
+            {"id": "dist", "heading": "Distributions", "html": plotly_div(fig, height=prof_dist_h, theme="dark")}
         )
 
-        t = get_theme("light")
-        tmpl = plotly_template("light")
-        sections: list[dict] = []
-        numeric_cols = df.select_dtypes(include="number").columns.tolist()
-
-        # Overview cards
-        missing_total = int(df.isnull().sum().sum())
-        total_cells = len(df) * len(df.columns)
-        miss_pct = round(missing_total / total_cells * 100, 2) if total_cells else 0.0
-        dup_rows_n = int(df.duplicated().sum())
+    if len(numeric_cols) >= 2:
+        corr = df[numeric_cols].corr()
+        fig_c = go.Figure(
+            go.Heatmap(
+                z=corr.values,
+                x=corr.columns.tolist(),
+                y=corr.index.tolist(),
+                colorscale="RdBu_r",
+                zmid=0,
+                text=[[f"{v:.2f}" for v in row] for row in corr.values],
+                texttemplate="%{text}",
+            )
+        )
+        prof_corr_h = calc_chart_height(len(numeric_cols), mode="heatmap", extra_base=60)
+        fig_c.update_layout(
+            title="Correlation",
+            template=tmpl,
+            height=prof_corr_h,
+            margin=dict(l=10, r=10, t=50, b=10),
+        )
+        apply_fig_theme(fig_c, "dark")
         sections.append(
             {
-                "id": "overview",
-                "heading": "Overview",
-                "html": metrics_cards_html(
-                    {
-                        "rows": f"{len(df):,}",
-                        "columns": len(df.columns),
-                        "numeric_cols": len(numeric_cols),
-                        "missing_cells": f"{miss_pct}%",
-                        "duplicate_rows": dup_rows_n,
-                    }
-                ),
+                "id": "corr",
+                "heading": "Correlation Heatmap",
+                "html": plotly_div(fig_c, height=prof_corr_h, theme="dark"),
             }
         )
 
-        # Distributions
-        if numeric_cols:
-            from plotly.subplots import make_subplots
+    if numeric_cols:
+        desc = df[numeric_cols[:12]].describe().round(3).transpose()
+        desc.index.name = "column"
+        rows_data = [{"column": idx, **row.to_dict()} for idx, row in desc.iterrows()]
+        sections.append({"id": "stats", "heading": "Summary Statistics", "html": data_table_html(rows_data)})
 
-            show = numeric_cols[:12]
-            cols_n = min(3, len(show))
-            rows_n = (len(show) + cols_n - 1) // cols_n
-            fig = make_subplots(rows=rows_n, cols=cols_n, subplot_titles=show)
-            for i, col in enumerate(show):
-                fig.add_trace(
-                    go.Histogram(x=df[col].dropna(), name=col, showlegend=False, marker_color=t["accent"]),
-                    row=i // cols_n + 1,
-                    col=i % cols_n + 1,
-                )
-            fig.update_layout(
-                title="Distributions",
-                template=tmpl,
-                height=280 * rows_n,
-                margin=dict(l=10, r=10, t=50, b=10),
-            )
-            sections.append(
-                {"id": "dist", "heading": "Distributions", "html": plotly_div(fig, height=280 * rows_n + 60)}
-            )
+    html = build_html_report(
+        title=f"Profile Report — {path.name}",
+        subtitle="",
+        sections=sections,
+        theme="dark",
+        open_after=False,
+        output_path="",
+        sidebar_title="Profile Report",
+        sidebar_meta=f"{path.name}<br>{len(df):,} rows",
+    )
+    out_path_resolved.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_text(out_path_resolved, html)
+    progress.append(ok("Saved profile report", out_path_resolved.name))
 
-        if len(numeric_cols) >= 2:
-            corr = df[numeric_cols].corr()
-            fig_c = go.Figure(
-                go.Heatmap(
-                    z=corr.values,
-                    x=corr.columns.tolist(),
-                    y=corr.index.tolist(),
-                    colorscale="RdBu_r",
-                    zmid=0,
-                    text=[[f"{v:.2f}" for v in row] for row in corr.values],
-                    texttemplate="%{text}",
-                )
-            )
-            fig_c.update_layout(
-                title="Correlation",
-                template=tmpl,
-                height=480,
-                margin=dict(l=10, r=10, t=50, b=10),
-            )
-            sections.append({"id": "corr", "heading": "Correlation Heatmap", "html": plotly_div(fig_c, 520)})
+    if open_after:
+        from shared.html_theme import _open_file
 
-        if numeric_cols:
-            desc = df[numeric_cols[:12]].describe().round(3).transpose()
-            desc.index.name = "column"
-            rows_data = [{"column": idx, **row.to_dict()} for idx, row in desc.iterrows()]
-            sections.append({"id": "stats", "heading": "Summary Statistics", "html": data_table_html(rows_data)})
-
-        html = build_html_report(
-            title=f"Profile Report — {path.name}",
-            subtitle="",
-            sections=sections,
-            theme="light",
-            open_browser=False,
-            output_path="",
-            sidebar_title="Profile Report",
-            sidebar_meta=f"{path.name}<br>{len(df):,} rows",
-        )
-        out_path_resolved.parent.mkdir(parents=True, exist_ok=True)
-        out_path_resolved.write_text(html, encoding="utf-8")
-        progress.append(ok("Saved Plotly profile report", out_path_resolved.name))
-
-    from shared.html_theme import _open_file
-
-    _open_file(out_path_resolved)
+        _open_file(out_path_resolved)
 
     file_size_kb = out_path_resolved.stat().st_size // 1024 if out_path_resolved.exists() else 0
     missing_pct_r = round(df.isnull().sum().sum() / (len(df) * len(df.columns)) * 100, 2)
@@ -573,8 +568,9 @@ def run_profiling_report(
         "success": True,
         "op": "run_profiling_report",
         "output_path": str(out_path_resolved),
+        "output_name": out_path_resolved.name,
         "file_size_kb": file_size_kb,
-        "engine_used": "ydata-profiling" if ydata_used else "plotly",
+        "engine_used": "plotly",
         "summary": {
             "row_count": len(df),
             "column_count": len(df.columns),
@@ -715,9 +711,9 @@ def apply_dimensionality_reduction(
 
 def generate_training_report(
     model_path: str,
-    theme: str = "light",
+    theme: str = "dark",
     output_path: str = "",
-    open_browser: bool = True,
+    open_after: bool = True,
     dry_run: bool = False,
 ) -> dict:
     """Generate HTML report with metrics, confusion matrix, feature importance."""
@@ -726,7 +722,9 @@ def generate_training_report(
 
     from shared.html_theme import (
         _open_file,
+        apply_fig_theme,
         build_html_report,
+        calc_chart_height,
         data_table_html,
         metrics_cards_html,
         plotly_div,
@@ -745,11 +743,7 @@ def generate_training_report(
     if mp.suffix.lower() != ".pkl":
         return _error(f"Expected .pkl file, got {mp.suffix!r}", "Provide a path to a .pkl model file.")
 
-    out_path_str = output_path or str(get_output_dir() / f"{mp.stem}_report.html")
-    try:
-        out_path = resolve_path(out_path_str)
-    except ValueError:
-        out_path = Path(out_path_str)
+    out_path = get_output_path(output_path, mp, "report", "html")
 
     if dry_run:
         resp: dict = {
@@ -848,14 +842,15 @@ def generate_training_report(
                 xaxis_title="Predicted",
                 yaxis_title="Actual",
                 template=tmpl,
-                height=380,
+                height=400,
                 margin=dict(l=10, r=10, t=50, b=10),
             )
+            apply_fig_theme(fig_cm, theme)
             sections.append(
                 {
                     "id": "confusion",
                     "heading": "Confusion Matrix",
-                    "html": plotly_div(fig_cm, height=420),
+                    "html": plotly_div(fig_cm, height=400, theme=theme),
                 }
             )
             progress.append(ok("Confusion matrix chart", "binary classification"))
@@ -877,16 +872,18 @@ def generate_training_report(
             color=fi_values,
             color_continuous_scale="Blues",
         )
+        fi_h = calc_chart_height(len(fi_pairs), mode="bar")
         fig_fi.update_layout(
             yaxis=dict(autorange="reversed"),
-            height=max(300, len(fi_pairs) * 28 + 80),
+            height=fi_h,
             margin=dict(l=10, r=10, t=50, b=10),
         )
+        apply_fig_theme(fig_fi, theme)
         sections.append(
             {
                 "id": "features",
                 "heading": "Feature Importance",
-                "html": plotly_div(fig_fi, height=max(300, len(fi_pairs) * 28 + 120)),
+                "html": plotly_div(fig_fi, height=fi_h, theme=theme),
             }
         )
         progress.append(ok("Feature importance chart", f"{len(fi_pairs)} features"))
@@ -909,17 +906,17 @@ def generate_training_report(
         subtitle="",
         sections=sections,
         theme=theme,
-        open_browser=False,
+        open_after=False,
         output_path="",
         sidebar_title="Training Report",
         sidebar_meta=f"{model_type}<br>Task: {task}<br>Trained: {trained_str}",
     )
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(html, encoding="utf-8")
+    atomic_write_text(out_path, html)
     progress.append(ok("Saved HTML report", out_path.name))
 
-    if open_browser:
+    if open_after:
         _open_file(out_path)
 
     file_size_kb = out_path.stat().st_size // 1024
@@ -929,6 +926,7 @@ def generate_training_report(
         "op": "generate_training_report",
         "model_path": str(mp),
         "output_path": str(out_path),
+        "output_name": out_path.name,
         "file_size_kb": file_size_kb,
         "sections_generated": len(sections),
         "progress": progress,
