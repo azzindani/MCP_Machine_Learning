@@ -7,6 +7,7 @@ import logging
 import pandas as pd
 
 from shared.file_utils import resolve_path
+from shared.handover import make_handover
 from shared.platform_utils import get_max_columns, get_max_results, get_max_rows
 from shared.progress import name as pname
 from shared.progress import ok
@@ -88,6 +89,11 @@ def inspect_dataset(file_path: str) -> dict:
             "truncated": truncated,
             "progress": progress,
         }
+        response["handover"] = make_handover(
+            "LOCATE",
+            ["read_column_profile", "search_columns", "read_rows"],
+            {"file_path": file_path},
+        )
         response["token_estimate"] = len(str(response)) // 4
         return response
 
@@ -174,6 +180,11 @@ def read_column_profile(file_path: str, column_name: str) -> dict:
             "profile": profile,
             "progress": progress,
         }
+        response["handover"] = make_handover(
+            "INSPECT",
+            ["train_classifier", "train_regressor", "run_preprocessing"],
+            {"file_path": file_path, "column_name": column_name},
+        )
         response["token_estimate"] = len(str(response)) // 4
         return response
 
@@ -240,6 +251,11 @@ def search_columns(
             "truncated": truncated,
             "progress": progress,
         }
+        response["handover"] = make_handover(
+            "LOCATE",
+            ["read_column_profile", "read_rows"],
+            {"file_path": file_path},
+        )
         response["token_estimate"] = len(str(response)) // 4
         return response
 
@@ -290,6 +306,11 @@ def read_rows(file_path: str, start: int, end: int) -> dict:
         }
         if truncated:
             response["hint"] = f"Results capped at {cap}. Use start/end parameters to page through the data."
+        response["handover"] = make_handover(
+            "INSPECT",
+            ["train_classifier", "train_regressor", "run_preprocessing"],
+            {"file_path": file_path},
+        )
         response["token_estimate"] = len(str(response)) // 4
         return response
 
