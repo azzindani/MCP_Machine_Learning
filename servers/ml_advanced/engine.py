@@ -17,6 +17,7 @@ from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 from sklearn.preprocessing import StandardScaler
 
 from shared.file_utils import atomic_write_json, atomic_write_text, get_output_dir, resolve_path
+from shared.handover import make_handover
 from shared.platform_utils import get_cv_folds, get_n_iter, is_constrained_mode
 from shared.progress import info, ok, warn
 from shared.receipt import append_receipt
@@ -219,6 +220,11 @@ def tune_hyperparameters(
         "progress": progress,
         "token_estimate": 0,
     }
+    resp["handover"] = make_handover(
+        "OPTIMIZE",
+        ["read_model_report", "generate_training_report", "evaluate_model"],
+        {"model_path": str(mp), "file_path": file_path},
+    )
     resp["token_estimate"] = len(str(resp)) // 4
     return resp
 

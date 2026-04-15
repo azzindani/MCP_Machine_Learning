@@ -12,11 +12,13 @@ import pandas as pd
 import sklearn
 
 from shared.file_utils import atomic_write_json
+from shared.handover import make_handover
 
 from ._medium_helpers import (
     ALLOWED_CLASSIFIERS,
     ALLOWED_REGRESSORS,
     KFold,
+    Path,
     StratifiedKFold,
     _auto_preprocess,
     _error,
@@ -174,7 +176,11 @@ def train_with_cv(
         }
 
     ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
-    models_dir = get_output_dir()
+    import os as _os
+
+    _override = _os.environ.get("MCP_OUTPUT_DIR")
+    models_dir = Path(_override) if _override else path.parent / ".mcp_models"
+    models_dir.mkdir(parents=True, exist_ok=True)
     model_path = models_dir / f"{path.stem}_{model}_cv_{ts}.pkl"
     manifest_path = model_path.with_suffix(".manifest.json")
 
@@ -230,6 +236,11 @@ def train_with_cv(
         "progress": progress,
         "token_estimate": 0,
     }
+    resp["handover"] = make_handover(
+        "PATCH",
+        ["evaluate_model", "get_predictions", "generate_training_report"],
+        {"model_path": str(model_path), "file_path": file_path},
+    )
     resp["token_estimate"] = len(str(resp)) // 4
     return resp
 
@@ -346,7 +357,11 @@ def compare_models(
     backup = ""
     if best and not results[0].get("error"):
         ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
-        models_dir = get_output_dir()
+        import os as _os
+
+        _override = _os.environ.get("MCP_OUTPUT_DIR")
+        models_dir = Path(_override) if _override else path.parent / ".mcp_models"
+        models_dir.mkdir(parents=True, exist_ok=True)
         mp = models_dir / f"{path.stem}_{best}_best_{ts}.pkl"
 
         if mp.exists():
@@ -390,5 +405,10 @@ def compare_models(
         "progress": progress,
         "token_estimate": 0,
     }
+    resp["handover"] = make_handover(
+        "PATCH",
+        ["evaluate_model", "get_predictions", "read_model_report"],
+        {"model_path": best_model_path, "file_path": file_path},
+    )
     resp["token_estimate"] = len(str(resp)) // 4
     return resp
