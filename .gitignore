@@ -2,3 +2,5 @@
 *.pyc
 .mcp_models/
 .mcp_versions/
+.coverage
+htmlcov/

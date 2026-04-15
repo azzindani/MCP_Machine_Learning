@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from shared.handover import make_handover
+
 from ._basic_helpers import (
     ALLOWED_CLASSIFIERS,
     ALLOWED_REGRESSORS,
@@ -17,6 +19,7 @@ from ._basic_helpers import (
     Lasso,
     LinearRegression,
     LogisticRegression,
+    Path,
     PolynomialFeatures,
     RandomForestClassifier,
     RandomForestRegressor,
@@ -223,8 +226,8 @@ def train_classifier(
                 if hasattr(trained, "predict_proba"):
                     y_prob = trained.predict_proba(x_test_s if model in ("svm", "knn") else x_test)[:, 1]
                     metrics["auc_roc"] = round(float(roc_auc_score(y_test, y_prob)), 4)
-            except Exception:
-                pass
+            except Exception as _auc_exc:
+                logger.debug("AUC-ROC skipped: %s", _auc_exc)
 
         # Train score for overfit diagnosis
         if return_train_score:
@@ -247,7 +250,11 @@ def train_classifier(
 
         # --- save model ---
         ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
-        models_dir = get_output_dir()
+        import os as _os
+
+        _override = _os.environ.get("MCP_OUTPUT_DIR")
+        models_dir = Path(_override) if _override else path.parent / ".mcp_models"
+        models_dir.mkdir(parents=True, exist_ok=True)
         model_filename = f"{path.stem}_{model}_{ts}.pkl"
         model_path = models_dir / model_filename
 
@@ -297,6 +304,11 @@ def train_classifier(
             "backup": backup or "",
             "progress": progress,
         }
+        response["handover"] = make_handover(
+            "PATCH",
+            ["read_model_report", "get_predictions", "plot_roc_curve"],
+            {"model_path": str(model_path), "file_path": file_path},
+        )
         response["token_estimate"] = len(str(response)) // 4
         return response
 
@@ -451,7 +463,11 @@ def train_regressor(
         progress.append(ok(f"Trained {model_class_name}", f"r2={r2:.3f}, rmse={rmse:.2f}"))
 
         ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
-        models_dir = get_output_dir()
+        import os as _os
+
+        _override = _os.environ.get("MCP_OUTPUT_DIR")
+        models_dir = Path(_override) if _override else path.parent / ".mcp_models"
+        models_dir.mkdir(parents=True, exist_ok=True)
         model_path = models_dir / f"{path.stem}_{model}_{ts}.pkl"
 
         if model_path.exists():
@@ -499,6 +515,11 @@ def train_regressor(
             "backup": backup or "",
             "progress": progress,
         }
+        response["handover"] = make_handover(
+            "PATCH",
+            ["read_model_report", "get_predictions", "plot_predictions_vs_actual"],
+            {"model_path": str(model_path), "file_path": file_path},
+        )
         response["token_estimate"] = len(str(response)) // 4
         return response
 
