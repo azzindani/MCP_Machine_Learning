@@ -44,7 +44,7 @@ jobs:
         run: uv run pyright servers/ shared/
 
       - name: Run tests
-        run: uv run python -m pytest tests/ -q --tb=short
+        run: uv run python -m pytest tests/ -q --tb=short --cov=servers --cov=shared --cov-report=term-missing --cov-fail-under=70
 
   constrained:
     name: Constrained mode (ubuntu)
@@ -66,4 +66,4 @@ jobs:
         run: uv sync --frozen
 
       - name: Run tests in constrained mode
-        run: uv run python -m pytest tests/ -q --tb=short
+        run: uv run python -m pytest tests/ -q --tb=short --cov=servers --cov=shared --cov-report=term-missing --cov-fail-under=70

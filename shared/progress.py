@@ -2,41 +2,43 @@
 
 Always use Path(x).name in msg — never full absolute paths.
 Never print() — all output goes through the progress array.
+
+Schema: every dict has keys: icon, msg, and optionally detail.
 """
 
 from pathlib import Path
 
 
 def ok(msg: str, detail: str = "") -> dict:
-    entry: dict = {"status": "ok", "message": msg}
+    entry: dict = {"icon": "✔", "msg": msg}
     if detail:
         entry["detail"] = detail
     return entry
 
 
 def fail(msg: str, detail: str = "") -> dict:
-    entry: dict = {"status": "fail", "message": msg}
+    entry: dict = {"icon": "✘", "msg": msg}
     if detail:
         entry["detail"] = detail
     return entry
 
 
 def info(msg: str, detail: str = "") -> dict:
-    entry: dict = {"status": "info", "message": msg}
+    entry: dict = {"icon": "→", "msg": msg}
     if detail:
         entry["detail"] = detail
     return entry
 
 
 def warn(msg: str, detail: str = "") -> dict:
-    entry: dict = {"status": "warn", "message": msg}
+    entry: dict = {"icon": "⚠", "msg": msg}
     if detail:
         entry["detail"] = detail
     return entry
 
 
 def undo(msg: str, detail: str = "") -> dict:
-    entry: dict = {"status": "undo", "message": msg}
+    entry: dict = {"icon": "↩", "msg": msg}
     if detail:
         entry["detail"] = detail
     return entry

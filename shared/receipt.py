@@ -43,7 +43,9 @@ def append_receipt(
             record["backup"] = backup
 
         records.append(record)
-        rpath.write_text(json.dumps(records, indent=2, default=str), encoding="utf-8")
+        from shared.file_utils import atomic_write_text
+
+        atomic_write_text(rpath, json.dumps(records, indent=2, default=str))
     except Exception as exc:  # noqa: BLE001
         logger.debug("append_receipt failed silently: %s", exc)
 
