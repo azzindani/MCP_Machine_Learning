@@ -15,7 +15,12 @@ def snapshot(file_path: str) -> str:
     Raises:
         FileNotFoundError: source file does not exist
     """
-    source = Path(file_path).resolve()
+    try:
+        from shared.file_utils import resolve_path as _resolve
+
+        source = _resolve(str(file_path))
+    except ValueError:
+        source = Path(str(file_path)).resolve()
     if not source.exists():
         raise FileNotFoundError(f"Cannot snapshot — file not found: {source}")
 

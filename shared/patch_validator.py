@@ -2,6 +2,8 @@
 
 validate_ops() checks the entire array first. If any op is invalid,
 no ops are applied — fail fast, fail clean.
+
+Empty ops list is valid (no-op pass-through).
 """
 
 ALLOWED_PREPROCESSING_OPS: set[str] = {
@@ -14,6 +16,11 @@ ALLOWED_PREPROCESSING_OPS: set[str] = {
     "drop_column",
     "rename_column",
     "convert_dtype",
+    "bin_numeric",
+    "add_date_parts",
+    "log_transform",
+    "drop_null_rows",
+    "clip_column",
 }
 
 # Required fields per op type
@@ -27,11 +34,16 @@ _REQUIRED_FIELDS: dict[str, list[str]] = {
     "drop_column": ["column"],
     "rename_column": ["from", "to"],
     "convert_dtype": ["column", "to"],
+    "bin_numeric": ["column"],
+    "add_date_parts": ["column"],
+    "log_transform": ["column"],
+    "drop_null_rows": [],
+    "clip_column": ["column"],
 }
 
 ALLOWED_FILL_STRATEGIES: set[str] = {"mean", "median", "mode", "ffill", "bfill", "zero"}
 ALLOWED_SCALE_METHODS: set[str] = {"standard", "minmax"}
-ALLOWED_DTYPES: set[str] = {"int", "float", "str", "datetime", "bool"}
+ALLOWED_DTYPES: set[str] = {"int", "float", "str", "datetime", "bool", "numeric", "string"}
 ALLOWED_OUTLIER_METHODS: set[str] = {"iqr", "std"}
 
 MAX_OPS = 50
@@ -43,13 +55,7 @@ def validate_ops(
 ) -> tuple[bool, str]:
     """Validate op array. Returns (True, '') or (False, error_message).
 
-    Validates:
-    - ops is a non-empty list
-    - each op has "op" key
-    - each op name is in allowed set
-    - each op has all required fields
-    - strategy/method enum values are valid
-    - total ops <= MAX_OPS
+    Empty ops list is treated as valid (no-op pass-through).
     """
     if allowed is None:
         allowed = ALLOWED_PREPROCESSING_OPS
@@ -57,8 +63,9 @@ def validate_ops(
     if not isinstance(ops, list):
         return False, "ops must be a list of dicts."
 
+    # Empty list is a valid no-op
     if len(ops) == 0:
-        return False, "ops list is empty — nothing to apply."
+        return True, ""
 
     if len(ops) > MAX_OPS:
         return False, f"Too many ops ({len(ops)}). Maximum is {MAX_OPS} per batch."

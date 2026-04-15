@@ -10,6 +10,7 @@ import pandas as pd
 import xgboost as xgb
 
 from shared.file_utils import get_output_dir, resolve_path
+from shared.handover import make_handover
 from shared.platform_utils import get_max_rows
 from shared.progress import info, ok
 from shared.progress import name as pname
@@ -136,6 +137,11 @@ def get_predictions(
         }
         if truncated:
             response["hint"] = f"Results capped at {cap}. Pass max_rows to increase (up to {get_max_rows()})."
+        response["handover"] = make_handover(
+            "VERIFY",
+            ["read_model_report", "generate_training_report"],
+            {"model_path": model_path, "file_path": file_path},
+        )
         response["token_estimate"] = len(str(response)) // 4
         return response
 
@@ -320,8 +326,8 @@ def list_models(directory: str = "") -> dict:
                         "metrics": meta.get("metrics", {}),
                     }
                 )
-            except Exception:
-                pass
+            except Exception as _meta_exc:
+                logger.debug("Manifest read failed for %s: %s", pkl.name, _meta_exc)
         models.append(entry)
 
     progress.append(ok("Scanned for models", f"{len(models)} found"))

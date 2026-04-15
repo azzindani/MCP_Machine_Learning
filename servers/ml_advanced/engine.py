@@ -17,7 +17,7 @@ from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 from sklearn.preprocessing import StandardScaler
 
 from shared.file_utils import atomic_write_json, atomic_write_text, get_output_dir, resolve_path
-from shared.platform_utils import get_cv_folds, is_constrained_mode
+from shared.platform_utils import get_cv_folds, get_n_iter, is_constrained_mode
 from shared.progress import info, ok, warn
 from shared.receipt import append_receipt
 from shared.version_control import snapshot
@@ -126,8 +126,7 @@ def tune_hyperparameters(
 
     # Constrained-mode limits
     cv = min(cv, get_cv_folds())
-    if is_constrained_mode():
-        n_iter = min(n_iter, 5)
+    n_iter = min(n_iter, get_n_iter())
 
     if dry_run:
         resp: dict = {
@@ -170,7 +169,11 @@ def tune_hyperparameters(
 
     # Save best model
     ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
-    models_dir = get_output_dir()
+    import os as _os
+
+    _override = _os.environ.get("MCP_OUTPUT_DIR")
+    models_dir = Path(_override) if _override else path.parent / ".mcp_models"
+    models_dir.mkdir(parents=True, exist_ok=True)
     mp = models_dir / f"{path.stem}_{model}_tuned_{ts}.pkl"
 
     backup = ""

@@ -32,3 +32,7 @@ def get_cv_folds() -> int:
 
 def get_max_models() -> int:
     return 3 if is_constrained_mode() else 7
+
+
+def get_n_iter() -> int:
+    return 5 if is_constrained_mode() else 10
