@@ -85,7 +85,6 @@ def tune_hyperparameters(
     if search not in ("grid", "random"):
         return _error(f"Unknown search: '{search}'.", "Use 'grid' or 'random'.")
 
-    # Parse param_grid — JSON string or use defaults
     if param_grid:
         try:
             pg: dict = json.loads(param_grid)
@@ -100,7 +99,6 @@ def tune_hyperparameters(
             "Provide a custom param_grid JSON string.",
         )
 
-    # XGBoost not supported through sklearn GridSearch in this implementation
     if model == "xgb":
         return _error(
             "XGBoost tuning is not supported via GridSearch in this tier.",
@@ -125,7 +123,6 @@ def tune_hyperparameters(
             "Provide a dataset with more samples before tuning.",
         )
 
-    # Constrained-mode limits
     cv = min(cv, get_cv_folds())
     n_iter = min(n_iter, get_n_iter())
 
@@ -163,12 +160,10 @@ def tune_hyperparameters(
     searcher.fit(x, y)
     progress.append(ok("Search complete", f"best_score={searcher.best_score_:.4f}"))
 
-    # Cap cv_results_ to top 20
     results_df = pd.DataFrame(searcher.cv_results_)
     results_df = results_df.sort_values("mean_test_score", ascending=False).head(20)
     top_results = results_df[["mean_test_score", "std_test_score", "params"]].to_dict("records")
 
-    # Save best model
     ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
     import os as _os
 
@@ -287,7 +282,6 @@ def export_model(
         except Exception as exc:
             progress.append(warn("Snapshot failed", str(exc)))
 
-    # Load model to extract/build manifest
     try:
         model_obj, metadata = _load_model(str(src_path))
     except Exception as exc:
@@ -298,7 +292,6 @@ def export_model(
     if dst_path != src_path:
         shutil.copy2(src_path, dst_path)
 
-    # Build/update manifest
     manifest_data = {
         "model_type": metadata.get("model_type", "unknown"),
         "task": metadata.get("task", "unknown"),
@@ -357,17 +350,14 @@ def read_model_report(model_path: str) -> dict:
     metrics = metadata.get("metrics", {})
     feature_columns = metadata.get("feature_columns", [])
 
-    # Feature importance (tree models)
     feature_importance: list[dict] = []
     if model_obj is not None and hasattr(model_obj, "feature_importances_"):
         importances = model_obj.feature_importances_
         fi_pairs = sorted(zip(feature_columns, importances.tolist()), key=lambda x: x[1], reverse=True)[:10]
         feature_importance = [{"feature": f, "importance": round(i, 4)} for f, i in fi_pairs]
 
-    # Confusion matrix from metadata if stored
     confusion = metrics.get("confusion_matrix", {})
 
-    # Classification report from metadata
     clf_report = metadata.get("classification_report", "")
     if clf_report and len(clf_report) > 500:
         clf_report = clf_report[:500]
