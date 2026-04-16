@@ -36,9 +36,13 @@ from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 from shared.file_utils import get_output_dir, resolve_path
 from shared.html_layout import get_output_path
 from shared.html_theme import _open_file, save_chart
+from shared.ml_utils import _auto_preprocess
 from shared.platform_utils import get_cv_folds, get_max_models
 from shared.progress import fail, info, ok, warn
 from shared.receipt import append_receipt, read_receipt_log
+from shared.registry import CLUSTERERS
+from shared.registry import allowed_classifiers as _allowed_classifiers
+from shared.registry import allowed_regressors as _allowed_regressors
 from shared.version_control import snapshot
 
 logger = logging.getLogger(__name__)
@@ -47,9 +51,9 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-ALLOWED_CLASSIFIERS = {"lr", "svm", "rf", "dtc", "knn", "nb", "xgb"}
-ALLOWED_REGRESSORS = {"lir", "pr", "lar", "rr", "dtr", "rfr", "xgb"}
-ALLOWED_CLUSTER_ALGOS = {"kmeans", "meanshift", "dbscan"}
+ALLOWED_CLASSIFIERS = _allowed_classifiers()
+ALLOWED_REGRESSORS = _allowed_regressors()
+ALLOWED_CLUSTER_ALGOS = CLUSTERERS
 
 ALLOWED_OPS = {
     "fill_nulls",
@@ -107,40 +111,6 @@ def _check_memory(required_gb: float) -> dict | None:
             "token_estimate": 60,
         }
     return None
-
-
-def _auto_preprocess(df: pd.DataFrame, target_column: str) -> tuple[pd.DataFrame, dict, list[str]]:
-    """Drop null targets, label-encode categoricals, fill numeric nulls."""
-    df = df.dropna(subset=[target_column]).copy()
-    encoding_map: dict = {}
-    encoded_cols: list[str] = []
-
-    for col in df.columns:
-        if col == target_column:
-            continue
-        if pd.api.types.is_string_dtype(df[col]) or df[col].dtype == object or str(df[col].dtype) == "category":
-            le = LabelEncoder()
-            df[col] = le.fit_transform(df[col].fillna("nan").astype(str))
-            encoding_map[col] = {str(cls): int(idx) for idx, cls in enumerate(le.classes_)}
-            encoded_cols.append(col)
-
-    # Encode target column if it is categorical (handles string labels like "yes"/"no")
-    if (
-        pd.api.types.is_string_dtype(df[target_column])
-        or df[target_column].dtype == object
-        or str(df[target_column].dtype) == "category"
-    ):
-        le_tgt = LabelEncoder()
-        df[target_column] = le_tgt.fit_transform(df[target_column].astype(str))
-        encoding_map[f"__target__{target_column}"] = {str(cls): int(idx) for idx, cls in enumerate(le_tgt.classes_)}
-
-    # fill numeric nulls with median (vectorized — single pass)
-    num_cols = df.select_dtypes(include="number").columns
-    if len(num_cols) > 0:
-        medians = df[num_cols].median()
-        df[num_cols] = df[num_cols].fillna(medians)
-
-    return df, encoding_map, encoded_cols
 
 
 def _build_classifier(model: str, **kw: object) -> object:
