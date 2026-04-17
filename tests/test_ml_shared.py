@@ -1,4 +1,4 @@
-"""Tests for shared utilities: project_utils and updated file_utils."""
+"""Tests for shared utilities: workspace_utils (via project_utils shim) and file_utils."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ from shared.project_utils import (
 
 
 def _make_project(base_dir: Path, project_name: str, alias: str, file_path: Path) -> None:
-    """Create a minimal DA-compatible project.json for testing."""
+    """Create a minimal workspace-compatible manifest for testing."""
     proj_dir = base_dir / project_name
     proj_dir.mkdir(parents=True, exist_ok=True)
     manifest = {
@@ -45,11 +45,12 @@ def _make_project(base_dir: Path, project_name: str, alias: str, file_path: Path
         "pipeline_history": [],
         "updated": "2026-01-01T00:00:00+00:00",
     }
+    # Write as project.json for backward-compat fallback testing
     (proj_dir / "project.json").write_text(json.dumps(manifest), encoding="utf-8")
 
 
 def _make_empty_project(base_dir: Path, project_name: str) -> None:
-    """Create a project.json with no registered files."""
+    """Create a manifest with no registered files."""
     proj_dir = base_dir / project_name
     proj_dir.mkdir(parents=True, exist_ok=True)
     manifest = {
@@ -68,14 +69,25 @@ def _make_empty_project(base_dir: Path, project_name: str) -> None:
 
 
 def test_get_projects_root_default():
+    # Default changed from mcp_projects -> mcp_workspace with the workspace rename
     root = get_projects_root()
-    assert root == Path.home() / "mcp_projects"
+    assert root == Path.home() / "mcp_workspace"
 
 
 def test_get_projects_root_env(monkeypatch, tmp_path):
     monkeypatch.setenv("MCP_PROJECTS_DIR", str(tmp_path))
     root = get_projects_root()
     assert root == tmp_path
+
+
+def test_get_projects_root_workspace_env_takes_priority(monkeypatch, tmp_path):
+    ws = tmp_path / "ws"
+    proj = tmp_path / "proj"
+    ws.mkdir()
+    proj.mkdir()
+    monkeypatch.setenv("MCP_WORKSPACE_DIR", str(ws))
+    monkeypatch.setenv("MCP_PROJECTS_DIR", str(proj))
+    assert get_projects_root() == ws
 
 
 def test_get_projects_root_base_dir_arg(tmp_path):
@@ -90,6 +102,10 @@ def test_get_projects_root_base_dir_arg(tmp_path):
 
 def test_is_alias_true():
     assert is_alias("project:myproj/clean_data") is True
+
+
+def test_is_alias_workspace_prefix():
+    assert is_alias("workspace:myproj/clean_data") is True
 
 
 def test_is_alias_false_absolute():
@@ -114,15 +130,22 @@ def test_resolve_alias_success(tmp_path, monkeypatch):
     assert result == csv_file.resolve()
 
 
+def test_resolve_alias_workspace_prefix(tmp_path, monkeypatch):
+    monkeypatch.setenv("MCP_WORKSPACE_DIR", str(tmp_path))
+    csv_file = tmp_path / "data.csv"
+    csv_file.write_text("a,b\n1,2\n")
+    _make_project(tmp_path, "testproj", "mydata", csv_file)
+    result = resolve_alias("workspace:testproj/mydata")
+    assert result == csv_file.resolve()
+
+
 def test_resolve_alias_relative_path_in_manifest(tmp_path, monkeypatch):
-    """Stored relative path inside project dir resolves correctly."""
     monkeypatch.setenv("MCP_PROJECTS_DIR", str(tmp_path))
     proj_dir = tmp_path / "proj2"
     proj_dir.mkdir()
     (proj_dir / "data" / "working").mkdir(parents=True)
     csv_file = proj_dir / "data" / "working" / "clean.csv"
     csv_file.write_text("a,b\n1,2\n")
-    # Store relative path (as DA does for files inside the project)
     manifest = {
         "name": "proj2",
         "files": {"clean": {"path": "data/working/clean.csv", "stage": "working"}},
@@ -215,7 +238,7 @@ def test_create_project_dirs(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# file_utils.resolve_path — project: alias support
+# file_utils.resolve_path — alias support
 # ---------------------------------------------------------------------------
 
 
@@ -225,6 +248,15 @@ def test_resolve_path_project_alias(tmp_path, monkeypatch):
     csv_file.write_text("a,b\n1,2\n")
     _make_project(tmp_path, "proj1", "mycsv", csv_file)
     result = resolve_path("project:proj1/mycsv")
+    assert result == csv_file.resolve()
+
+
+def test_resolve_path_workspace_alias(tmp_path, monkeypatch):
+    monkeypatch.setenv("MCP_WORKSPACE_DIR", str(tmp_path))
+    csv_file = tmp_path / "data.csv"
+    csv_file.write_text("a,b\n1,2\n")
+    _make_project(tmp_path, "proj1", "mycsv", csv_file)
+    result = resolve_path("workspace:proj1/mycsv")
     assert result == csv_file.resolve()
 
 
