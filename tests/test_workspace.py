@@ -1,7 +1,5 @@
 """Tests for shared/workspace_utils.py and shared/handover.py (ML version)."""
 
-from __future__ import annotations
-
 import json
 from pathlib import Path
 
