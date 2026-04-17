@@ -1,7 +1,5 @@
 """Tests for shared utilities: workspace_utils (via project_utils shim) and file_utils."""
 
-from __future__ import annotations
-
 import json
 import sys
 from pathlib import Path
