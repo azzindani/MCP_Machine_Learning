@@ -19,6 +19,9 @@ A self-hosted MCP server that gives local LLMs structured access to the full sup
 - **Dark / light / device theme** — all HTML outputs accept `theme: "dark" | "light" | "device"`
 - **Mobile-responsive HTML** — viewport meta + CSS breakpoints on every report
 - **Modular architecture** — each engine split into focused sub-modules, all under 1 000 lines
+- **Handover protocol** — every tool response includes `context` + `handover` for automatic tool-call chaining
+- **Encoding-robust CSV loading** — UTF-8 → UTF-8-BOM → CP1252 → Latin-1 fallback chain with bad-line recovery
+- **DA server compatible** — designed to work side-by-side with [MCP_Data_Analyst](https://github.com/azzindani/MCP_Data_Analyst) via shared workspace and handover conventions
 
 ## Important: File Path Only
 
@@ -353,6 +356,22 @@ Restore C:\data\churn.csv to the previous version
 4. generate_training_report(model_path) → confusion matrix, feature importance
 ```
 
+## Inter-server compatibility (MCP_Data_Analyst)
+
+This server is designed to work side-by-side with [MCP_Data_Analyst](https://github.com/azzindani/MCP_Data_Analyst). Both servers share the same:
+
+- **Handover protocol** — every tool success response includes a `context` block (what was just done + artifact paths) and a `handover` block (suggested next tools + carry-forward parameters). The LLM uses these to chain tool calls automatically without needing you to repeat paths or state.
+- **Workspace alias resolution** — paths like `workspace:my_project/cleaned.csv` resolve to the same on-disk locations in both servers.
+- **CSV loading** — encoding-robust loader (`shared.file_utils.read_csv`) handles UTF-8, UTF-8-BOM, CP1252, and Latin-1 files with bad-line recovery, matching the DA server's behavior exactly.
+
+A typical cross-server workflow:
+
+```
+DA: generate_eda_report("churn.csv")        → EDA HTML + handover suggests train_classifier
+ML: train_classifier("churn.csv", "rf")    → model + handover suggests generate_training_report
+ML: generate_training_report(model_path)   → confusion matrix, feature importance
+```
+
 ## Configuration
 
 ### Constrained Mode
@@ -435,10 +454,15 @@ MCP_Machine_Learning/
 ├── shared/
 │   ├── version_control.py     ← snapshot() and restore()
 │   ├── patch_validator.py     ← validate op arrays
-│   ├── file_utils.py          ← path resolution, atomic writes
+│   ├── file_utils.py          ← path resolution, atomic writes, encoding-robust read_csv
 │   ├── platform_utils.py      ← constrained mode, row limits
 │   ├── progress.py            ← ok/fail/info/warn helpers
 │   ├── receipt.py             ← operation receipt logging
+│   ├── handover.py            ← make_context() / make_handover() for tool-chaining protocol
+│   ├── workspace_utils.py     ← workspace alias resolution, pipeline save/load
+│   ├── ml_utils.py            ← shared ML helper functions (encoding, preprocessing)
+│   ├── registry.py            ← canonical algorithm key sets (classifiers, regressors)
+│   ├── project_utils.py       ← backward-compatible shim for workspace_utils
 │   ├── html_layout.py         ← output path helpers, Plotly layout base
 │   └── html_theme.py          ← CSS vars, Plotly templates, responsive HTML helpers
 ├── install/
