@@ -5,7 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
+
+from shared.handover import make_context, make_handover
 
 from ._medium_helpers import (
     ALLOWED_CLUSTER_ALGOS,
@@ -16,6 +17,7 @@ from ._medium_helpers import (
     MeanShift,
     StandardScaler,
     _error,
+    _read_csv,
     append_receipt,
     ok,
     read_receipt_log,
@@ -57,8 +59,10 @@ def run_clustering(
     if reduce_dims and reduce_dims not in ("pca", "ica"):
         return _error(f"Unknown reduce_dims: '{reduce_dims}'.", "Use 'pca', 'ica', or '' (none).")
 
+    if path.stat().st_size == 0:
+        return _error(f"File is empty: {path.name}", "Verify the file has header + data rows.")
     try:
-        df = pd.read_csv(path, low_memory=False)
+        df = _read_csv(str(path))
     except Exception as exc:
         return _error(f"Failed to read CSV: {exc}", "Check the file is a valid CSV.")
     progress.append(ok(f"Loaded {path.name}", f"{len(df):,} rows × {len(df.columns)} cols"))
@@ -177,6 +181,15 @@ def run_clustering(
         "token_estimate": 0,
         **extra,
     }
+    resp["context"] = make_context(
+        "run_clustering",
+        f"Clustered {path.name} with {algorithm}: {n_found} cluster(s), silhouette={silhouette}",
+    )
+    resp["handover"] = make_handover(
+        "TRAIN",
+        ["find_optimal_clusters", "generate_cluster_report", "generate_eda_report"],
+        {"file_path": file_path, "feature_columns": feature_columns},
+    )
     resp["token_estimate"] = len(str(resp)) // 4
     return resp
 
@@ -197,5 +210,14 @@ def read_receipt(file_path: str) -> dict:
         "entries": log,
         "token_estimate": 0,
     }
+    resp["context"] = make_context(
+        "read_receipt",
+        f"Read {len(log)} operation log entries for {Path(file_path).name}",
+    )
+    resp["handover"] = make_handover(
+        "INSPECT",
+        ["inspect_dataset", "restore_version", "run_preprocessing"],
+        {"file_path": file_path},
+    )
     resp["token_estimate"] = len(str(resp)) // 4
     return resp

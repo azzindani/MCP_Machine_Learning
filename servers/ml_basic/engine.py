@@ -6,8 +6,8 @@ import logging
 
 import pandas as pd
 
-from shared.file_utils import resolve_path
-from shared.handover import make_handover
+from shared.file_utils import read_csv as _read_csv, resolve_path
+from shared.handover import make_context, make_handover
 from shared.platform_utils import get_max_columns, get_max_results, get_max_rows
 from shared.progress import name as pname
 from shared.progress import ok
@@ -53,8 +53,10 @@ def inspect_dataset(file_path: str) -> dict:
                 f"File not found: {file_path}",
                 "Check that file_path is absolute and the CSV file exists.",
             )
+        if path.stat().st_size == 0:
+            return _error(f"File is empty: {path.name}", "Verify the file has header + data rows.")
 
-        df = pd.read_csv(path, low_memory=False)
+        df = _read_csv(str(path))
         progress.append(ok(f"Loaded {pname(file_path)}", f"{len(df):,} rows × {len(df.columns)} cols"))
 
         max_cols = get_max_columns()
@@ -89,6 +91,10 @@ def inspect_dataset(file_path: str) -> dict:
             "truncated": truncated,
             "progress": progress,
         }
+        response["context"] = make_context(
+            "inspect_dataset",
+            f"Inspected {pname(file_path)}: {len(df):,} rows × {len(all_columns)} cols",
+        )
         response["handover"] = make_handover(
             "LOCATE",
             ["read_column_profile", "search_columns", "read_rows"],
@@ -117,8 +123,10 @@ def read_column_profile(file_path: str, column_name: str) -> dict:
                 f"File not found: {file_path}",
                 "Check that file_path is absolute and the CSV file exists.",
             )
+        if path.stat().st_size == 0:
+            return _error(f"File is empty: {path.name}", "Verify the file has header + data rows.")
 
-        df = pd.read_csv(path, low_memory=False)
+        df = _read_csv(str(path))
         if column_name not in df.columns:
             return _error(
                 f"Column '{column_name}' not found. Available: {', '.join(list(df.columns)[:10])}",
@@ -180,6 +188,10 @@ def read_column_profile(file_path: str, column_name: str) -> dict:
             "profile": profile,
             "progress": progress,
         }
+        response["context"] = make_context(
+            "read_column_profile",
+            f"Profiled column '{column_name}' ({profile['kind']}) in {pname(file_path)}",
+        )
         response["handover"] = make_handover(
             "INSPECT",
             ["train_classifier", "train_regressor", "run_preprocessing"],
@@ -214,8 +226,10 @@ def search_columns(
                 f"File not found: {file_path}",
                 "Check that file_path is absolute and the CSV file exists.",
             )
+        if path.stat().st_size == 0:
+            return _error(f"File is empty: {path.name}", "Verify the file has header + data rows.")
 
-        df = pd.read_csv(path, low_memory=False)
+        df = _read_csv(str(path))
         progress.append(ok(f"Loaded {pname(file_path)}", f"{len(df.columns)} columns"))
 
         cap = min(max_results, get_max_results())
@@ -251,6 +265,10 @@ def search_columns(
             "truncated": truncated,
             "progress": progress,
         }
+        response["context"] = make_context(
+            "search_columns",
+            f"Found {len(matches)} column(s) matching criteria in {pname(file_path)}",
+        )
         response["handover"] = make_handover(
             "LOCATE",
             ["read_column_profile", "read_rows"],
@@ -279,8 +297,10 @@ def read_rows(file_path: str, start: int, end: int) -> dict:
                 f"File not found: {file_path}",
                 "Check that file_path is absolute and the CSV file exists.",
             )
+        if path.stat().st_size == 0:
+            return _error(f"File is empty: {path.name}", "Verify the file has header + data rows.")
 
-        df = pd.read_csv(path, low_memory=False)
+        df = _read_csv(str(path))
         total = len(df)
         progress.append(ok(f"Loaded {pname(file_path)}", f"{total:,} rows total"))
 
@@ -306,6 +326,10 @@ def read_rows(file_path: str, start: int, end: int) -> dict:
         }
         if truncated:
             response["hint"] = f"Results capped at {cap}. Use start/end parameters to page through the data."
+        response["context"] = make_context(
+            "read_rows",
+            f"Read rows {start}–{start + len(rows)} of {total:,} from {pname(file_path)}",
+        )
         response["handover"] = make_handover(
             "INSPECT",
             ["train_classifier", "train_regressor", "run_preprocessing"],

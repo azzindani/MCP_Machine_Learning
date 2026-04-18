@@ -5,9 +5,11 @@ from __future__ import annotations
 import pandas as pd
 
 from shared.file_utils import atomic_write_text
+from shared.handover import make_context, make_handover
 
 from ._medium_helpers import (
     _error,
+    _read_csv,
     append_receipt,
     get_output_path,
     ok,
@@ -269,13 +271,15 @@ def generate_eda_report(
         return _error(str(exc), "Check that file_path is inside your home directory.")
     if not path.exists():
         return _error(f"File not found: {file_path}", "Check that file_path is absolute and the CSV file exists.")
+    if path.stat().st_size == 0:
+        return _error(f"File is empty: {path.name}", "Verify the file has header + data rows.")
     if path.suffix.lower() != ".csv":
         return _error(f"Expected .csv file, got {path.suffix!r}", "Provide a CSV file path.")
 
     out_path = get_output_path(output_path, path, "eda_report", "html")
 
     try:
-        df = pd.read_csv(path, low_memory=False)
+        df = _read_csv(str(path))
     except Exception as exc:
         return _error(f"Failed to read CSV: {exc}", "Check the file is a valid CSV.")
     progress.append(ok(f"Loaded {path.name}", f"{len(df):,} rows × {len(df.columns)} cols"))
@@ -565,6 +569,16 @@ def generate_eda_report(
         "progress": progress,
         "token_estimate": 0,
     }
+    resp["context"] = make_context(
+        "generate_eda_report",
+        f"EDA report for {path.name}: quality={quality_score}/100, {len(alerts)} alert(s) → {out_path.name}",
+        [{"type": "html", "path": str(out_path), "role": "eda_report"}],
+    )
+    resp["handover"] = make_handover(
+        "REPORT",
+        ["run_preprocessing", "check_data_quality", "train_classifier"],
+        {"file_path": file_path},
+    )
     resp["token_estimate"] = len(str(resp)) // 4
     return resp
 

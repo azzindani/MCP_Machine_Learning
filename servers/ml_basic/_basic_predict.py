@@ -9,8 +9,8 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 
-from shared.file_utils import get_output_dir, resolve_path
-from shared.handover import make_handover
+from shared.file_utils import get_output_dir, read_csv as _read_csv, resolve_path
+from shared.handover import make_context, make_handover
 from shared.platform_utils import get_max_rows
 from shared.progress import info, ok
 from shared.progress import name as pname
@@ -55,8 +55,10 @@ def get_predictions(
                 f"File not found: {file_path}",
                 "Check that file_path is absolute and the CSV file exists.",
             )
+        if data_path.stat().st_size == 0:
+            return _error(f"File is empty: {data_path.name}", "Verify the file has header + data rows.")
 
-        df = pd.read_csv(data_path, low_memory=False)
+        df = _read_csv(str(data_path))
         progress.append(ok(f"Loaded {pname(file_path)}", f"{len(df):,} rows"))
 
         # apply same encoding as training
@@ -137,6 +139,11 @@ def get_predictions(
         }
         if truncated:
             response["hint"] = f"Results capped at {cap}. Pass max_rows to increase (up to {get_max_rows()})."
+        response["context"] = make_context(
+            "get_predictions",
+            f"Generated {len(predictions)} predictions using {pname(model_path)} on {pname(file_path)}",
+            [{"type": "predictions", "path": file_path, "role": "prediction_input"}],
+        )
         response["handover"] = make_handover(
             "VERIFY",
             ["read_model_report", "generate_training_report"],
@@ -172,6 +179,16 @@ def restore_version(file_path: str, timestamp: str = "") -> dict:
                     )
                 )
         result["progress"] = progress
+        if result.get("success"):
+            result["context"] = make_context(
+                "restore_version",
+                f"{'Restored' if timestamp else 'Listed snapshots for'} {pname(file_path)}",
+            )
+            result["handover"] = make_handover(
+                "COLLECT",
+                ["inspect_dataset", "train_classifier", "train_regressor"],
+                {"file_path": file_path},
+            )
         result["token_estimate"] = len(str(result)) // 4
         return result
     except Exception as exc:
@@ -284,6 +301,15 @@ def predict_single(model_path: str, input_data: str) -> dict:
         "progress": progress,
         "token_estimate": 0,
     }
+    resp["context"] = make_context(
+        "predict_single",
+        f"Predicted {task} result={resp['prediction']} using {mp.name}",
+    )
+    resp["handover"] = make_handover(
+        "EVALUATE",
+        ["read_model_report", "get_predictions"],
+        {"model_path": model_path},
+    )
     resp["token_estimate"] = len(str(resp)) // 4
     return resp
 
@@ -341,6 +367,15 @@ def list_models(directory: str = "") -> dict:
         "progress": progress,
         "token_estimate": 0,
     }
+    resp["context"] = make_context(
+        "list_models",
+        f"Found {len(models)} model(s) in {search_dir.name}",
+    )
+    resp["handover"] = make_handover(
+        "COLLECT",
+        ["get_predictions", "read_model_report", "predict_single"],
+        {"directory": str(search_dir)},
+    )
     resp["token_estimate"] = len(str(resp)) // 4
     return resp
 
@@ -368,8 +403,10 @@ def split_dataset(
     if path.suffix.lower() != ".csv":
         return _error(f"Expected .csv, got {path.suffix!r}", "Provide a CSV file.")
 
+    if path.stat().st_size == 0:
+        return _error(f"File is empty: {path.name}", "Verify the file has header + data rows.")
     try:
-        df = pd.read_csv(path, low_memory=False)
+        df = _read_csv(str(path))
     except Exception as exc:
         return _error(f"Failed to read CSV: {exc}", "Check the file is valid.")
     progress.append(ok(f"Loaded {pname(file_path)}", f"{len(df):,} rows"))
@@ -438,5 +475,18 @@ def split_dataset(
         "progress": progress,
         "token_estimate": 0,
     }
+    resp["context"] = make_context(
+        "split_dataset",
+        f"Split {pname(file_path)} into {len(df_train):,} train / {len(df_test):,} test rows",
+        [
+            {"type": "csv", "path": str(train_path), "role": "train_set"},
+            {"type": "csv", "path": str(test_path), "role": "test_set"},
+        ],
+    )
+    resp["handover"] = make_handover(
+        "PREPARE",
+        ["train_classifier", "train_regressor", "train_with_cv"],
+        {"file_path": str(train_path)},
+    )
     resp["token_estimate"] = len(str(resp)) // 4
     return resp

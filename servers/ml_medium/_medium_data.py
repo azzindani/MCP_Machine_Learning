@@ -8,8 +8,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from shared.handover import make_context, make_handover
+
 from ._medium_helpers import (
     _error,
+    _read_csv,
     _save_chart,
     append_receipt,
     get_output_dir,
@@ -60,8 +63,10 @@ def filter_rows(
             "Use one of: eq ne gt lt gte lte contains is_null not_null starts_with ends_with",
         )
 
+    if path.stat().st_size == 0:
+        return _error(f"File is empty: {path.name}", "Verify the file has header + data rows.")
     try:
-        df = pd.read_csv(path, low_memory=False)
+        df = _read_csv(str(path))
     except Exception as exc:
         return _error(f"Failed to read CSV: {exc}", "Check the file is valid.")
 
@@ -151,6 +156,16 @@ def filter_rows(
         "progress": progress,
         "token_estimate": 0,
     }
+    resp["context"] = make_context(
+        "filter_rows",
+        f"Filtered {path.name}: kept {kept:,} of {original_count:,} rows ({column} {operator} {value!r})",
+        [{"type": "csv", "path": str(out_resolved), "role": "filtered_dataset"}],
+    )
+    resp["handover"] = make_handover(
+        "CLEAN",
+        ["inspect_dataset", "train_classifier", "train_regressor"],
+        {"file_path": str(out_resolved)},
+    )
     resp["token_estimate"] = len(str(resp)) // 4
     return resp
 
@@ -183,9 +198,12 @@ def merge_datasets(
         if not p.exists():
             return _error(f"File not found: {p}", "Check the file path.")
 
+    for p_check in (p1, p2):
+        if p_check.stat().st_size == 0:
+            return _error(f"File is empty: {p_check.name}", "Verify the file has header + data rows.")
     try:
-        df1 = pd.read_csv(p1, low_memory=False)
-        df2 = pd.read_csv(p2, low_memory=False)
+        df1 = _read_csv(str(p1))
+        df2 = _read_csv(str(p2))
     except Exception as exc:
         return _error(f"Failed to read CSV: {exc}", "Check files are valid CSVs.")
 
@@ -251,6 +269,16 @@ def merge_datasets(
         "progress": progress,
         "token_estimate": 0,
     }
+    resp["context"] = make_context(
+        "merge_datasets",
+        f"Merged {p1.name} + {p2.name} on {on} ({how}): {len(df_merged):,} rows → {out_resolved.name}",
+        [{"type": "csv", "path": str(out_resolved), "role": "merged_dataset"}],
+    )
+    resp["handover"] = make_handover(
+        "PREPARE",
+        ["inspect_dataset", "train_classifier", "train_regressor", "run_preprocessing"],
+        {"file_path": str(out_resolved)},
+    )
     resp["token_estimate"] = len(str(resp)) // 4
     return resp
 
@@ -284,9 +312,11 @@ def find_optimal_clusters(
         return _error(str(exc), "Check that file_path is inside your home directory.")
     if not path.exists():
         return _error(f"File not found: {file_path}", "Check the file path.")
+    if path.stat().st_size == 0:
+        return _error(f"File is empty: {path.name}", "Verify the file has header + data rows.")
 
     try:
-        df = pd.read_csv(path, low_memory=False)
+        df = _read_csv(str(path))
     except Exception as exc:
         return _error(f"Failed to read CSV: {exc}", "Check the file is valid.")
 
@@ -362,6 +392,16 @@ def find_optimal_clusters(
         "progress": progress,
         "token_estimate": 0,
     }
+    resp["context"] = make_context(
+        "find_optimal_clusters",
+        f"Elbow analysis on {path.name}: best K={best_k} by silhouette score",
+        [{"type": "html", "path": out_abs, "role": "elbow_chart"}],
+    )
+    resp["handover"] = make_handover(
+        "INSPECT",
+        ["run_clustering", "generate_cluster_report"],
+        {"file_path": file_path, "feature_columns": feature_columns},
+    )
     resp["token_estimate"] = len(str(resp)) // 4
     return resp
 
@@ -395,9 +435,11 @@ def anomaly_detection(
         return _error(str(exc), "Check that file_path is inside your home directory.")
     if not path.exists():
         return _error(f"File not found: {file_path}", "Check the file path.")
+    if path.stat().st_size == 0:
+        return _error(f"File is empty: {path.name}", "Verify the file has header + data rows.")
 
     try:
-        df = pd.read_csv(path, low_memory=False)
+        df = _read_csv(str(path))
     except Exception as exc:
         return _error(f"Failed to read CSV: {exc}", "Check the file is valid.")
 
@@ -469,6 +511,15 @@ def anomaly_detection(
         "progress": progress,
         "token_estimate": 0,
     }
+    resp["context"] = make_context(
+        "anomaly_detection",
+        f"Detected {n_anomalies} anomaly rows ({anomaly_pct}%) in {path.name} using {method}",
+    )
+    resp["handover"] = make_handover(
+        "INSPECT",
+        ["run_preprocessing", "filter_rows", "inspect_dataset"],
+        {"file_path": file_path},
+    )
     resp["token_estimate"] = len(str(resp)) // 4
     return resp
 
@@ -536,7 +587,9 @@ def evaluate_model(
         scaler = metadata.get("scaler")
         poly = metadata.get("poly")
 
-        df = pd.read_csv(dp, low_memory=False)
+        if dp.stat().st_size == 0:
+            return {"success": False, "error": f"File is empty: {dp.name}", "hint": "Verify the file has header + data rows.", "token_estimate": 30}
+        df = _read_csv(str(dp))
         progress.append(ok("Loaded test data", f"{len(df)} rows"))
 
         if target_column not in df.columns:
@@ -636,6 +689,16 @@ def evaluate_model(
             "progress": progress,
             "token_estimate": 0,
         }
+        resp["context"] = make_context(
+            "evaluate_model",
+            f"Evaluated {mp.name} on {dp.name}: " + ", ".join(f"{k}={v}" for k, v in metrics.items() if not isinstance(v, dict))[:80],
+            [{"type": "model", "path": str(mp), "role": "evaluated_model"}],
+        )
+        resp["handover"] = make_handover(
+            "EVALUATE",
+            ["read_model_report", "plot_roc_curve", "generate_training_report"],
+            {"model_path": model_path, "file_path": test_file_path},
+        )
         resp["token_estimate"] = len(str(resp)) // 4
         return resp
 
@@ -719,7 +782,9 @@ def batch_predict(
         model_key = metadata.get("model_key", "")
         n_classes = metadata.get("n_classes", 2)
 
-        df = pd.read_csv(dp, low_memory=False)
+        if dp.stat().st_size == 0:
+            return {"success": False, "error": f"File is empty: {dp.name}", "hint": "Verify the file has header + data rows.", "token_estimate": 30}
+        df = _read_csv(str(dp))
         progress.append(ok("Loaded data", f"{len(df):,} rows"))
 
         for col, mapping in encoding_map.items():
@@ -786,6 +851,16 @@ def batch_predict(
             "progress": progress,
             "token_estimate": 0,
         }
+        resp["context"] = make_context(
+            "batch_predict",
+            f"Generated {len(preds):,} predictions from {mp.name} on {dp.name} → {out.name}",
+            [{"type": "csv", "path": str(out), "role": "predictions_csv"}],
+        )
+        resp["handover"] = make_handover(
+            "EVALUATE",
+            ["evaluate_model", "read_model_report", "inspect_dataset"],
+            {"model_path": model_path, "file_path": str(out)},
+        )
         resp["token_estimate"] = len(str(resp)) // 4
         return resp
 
@@ -820,9 +895,11 @@ def check_data_quality(file_path: str) -> dict:
             "hint": "Check that file_path is absolute.",
             "token_estimate": 30,
         }
+    if path.stat().st_size == 0:
+        return {"success": False, "error": f"File is empty: {path.name}", "hint": "Verify the file has header + data rows.", "token_estimate": 30}
 
     try:
-        df = pd.read_csv(path, low_memory=False)
+        df = _read_csv(str(path))
     except Exception as exc:
         return {"success": False, "error": str(exc), "hint": "Check the file is a valid CSV.", "token_estimate": 30}
     progress.append(ok(f"Loaded {path.name}", f"{len(df):,} rows × {len(df.columns)} cols"))
@@ -984,5 +1061,14 @@ def check_data_quality(file_path: str) -> dict:
         "progress": progress,
         "token_estimate": 0,
     }
+    resp["context"] = make_context(
+        "check_data_quality",
+        f"Quality score {round(score, 1)}/100 for {path.name}: {len(alerts)} alert(s) ({sum(1 for a in alerts if a.get('severity') == 'high')} high)",
+    )
+    resp["handover"] = make_handover(
+        "INSPECT",
+        ["run_preprocessing", "generate_eda_report", "detect_outliers"],
+        {"file_path": file_path},
+    )
     resp["token_estimate"] = len(str(resp)) // 4
     return resp

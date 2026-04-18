@@ -12,7 +12,7 @@ import pandas as pd
 import sklearn
 
 from shared.file_utils import atomic_write_json
-from shared.handover import make_handover
+from shared.handover import make_context, make_handover
 
 from ._medium_helpers import (
     ALLOWED_CLASSIFIERS,
@@ -24,6 +24,7 @@ from ._medium_helpers import (
     _error,
     _fit_predict_classifier,
     _fit_predict_regressor,
+    _read_csv,
     accuracy_score,
     append_receipt,
     f1_score,
@@ -77,8 +78,10 @@ def train_with_cv(
             f"Use one of: {' '.join(sorted(allowed))}",
         )
 
+    if path.stat().st_size == 0:
+        return _error(f"File is empty: {path.name}", "Verify the file has header + data rows.")
     try:
-        df = pd.read_csv(path, low_memory=False)
+        df = _read_csv(str(path))
     except Exception as exc:
         return _error(f"Failed to read CSV: {exc}", "Check the file is a valid CSV.")
     progress.append(ok(f"Loaded {path.name}", f"{len(df):,} rows × {len(df.columns)} cols"))
@@ -236,6 +239,12 @@ def train_with_cv(
         "progress": progress,
         "token_estimate": 0,
     }
+    mean_key = list(mean_metrics.keys())[0] if mean_metrics else "score"
+    resp["context"] = make_context(
+        "train_with_cv",
+        f"Trained {model} with {n_splits}-fold CV on {path.name}: {mean_key}={mean_metrics.get(mean_key, 0):.3f}",
+        [{"type": "model", "path": str(model_path), "role": "trained_model"}],
+    )
     resp["handover"] = make_handover(
         "PATCH",
         ["evaluate_model", "get_predictions", "generate_training_report"],
@@ -281,8 +290,10 @@ def compare_models(
         models = models[:max_models]
         progress.append(warn(f"Capped to {max_models} models", "constrained mode limit"))
 
+    if path.stat().st_size == 0:
+        return _error(f"File is empty: {path.name}", "Verify the file has header + data rows.")
     try:
-        df = pd.read_csv(path, low_memory=False)
+        df = _read_csv(str(path))
     except Exception as exc:
         return _error(f"Failed to read CSV: {exc}", "Check the file is a valid CSV.")
     progress.append(ok(f"Loaded {path.name}", f"{len(df):,} rows × {len(df.columns)} cols"))
@@ -394,6 +405,8 @@ def compare_models(
 
     append_receipt(str(path), "compare_models", {"task": task, "models": models}, "success", backup)
 
+    best_score_key = list(results[0]["metrics"].keys())[0] if results else "score"
+    best_score_val = results[0]["metrics"].get(best_score_key, 0) if results else 0
     resp = {
         "success": True,
         "op": "compare_models",
@@ -405,6 +418,11 @@ def compare_models(
         "progress": progress,
         "token_estimate": 0,
     }
+    resp["context"] = make_context(
+        "compare_models",
+        f"Compared {len(models)} models on {path.name}: best={best} ({best_score_key}={best_score_val:.3f})",
+        [{"type": "model", "path": best_model_path, "role": "best_model"}],
+    )
     resp["handover"] = make_handover(
         "PATCH",
         ["evaluate_model", "get_predictions", "read_model_report"],

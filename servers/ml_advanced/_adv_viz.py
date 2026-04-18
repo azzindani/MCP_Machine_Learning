@@ -8,7 +8,8 @@ import pickle
 import numpy as np
 import pandas as pd
 
-from shared.file_utils import atomic_write_text
+from shared.file_utils import atomic_write_text, read_csv as _read_csv
+from shared.handover import make_context, make_handover
 from shared.html_theme import apply_fig_theme, calc_chart_height, get_theme, plotly_template
 from shared.progress import info, ok
 
@@ -85,7 +86,9 @@ def plot_roc_curve(
         target_column = metadata.get("target_column", "")
         encoding_map = metadata.get("encoding_map", {})
 
-        df = pd.read_csv(dp, low_memory=False)
+        if dp.stat().st_size == 0:
+            return {"success": False, "error": f"File is empty: {dp.name}", "hint": "Verify the file has header + data rows.", "token_estimate": 30}
+        df = _read_csv(str(dp))
         progress.append(ok("Loaded data", f"{len(df)} rows"))
 
         # Encode
@@ -221,6 +224,16 @@ def plot_roc_curve(
             "progress": progress,
             "token_estimate": 0,
         }
+        resp["context"] = make_context(
+            "plot_roc_curve",
+            f"Plotted ROC curve for {mp.name} — {n_classes} class(es), AUC: {list(auc_scores.values())[0] if auc_scores else 'n/a'}",
+            [{"type": "report", "path": out_abs, "role": "roc_chart"}],
+        )
+        resp["handover"] = make_handover(
+            step="REPORT",
+            suggested_tools=["plot_learning_curve", "generate_training_report", "read_model_report"],
+            carry_forward={"model_path": str(mp)},
+        )
         resp["token_estimate"] = len(str(resp)) // 4
         return resp
 
@@ -281,7 +294,9 @@ def plot_learning_curve(
         from sklearn.model_selection import learning_curve
         from sklearn.preprocessing import LabelEncoder
 
-        df = pd.read_csv(dp, low_memory=False)
+        if dp.stat().st_size == 0:
+            return {"success": False, "error": f"File is empty: {dp.name}", "hint": "Verify the file has header + data rows.", "token_estimate": 30}
+        df = _read_csv(str(dp))
         progress.append(ok("Loaded data", f"{len(df)} rows"))
 
         if target_column not in df.columns:
@@ -388,6 +403,16 @@ def plot_learning_curve(
             "progress": progress,
             "token_estimate": 0,
         }
+        resp["context"] = make_context(
+            "plot_learning_curve",
+            f"Plotted learning curve for {model} ({task}) on {dp.name}: val={round(float(val_mean[-1]), 3)}",
+            [{"type": "report", "path": out_abs, "role": "learning_curve_chart"}],
+        )
+        resp["handover"] = make_handover(
+            step="REPORT",
+            suggested_tools=["tune_hyperparameters", "generate_training_report", "compare_models"],
+            carry_forward={"file_path": str(dp), "model": model, "task": task},
+        )
         resp["token_estimate"] = len(str(resp)) // 4
         return resp
 
@@ -468,7 +493,9 @@ def plot_predictions_vs_actual(
         target_column = metadata.get("target_column", "")
         encoding_map = metadata.get("encoding_map", {})
 
-        df = pd.read_csv(dp, low_memory=False)
+        if dp.stat().st_size == 0:
+            return {"success": False, "error": f"File is empty: {dp.name}", "hint": "Verify the file has header + data rows.", "token_estimate": 30}
+        df = _read_csv(str(dp))
         progress.append(ok("Loaded data", f"{len(df)} rows"))
 
         for col, mapping in encoding_map.items():
@@ -560,6 +587,16 @@ def plot_predictions_vs_actual(
             "progress": progress,
             "token_estimate": 0,
         }
+        resp["context"] = make_context(
+            "plot_predictions_vs_actual",
+            f"Plotted predictions vs actual for {mp.name}: R²={round(r2, 3)}, RMSE={round(rmse, 3)}",
+            [{"type": "report", "path": out_abs, "role": "pred_vs_actual_chart"}],
+        )
+        resp["handover"] = make_handover(
+            step="REPORT",
+            suggested_tools=["tune_hyperparameters", "generate_training_report", "read_model_report"],
+            carry_forward={"model_path": str(mp)},
+        )
         resp["token_estimate"] = len(str(resp)) // 4
         return resp
 
@@ -625,7 +662,9 @@ def generate_cluster_report(
         from sklearn.decomposition import PCA
         from sklearn.preprocessing import StandardScaler
 
-        df = pd.read_csv(dp, low_memory=False)
+        if dp.stat().st_size == 0:
+            return {"success": False, "error": f"File is empty: {dp.name}", "hint": "Verify the file has header + data rows.", "token_estimate": 30}
+        df = _read_csv(str(dp))
         progress.append(ok("Loaded data", f"{len(df)} rows"))
 
         if label_column not in df.columns:
@@ -805,6 +844,16 @@ def generate_cluster_report(
             "progress": progress,
             "token_estimate": 0,
         }
+        resp["context"] = make_context(
+            "generate_cluster_report",
+            f"Generated cluster report for {dp.name}: {n_clusters} clusters, {len(df):,} samples → {out.name}",
+            [{"type": "report", "path": str(out), "role": "cluster_report"}],
+        )
+        resp["handover"] = make_handover(
+            step="REPORT",
+            suggested_tools=["find_optimal_clusters", "run_clustering", "check_data_quality"],
+            carry_forward={"file_path": str(dp), "label_column": label_column},
+        )
         resp["token_estimate"] = len(str(resp)) // 4
         return resp
 

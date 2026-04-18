@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from shared.handover import make_handover
+from shared.handover import make_context, make_handover
 
 from ._basic_helpers import (
     ALLOWED_CLASSIFIERS,
@@ -29,6 +29,7 @@ from ._basic_helpers import (
     _check_memory,
     _confusion_dict,
     _error,
+    _read_csv,
     _save_model,
     accuracy_score,
     append_receipt,
@@ -83,7 +84,9 @@ def train_classifier(
                 "Use one of: lr svm rf dtc knn nb xgb",
             )
 
-        df_raw = pd.read_csv(path, low_memory=False)
+        if path.stat().st_size == 0:
+            return _error(f"File is empty: {path.name}", "Verify the file has header + data rows.")
+        df_raw = _read_csv(str(path))
         progress.append(ok(f"Loaded {pname(file_path)}", f"{len(df_raw):,} rows × {len(df_raw.columns)} cols"))
 
         # RAM check
@@ -304,6 +307,11 @@ def train_classifier(
             "backup": backup or "",
             "progress": progress,
         }
+        response["context"] = make_context(
+            "train_classifier",
+            f"Trained {model_class_name} on {pname(file_path)}: accuracy={metrics.get('accuracy', 0):.3f}",
+            [{"type": "model", "path": str(model_path), "role": "trained_model"}],
+        )
         response["handover"] = make_handover(
             "PATCH",
             ["read_model_report", "get_predictions", "plot_roc_curve"],
@@ -353,7 +361,9 @@ def train_regressor(
                 "Use one of: lir pr lar rr dtr rfr xgb",
             )
 
-        df_raw = pd.read_csv(path, low_memory=False)
+        if path.stat().st_size == 0:
+            return _error(f"File is empty: {path.name}", "Verify the file has header + data rows.")
+        df_raw = _read_csv(str(path))
         progress.append(ok(f"Loaded {pname(file_path)}", f"{len(df_raw):,} rows × {len(df_raw.columns)} cols"))
 
         required_gb = df_raw.memory_usage(deep=True).sum() / 1e9 * 3
@@ -515,6 +525,11 @@ def train_regressor(
             "backup": backup or "",
             "progress": progress,
         }
+        response["context"] = make_context(
+            "train_regressor",
+            f"Trained {model_class_name} on {pname(file_path)}: r2={metrics.get('r2', 0):.3f}, rmse={metrics.get('rmse', 0):.3f}",
+            [{"type": "model", "path": str(model_path), "role": "trained_model"}],
+        )
         response["handover"] = make_handover(
             "PATCH",
             ["read_model_report", "get_predictions", "plot_predictions_vs_actual"],

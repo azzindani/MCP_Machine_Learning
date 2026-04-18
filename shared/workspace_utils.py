@@ -204,6 +204,112 @@ def create_workspace_dirs(workspace_name: str, base_dir: str = "") -> dict:
     return {k: str(v) for k, v in dirs.items()}
 
 
+def create_manifest(
+    name: str,
+    description: str = "",
+    base_dir: str = "",
+) -> dict:
+    """Create and save a fresh workspace manifest. Returns the manifest dict."""
+    now = datetime.now(UTC).isoformat()
+    manifest = {
+        "name": name,
+        "description": description,
+        "created": now,
+        "updated": now,
+        "files": {},
+        "active_file": None,
+        "pipeline_history": [],
+        "pipelines": {},
+    }
+    save_manifest(manifest, name, base_dir)
+    return manifest
+
+
+def save_pipeline(
+    workspace_name: str,
+    pipeline_name: str,
+    ops: list[dict],
+    description: str = "",
+    base_dir: str = "",
+) -> dict:
+    """Save a named pipeline template to the workspace."""
+    manifest = load_manifest(workspace_name, base_dir)
+    ws_dir = get_workspace_dir(workspace_name, base_dir)
+    pipelines_dir = ws_dir / "pipelines"
+    pipelines_dir.mkdir(parents=True, exist_ok=True)
+
+    now = datetime.now(UTC).isoformat()
+    pipeline_record = {
+        "name": pipeline_name,
+        "description": description,
+        "ops": ops,
+        "created": now,
+        "op_count": len(ops),
+    }
+
+    pipeline_path = pipelines_dir / f"{pipeline_name}.json"
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=pipelines_dir, suffix=".tmp")
+    try:
+        with open(tmp_fd, "w", encoding="utf-8") as f:
+            json.dump(pipeline_record, f, indent=2, ensure_ascii=False)
+        shutil.move(tmp_path, pipeline_path)
+    except Exception:
+        Path(tmp_path).unlink(missing_ok=True)
+        raise
+
+    manifest.setdefault("pipelines", {})[pipeline_name] = {
+        "file": str(pipeline_path.relative_to(ws_dir)),
+        "description": description,
+        "op_count": len(ops),
+        "created": now,
+    }
+    manifest["updated"] = datetime.now(UTC).isoformat()
+    save_manifest(manifest, workspace_name, base_dir)
+    return pipeline_record
+
+
+def load_pipeline(
+    workspace_name: str,
+    pipeline_name: str,
+    base_dir: str = "",
+) -> dict:
+    """Load a named pipeline template from the workspace directory."""
+    ws_dir = get_workspace_dir(workspace_name, base_dir)
+    pipeline_path = ws_dir / "pipelines" / f"{pipeline_name}.json"
+    if not pipeline_path.exists():
+        manifest = load_manifest(workspace_name, base_dir)
+        available = list(manifest.get("pipelines", {}).keys())
+        raise FileNotFoundError(
+            f"Pipeline '{pipeline_name}' not found in workspace '{workspace_name}'. Available: {available}"
+        )
+    with pipeline_path.open(encoding="utf-8") as f:
+        return json.load(f)
+
+
+def log_pipeline_run(
+    workspace_name: str,
+    op: str,
+    input_alias: str,
+    output_alias: str,
+    base_dir: str = "",
+) -> None:
+    """Append a pipeline run record to the workspace manifest history."""
+    try:
+        manifest = load_manifest(workspace_name, base_dir)
+        manifest.setdefault("pipeline_history", []).append(
+            {
+                "ts": datetime.now(UTC).isoformat(),
+                "op": op,
+                "input": input_alias,
+                "output": output_alias,
+            }
+        )
+        manifest["updated"] = datetime.now(UTC).isoformat()
+        save_manifest(manifest, workspace_name, base_dir)
+    except Exception:
+        pass  # Never raise from logging
+
+
 # Backward-compat alias
 create_project_dirs = create_workspace_dirs
 
@@ -220,4 +326,8 @@ __all__ = [
     "is_alias",
     "create_workspace_dirs",
     "create_project_dirs",
+    "create_manifest",
+    "save_pipeline",
+    "load_pipeline",
+    "log_pipeline_run",
 ]
