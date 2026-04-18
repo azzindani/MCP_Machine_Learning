@@ -792,71 +792,81 @@ class TestAdvHelpers:
         assert "hint" in result
 
     def test_build_estimator_svm(self):
-        from servers.ml_advanced._adv_helpers import _build_estimator
         from sklearn.svm import SVC
+
+        from servers.ml_advanced._adv_helpers import _build_estimator
 
         est = _build_estimator("svm", "classification")
         assert isinstance(est, SVC)
 
     def test_build_estimator_rf(self):
-        from servers.ml_advanced._adv_helpers import _build_estimator
         from sklearn.ensemble import RandomForestClassifier
+
+        from servers.ml_advanced._adv_helpers import _build_estimator
 
         est = _build_estimator("rf", "classification")
         assert isinstance(est, RandomForestClassifier)
 
     def test_build_estimator_dtc(self):
-        from servers.ml_advanced._adv_helpers import _build_estimator
         from sklearn.tree import DecisionTreeClassifier
+
+        from servers.ml_advanced._adv_helpers import _build_estimator
 
         est = _build_estimator("dtc", "classification")
         assert isinstance(est, DecisionTreeClassifier)
 
     def test_build_estimator_knn(self):
-        from servers.ml_advanced._adv_helpers import _build_estimator
         from sklearn.neighbors import KNeighborsClassifier
+
+        from servers.ml_advanced._adv_helpers import _build_estimator
 
         est = _build_estimator("knn", "classification")
         assert isinstance(est, KNeighborsClassifier)
 
     def test_build_estimator_nb(self):
-        from servers.ml_advanced._adv_helpers import _build_estimator
         from sklearn.naive_bayes import GaussianNB
+
+        from servers.ml_advanced._adv_helpers import _build_estimator
 
         est = _build_estimator("nb", "classification")
         assert isinstance(est, GaussianNB)
 
     def test_build_estimator_lir(self):
-        from servers.ml_advanced._adv_helpers import _build_estimator
         from sklearn.linear_model import LinearRegression
+
+        from servers.ml_advanced._adv_helpers import _build_estimator
 
         est = _build_estimator("lir", "regression")
         assert isinstance(est, LinearRegression)
 
     def test_build_estimator_lar(self):
-        from servers.ml_advanced._adv_helpers import _build_estimator
         from sklearn.linear_model import Lasso
+
+        from servers.ml_advanced._adv_helpers import _build_estimator
 
         est = _build_estimator("lar", "regression")
         assert isinstance(est, Lasso)
 
     def test_build_estimator_rr(self):
-        from servers.ml_advanced._adv_helpers import _build_estimator
         from sklearn.linear_model import Ridge
+
+        from servers.ml_advanced._adv_helpers import _build_estimator
 
         est = _build_estimator("rr", "regression")
         assert isinstance(est, Ridge)
 
     def test_build_estimator_dtr(self):
-        from servers.ml_advanced._adv_helpers import _build_estimator
         from sklearn.tree import DecisionTreeRegressor
+
+        from servers.ml_advanced._adv_helpers import _build_estimator
 
         est = _build_estimator("dtr", "regression")
         assert isinstance(est, DecisionTreeRegressor)
 
     def test_build_estimator_rfr(self):
-        from servers.ml_advanced._adv_helpers import _build_estimator
         from sklearn.ensemble import RandomForestRegressor
+
+        from servers.ml_advanced._adv_helpers import _build_estimator
 
         est = _build_estimator("rfr", "regression")
         assert isinstance(est, RandomForestRegressor)
@@ -1087,9 +1097,7 @@ class TestPlotLearningCurveErrorPaths:
         assert r["success"] is False
 
     def test_file_not_found(self, tmp_path):
-        r = plot_learning_curve(
-            str(tmp_path / "nope.csv"), "churned", "rf", "classification", open_after=False
-        )
+        r = plot_learning_curve(str(tmp_path / "nope.csv"), "churned", "rf", "classification", open_after=False)
         assert r["success"] is False
 
 
@@ -1112,9 +1120,7 @@ class TestPlotPredictionsVsActualErrorPaths:
         assert r["success"] is False
 
     def test_model_file_not_found(self, regression_simple, tmp_path):
-        r = plot_predictions_vs_actual(
-            str(tmp_path / "ghost.pkl"), regression_simple, open_after=False
-        )
+        r = plot_predictions_vs_actual(str(tmp_path / "ghost.pkl"), regression_simple, open_after=False)
         assert r["success"] is False
 
     def test_invalid_csv_extension(self, regression_simple, tmp_path):
@@ -1152,8 +1158,11 @@ class TestGenerateClusterReportErrorPaths:
         labelled = _make_clustered_csv(clustering_simple, tmp_path)
         out = str(tmp_path / "cr_bad_feats.html")
         r = generate_cluster_report(
-            labelled, ["nonexistent_feat_a", "nonexistent_feat_b"], "cluster_label",
-            output_path=out, open_after=False,
+            labelled,
+            ["nonexistent_feat_a", "nonexistent_feat_b"],
+            "cluster_label",
+            output_path=out,
+            open_after=False,
         )
         assert r["success"] is False
 
@@ -1192,16 +1201,18 @@ class TestTuneHyperparametersCoverage:
         assert r["success"] is False
 
     def test_too_few_rows(self, tmp_path):
-        import pandas as pd
         import numpy as np
+        import pandas as pd
 
         csv = tmp_path / "tiny.csv"
         rng = np.random.default_rng(0)
-        pd.DataFrame({
-            "f1": rng.standard_normal(5),
-            "f2": rng.standard_normal(5),
-            "label": rng.integers(0, 2, 5),
-        }).to_csv(csv, index=False)
+        pd.DataFrame(
+            {
+                "f1": rng.standard_normal(5),
+                "f2": rng.standard_normal(5),
+                "label": rng.integers(0, 2, 5),
+            }
+        ).to_csv(csv, index=False)
         r = tune_hyperparameters(str(csv), "label", "rf", "classification")
         assert r["success"] is False
         assert "rows" in r.get("error", "").lower()
@@ -1251,17 +1262,19 @@ class TestRunProfilingReportCoverage:
 class TestPlotRocCurveMulticlass:
     def test_multiclass_roc(self, tmp_path):
         """3-class dataset → multiclass ROC path (per-class AUC)."""
-        import pandas as pd
         import numpy as np
+        import pandas as pd
 
         rng = np.random.default_rng(42)
         n = 90
         csv = tmp_path / "multi.csv"
-        pd.DataFrame({
-            "f1": rng.standard_normal(n),
-            "f2": rng.standard_normal(n),
-            "label": np.tile([0, 1, 2], n // 3),
-        }).to_csv(csv, index=False)
+        pd.DataFrame(
+            {
+                "f1": rng.standard_normal(n),
+                "f2": rng.standard_normal(n),
+                "label": np.tile([0, 1, 2], n // 3),
+            }
+        ).to_csv(csv, index=False)
         mp = _train_basic_model(str(csv), target="label", model="rf")
         out = str(tmp_path / "multi_roc.html")
         r = plot_roc_curve(mp, str(csv), output_path=out, open_after=False)
@@ -1278,17 +1291,20 @@ class TestPlotRocCurveMulticlass:
 class TestGenerateClusterReportSingleFeature:
     def test_single_feature_skips_pca(self, tmp_path):
         """With 1 numeric feature column, PCA scatter is skipped (n_comp < 2)."""
-        import pandas as pd
         import numpy as np
+        import pandas as pd
+
         from servers.ml_medium.engine import run_clustering
 
         rng = np.random.default_rng(0)
         n = 60
         csv = tmp_path / "single_feat.csv"
-        pd.DataFrame({
-            "feature1": rng.standard_normal(n),
-            "label_col": np.repeat([0, 1, 2], n // 3),
-        }).to_csv(csv, index=False)
+        pd.DataFrame(
+            {
+                "feature1": rng.standard_normal(n),
+                "label_col": np.repeat([0, 1, 2], n // 3),
+            }
+        ).to_csv(csv, index=False)
         # Add cluster labels
         r = run_clustering(str(csv), ["feature1"], "kmeans", n_clusters=3, save_labels=True)
         assert r["success"] is True
@@ -1350,7 +1366,9 @@ class TestTuneMorePaths:
     def test_csv_read_failure(self, tmp_path):
         """Lines 111-112: CSV read failure in tune_hyperparameters."""
         from unittest.mock import patch
+
         import pandas as pd
+
         from servers.ml_advanced.engine import tune_hyperparameters
 
         p = tmp_path / "data.csv"
@@ -1376,6 +1394,7 @@ class TestExportMorePaths:
     def test_load_model_failure(self, classification_simple, tmp_path):
         """Lines 288-289: load_model failure returns error."""
         from unittest.mock import patch
+
         from servers.ml_advanced.engine import export_model
         from servers.ml_basic.engine import train_classifier
 
@@ -1401,6 +1420,7 @@ class TestReadModelReportMorePaths:
     def test_load_model_failure(self, classification_simple, tmp_path):
         """Lines 344-345: _load_model failure returns error."""
         from unittest.mock import patch
+
         from servers.ml_advanced.engine import read_model_report
         from servers.ml_basic.engine import train_classifier
 
@@ -1412,7 +1432,9 @@ class TestReadModelReportMorePaths:
     def test_long_classification_report_truncated(self, classification_simple, tmp_path):
         """Line 364: classification_report > 500 chars is truncated."""
         import pickle
+
         from sklearn.ensemble import RandomForestClassifier
+
         from servers.ml_advanced.engine import read_model_report
 
         mp = tmp_path / "long_report.pkl"
@@ -1437,9 +1459,10 @@ class TestReadModelReportMorePaths:
 
     def test_manifest_json_parse_failure(self, classification_simple, tmp_path):
         """Lines 371-372: corrupt manifest JSON is swallowed."""
-        from servers.ml_basic.engine import train_classifier
-        from servers.ml_advanced.engine import read_model_report
         from pathlib import Path
+
+        from servers.ml_advanced.engine import read_model_report
+        from servers.ml_basic.engine import train_classifier
 
         mp = train_classifier(str(classification_simple), "churned", "rf")["model_path"]
         Path(mp).with_suffix(".manifest.json").write_text("NOT_VALID_JSON!!!")
@@ -1463,7 +1486,9 @@ class TestProfilingMorePaths:
     def test_csv_read_failure(self, tmp_path):
         """Lines 431-432: CSV read failure."""
         from unittest.mock import patch
+
         import pandas as pd
+
         from servers.ml_advanced.engine import run_profiling_report
 
         p = tmp_path / "data.csv"
@@ -1489,7 +1514,9 @@ class TestDRMorePaths:
     def test_csv_read_failure(self, tmp_path):
         """Lines 548-549: CSV read failure."""
         from unittest.mock import patch
+
         import pandas as pd
+
         from servers.ml_advanced.engine import apply_dimensionality_reduction
 
         p = tmp_path / "data.csv"
@@ -1501,14 +1528,13 @@ class TestDRMorePaths:
     def test_snapshot_failure_continues(self, clustering_simple, tmp_path):
         """Lines 582-583: snapshot failure is logged as warning, does not abort."""
         from unittest.mock import patch
+
         from servers.ml_advanced.engine import apply_dimensionality_reduction
 
         out = tmp_path / "reduced.csv"
         out.write_text("existing")
         with patch("servers.ml_advanced.engine.snapshot", side_effect=Exception("snap fail")):
-            r = apply_dimensionality_reduction(
-                str(clustering_simple), ["x", "y"], "pca", output_path=str(out)
-            )
+            r = apply_dimensionality_reduction(str(clustering_simple), ["x", "y"], "pca", output_path=str(out))
         assert r["success"] is True
 
 
@@ -1528,6 +1554,7 @@ class TestTrainingReportMorePaths:
     def test_load_model_failure(self, classification_simple):
         """Lines 655-656: _load_model failure returns error."""
         from unittest.mock import patch
+
         from servers.ml_advanced.engine import generate_training_report
         from servers.ml_basic.engine import train_classifier
 
@@ -1545,8 +1572,8 @@ class TestTrainingReportMorePaths:
 class TestPlotRocXGBAndNoProba:
     def test_xgb_booster_roc_curve(self, classification_simple, tmp_path):
         """Lines 130-142: XGBoost Booster (no predict_proba) path in plot_roc_curve."""
-        from servers.ml_basic.engine import train_classifier
         from servers.ml_advanced.engine import plot_roc_curve
+        from servers.ml_basic.engine import train_classifier
 
         mp = train_classifier(str(classification_simple), "churned", "xgb")["model_path"]
         out = str(tmp_path / "roc_xgb.html")
@@ -1556,8 +1583,10 @@ class TestPlotRocXGBAndNoProba:
     def test_no_proba_model_returns_error(self, classification_simple, tmp_path):
         """Line 145: model without predict_proba returns error."""
         import pickle
+
         import pandas as pd
         from sklearn.svm import SVC
+
         from servers.ml_advanced.engine import plot_roc_curve
 
         df = pd.read_csv(str(classification_simple))
@@ -1587,8 +1616,8 @@ class TestPlotRocXGBAndNoProba:
 
     def test_encoding_map_applied_in_roc(self, classification_messy, tmp_path):
         """Line 94: encoding_map applied when model trained on categorical data."""
-        from servers.ml_basic.engine import train_classifier
         from servers.ml_advanced.engine import plot_roc_curve
+        from servers.ml_basic.engine import train_classifier
 
         mp = train_classifier(str(classification_messy), "churned", "rf")["model_path"]
         out = str(tmp_path / "roc_enc.html")
@@ -1609,8 +1638,7 @@ class TestPlotLearningCurveCategorical:
 
         out = str(tmp_path / "lc_cat.html")
         r = plot_learning_curve(
-            str(classification_messy), "churned", "rf", "classification", cv=3,
-            output_path=out, open_after=False
+            str(classification_messy), "churned", "rf", "classification", cv=3, output_path=out, open_after=False
         )
         assert r["success"] is True
 
@@ -1623,8 +1651,8 @@ class TestPlotLearningCurveCategorical:
 class TestPlotPredictionsMorePaths:
     def test_encoding_map_applied(self, regression_messy, tmp_path):
         """Lines 475-476: encoding_map applied when model has categorical features."""
-        from servers.ml_basic.engine import train_regressor
         from servers.ml_advanced.engine import plot_predictions_vs_actual
+        from servers.ml_basic.engine import train_regressor
 
         mp = train_regressor(str(regression_messy), "salary", "rfr")["model_path"]
         out = str(tmp_path / "pred_enc.html")
@@ -1633,8 +1661,8 @@ class TestPlotPredictionsMorePaths:
 
     def test_xgb_regression_predictions(self, regression_simple, tmp_path):
         """Lines 494-495: XGBoost Booster in plot_predictions_vs_actual."""
-        from servers.ml_basic.engine import train_regressor
         from servers.ml_advanced.engine import plot_predictions_vs_actual
+        from servers.ml_basic.engine import train_regressor
 
         mp = train_regressor(str(regression_simple), "salary", "xgb")["model_path"]
         out = str(tmp_path / "pred_xgb.html")
@@ -1651,18 +1679,16 @@ class TestClusterReportExceptionPath:
     def test_exception_returns_error_dict(self, clustering_simple, tmp_path):
         """Lines 811-812: exception in generate_cluster_report returns error dict."""
         from unittest.mock import patch
-        from servers.ml_medium.engine import run_clustering
-        from servers.ml_advanced.engine import generate_cluster_report
 
-        r = run_clustering(
-            str(clustering_simple), ["x", "y"], algorithm="kmeans", save_labels=True
-        )
+        from servers.ml_advanced.engine import generate_cluster_report
+        from servers.ml_medium.engine import run_clustering
+
+        r = run_clustering(str(clustering_simple), ["x", "y"], algorithm="kmeans", save_labels=True)
         assert r["success"] is True
 
         out = str(tmp_path / "cr.html")
         with patch("servers.ml_advanced._adv_viz.pd.read_csv", side_effect=Exception("broken")):
             r2 = generate_cluster_report(
-                str(clustering_simple), ["x", "y"], label_column="cluster_label",
-                output_path=out, open_after=False
+                str(clustering_simple), ["x", "y"], label_column="cluster_label", output_path=out, open_after=False
             )
         assert r2["success"] is False

@@ -1845,8 +1845,15 @@ class TestEvaluateModelCoverage:
         test_csv = tmp_path / "no_target.csv"
         import pandas as pd
 
-        pd.DataFrame({"age": [25, 30], "tenure": [1, 2], "monthly_charges": [50.0, 60.0],
-                      "total_charges": [600.0, 720.0], "num_products": [1, 2]}).to_csv(test_csv, index=False)
+        pd.DataFrame(
+            {
+                "age": [25, 30],
+                "tenure": [1, 2],
+                "monthly_charges": [50.0, 60.0],
+                "total_charges": [600.0, 720.0],
+                "num_products": [1, 2],
+            }
+        ).to_csv(test_csv, index=False)
         r = evaluate_model(tr["model_path"], str(test_csv), "churned")
         assert r["success"] is False
         assert "churned" in r["error"]
@@ -1895,11 +1902,13 @@ class TestEvaluateModelCoverage:
 
         rng = np.random.default_rng(0)
         n = 60
-        pd.DataFrame({
-            "feat1": rng.standard_normal(n),
-            "feat2": rng.standard_normal(n),
-            "label": rng.choice(["cat", "dog"], size=n),
-        }).to_csv(csv_path, index=False)
+        pd.DataFrame(
+            {
+                "feat1": rng.standard_normal(n),
+                "feat2": rng.standard_normal(n),
+                "label": rng.choice(["cat", "dog"], size=n),
+            }
+        ).to_csv(csv_path, index=False)
         tr = train_classifier(str(csv_path), "label", "rf")
         assert tr["success"] is True
         r = evaluate_model(tr["model_path"], str(csv_path), "label")
@@ -2079,10 +2088,12 @@ class TestCheckDataQualityCoverage:
         import pandas as pd
 
         csv_path = tmp_path / "const_col.csv"
-        pd.DataFrame({
-            "constant": [7, 7, 7, 7, 7, 7, 7, 7, 7, 7],
-            "normal": list(range(10)),
-        }).to_csv(csv_path, index=False)
+        pd.DataFrame(
+            {
+                "constant": [7, 7, 7, 7, 7, 7, 7, 7, 7, 7],
+                "normal": list(range(10)),
+            }
+        ).to_csv(csv_path, index=False)
         r = check_data_quality(str(csv_path))
         assert r["success"] is True
         assert "constant" in r.get("constant_columns", [])
@@ -2096,10 +2107,12 @@ class TestCheckDataQualityCoverage:
 
         csv_path = tmp_path / "high_null.csv"
         n = 20
-        pd.DataFrame({
-            "sparse": [None] * 18 + [1, 2],   # 90% null — above 20% threshold
-            "full": list(range(n)),
-        }).to_csv(csv_path, index=False)
+        pd.DataFrame(
+            {
+                "sparse": [None] * 18 + [1, 2],  # 90% null — above 20% threshold
+                "full": list(range(n)),
+            }
+        ).to_csv(csv_path, index=False)
         r = check_data_quality(str(csv_path))
         assert r["success"] is True
         assert "sparse" in r.get("high_missing_columns", [])
@@ -2112,10 +2125,12 @@ class TestCheckDataQualityCoverage:
 
         csv_path = tmp_path / "high_card.csv"
         n = 100
-        pd.DataFrame({
-            "user_id": [f"user_{i}" for i in range(n)],  # 100% unique strings
-            "value": list(range(n)),
-        }).to_csv(csv_path, index=False)
+        pd.DataFrame(
+            {
+                "user_id": [f"user_{i}" for i in range(n)],  # 100% unique strings
+                "value": list(range(n)),
+            }
+        ).to_csv(csv_path, index=False)
         r = check_data_quality(str(csv_path))
         assert r["success"] is True
         alert_types = [a["type"] for a in r.get("alerts", [])]
@@ -2146,11 +2161,13 @@ class TestCheckDataQualityCoverage:
         csv_path = tmp_path / "multicol.csv"
         n = 50
         base = list(range(n))
-        pd.DataFrame({
-            "col1": base,
-            "col2": [v * 2 + (i % 3) * 0.01 for i, v in enumerate(base)],
-            "other": list(range(n, 2 * n)),
-        }).to_csv(csv_path, index=False)
+        pd.DataFrame(
+            {
+                "col1": base,
+                "col2": [v * 2 + (i % 3) * 0.01 for i, v in enumerate(base)],
+                "other": list(range(n, 2 * n)),
+            }
+        ).to_csv(csv_path, index=False)
         r = check_data_quality(str(csv_path))
         assert r["success"] is True
         alert_types = [a["type"] for a in r.get("alerts", [])]
@@ -2161,11 +2178,13 @@ class TestCheckDataQualityCoverage:
         import pandas as pd
 
         csv_path = tmp_path / "penalty.csv"
-        pd.DataFrame({
-            "const_a": [0] * 30,
-            "const_b": [1] * 30,
-            "normal": list(range(30)),
-        }).to_csv(csv_path, index=False)
+        pd.DataFrame(
+            {
+                "const_a": [0] * 30,
+                "const_b": [1] * 30,
+                "normal": list(range(30)),
+            }
+        ).to_csv(csv_path, index=False)
         r = check_data_quality(str(csv_path))
         assert r["success"] is True
         # Two constant columns → -30 penalty from 100
@@ -2176,10 +2195,12 @@ class TestCheckDataQualityCoverage:
         import pandas as pd
 
         csv_path = tmp_path / "penalty_null.csv"
-        pd.DataFrame({
-            "mostly_null": [None] * 25 + [1] * 5,  # 83% null
-            "ok": list(range(30)),
-        }).to_csv(csv_path, index=False)
+        pd.DataFrame(
+            {
+                "mostly_null": [None] * 25 + [1] * 5,  # 83% null
+                "ok": list(range(30)),
+            }
+        ).to_csv(csv_path, index=False)
         r = check_data_quality(str(csv_path))
         assert r["success"] is True
         assert r["quality_score"] < 100
@@ -2191,10 +2212,12 @@ class TestCheckDataQualityCoverage:
         csv_path = tmp_path / "mc_score.csv"
         n = 40
         base = list(range(n))
-        pd.DataFrame({
-            "x": base,
-            "y": [v * 3 for v in base],
-        }).to_csv(csv_path, index=False)
+        pd.DataFrame(
+            {
+                "x": base,
+                "y": [v * 3 for v in base],
+            }
+        ).to_csv(csv_path, index=False)
         r = check_data_quality(str(csv_path))
         assert r["success"] is True
         assert r["quality_score"] < 100
@@ -2226,9 +2249,7 @@ class TestRunClusteringExtended:
     def test_silhouette_none_when_single_cluster(self, tmp_path):
         csv = tmp_path / "one_cluster.csv"
         # Tightly packed data so DBSCAN finds only one cluster
-        pd.DataFrame({"x": [0.0, 0.1, 0.2, 0.0, 0.1], "y": [0.0, 0.1, 0.0, 0.2, 0.2]}).to_csv(
-            csv, index=False
-        )
+        pd.DataFrame({"x": [0.0, 0.1, 0.2, 0.0, 0.1], "y": [0.0, 0.1, 0.0, 0.2, 0.2]}).to_csv(csv, index=False)
         r = run_clustering(str(csv), ["x", "y"], "dbscan", eps=5.0, min_samples=2)
         assert r["success"] is True
         if r.get("n_clusters_found", 2) < 2:
@@ -2250,9 +2271,7 @@ class TestRunClusteringExtended:
 
     def test_no_numeric_features(self, tmp_path):
         csv = tmp_path / "strings_only.csv"
-        pd.DataFrame({"a": ["x", "y", "z", "w", "v"], "b": ["p", "q", "r", "s", "t"]}).to_csv(
-            csv, index=False
-        )
+        pd.DataFrame({"a": ["x", "y", "z", "w", "v"], "b": ["p", "q", "r", "s", "t"]}).to_csv(csv, index=False)
         r = run_clustering(str(csv), ["a", "b"], "kmeans")
         assert r["success"] is False
 
@@ -2429,9 +2448,7 @@ class TestCompareModelsExtended:
         assert len(r["results"]) >= 1
 
     def test_regression_sorted_by_r2(self, regression_simple):
-        r = compare_models(
-            regression_simple, "salary", "regression", ["lir", "rfr", "dtr"], test_size=0.3
-        )
+        r = compare_models(regression_simple, "salary", "regression", ["lir", "rfr", "dtr"], test_size=0.3)
         assert r["success"] is True
         scores = [e.get("r2", -1e9) for e in r["results"] if "r2" in e]
         assert scores == sorted(scores, reverse=True)
@@ -2459,9 +2476,7 @@ class TestCompareModelsExtended:
         assert r["success"] is False
 
     def test_dry_run(self, classification_simple):
-        r = compare_models(
-            classification_simple, "churned", "classification", ["rf", "lr"], dry_run=True
-        )
+        r = compare_models(classification_simple, "churned", "classification", ["rf", "lr"], dry_run=True)
         assert r["success"] is True
         assert r.get("dry_run") is True
 
@@ -2589,6 +2604,7 @@ class TestAppendReceiptCorruptedJson:
     def test_corrupted_receipt_file_falls_back_to_empty(self, tmp_path):
         """Lines 40-41: existing receipt file with invalid JSON → starts fresh."""
         import json as _json
+
         from shared.receipt import append_receipt, read_receipt_log
 
         csv_path = str(tmp_path / "data.csv")
@@ -2724,8 +2740,7 @@ class TestCompareModelsCoverage:
         from unittest.mock import patch as _patch
 
         with _patch(
-            "servers.ml_medium._medium_train._fit_predict_classifier",
-            side_effect=RuntimeError("training failed")
+            "servers.ml_medium._medium_train._fit_predict_classifier", side_effect=RuntimeError("training failed")
         ):
             r = compare_models(classification_simple, "churned", "classification", ["rf"])
         # Should succeed but with the model having an error entry
@@ -2795,7 +2810,7 @@ class TestDetectOutliersCoverage:
 # ---------------------------------------------------------------------------
 
 
-class TestBatchPredictCoverage:
+class TestBatchPredictMoreCoverage:
     def test_model_not_found(self, tmp_path, classification_simple):
         """Lines 568+: model not found in batch_predict."""
         r = batch_predict(str(tmp_path / "ghost.pkl"), classification_simple)
@@ -2831,6 +2846,7 @@ class TestMediumHelpersCoverage:
     def test_build_classifier_unknown_raises(self):
         """Line 133: _build_classifier with unknown model raises ValueError."""
         import pytest
+
         from servers.ml_medium._medium_helpers import _build_classifier
 
         with pytest.raises(ValueError):
@@ -2852,6 +2868,7 @@ class TestMediumHelpersCoverage:
     def test_build_regressor_unknown_raises(self):
         """Line 154: _build_regressor with unknown model raises ValueError."""
         import pytest
+
         from servers.ml_medium._medium_helpers import _build_regressor
 
         with pytest.raises(ValueError):
@@ -2860,6 +2877,7 @@ class TestMediumHelpersCoverage:
     def test_fit_predict_classifier_xgb_multiclass(self):
         """Lines 170, 174: XGBoost multiclass (nc>2) in _fit_predict_classifier."""
         import numpy as np
+
         from servers.ml_medium._medium_helpers import _fit_predict_classifier
 
         rng = np.random.RandomState(0)
@@ -2873,6 +2891,7 @@ class TestMediumHelpersCoverage:
     def test_apply_op_add_date_parts_invalid_attr(self):
         """Lines 375-376: _apply_op add_date_parts with invalid part name causes exception."""
         import pandas as pd
+
         from servers.ml_medium._medium_helpers import _apply_op
 
         df = pd.DataFrame({"ts": pd.to_datetime(["2024-01-01", "2024-02-01"])})
@@ -2883,6 +2902,7 @@ class TestMediumHelpersCoverage:
     def test_apply_op_unhandled_op_fallthrough(self):
         """Line 415: _apply_op fallback for op not handled by any elif."""
         import pandas as pd
+
         import servers.ml_medium._medium_helpers as mh
         from servers.ml_medium._medium_helpers import _apply_op
 
@@ -3062,6 +3082,7 @@ class TestEvaluateModelXGBPaths:
     def test_no_auc_when_no_predict_proba(self, classification_simple, tmp_path):
         """Lines 607, 610-611: SVC without probability=True skips AUC."""
         import pickle
+
         import pandas as pd
         from sklearn.svm import SVC
 
@@ -3202,16 +3223,14 @@ class TestEDAReportAlertPaths:
         p = tmp_path / "imbalanced.csv"
         labels = [0] * 46 + [1] * 4
         pd.DataFrame({"feature": range(50), "label": labels}).to_csv(p, index=False)
-        r = generate_eda_report(
-            str(p), target_column="label", output_path=str(tmp_path / "eda.html"), open_after=False
-        )
+        r = generate_eda_report(str(p), target_column="label", output_path=str(tmp_path / "eda.html"), open_after=False)
         assert r["success"] is True
         assert "class_imbalance" in [a["type"] for a in r.get("alerts", [])]
 
     def test_multicollinearity_alert(self, tmp_path):
         """Lines 153-154: highly correlated columns trigger multicollinearity alert."""
-        import pandas as pd
         import numpy as np
+        import pandas as pd
 
         p = tmp_path / "corr.csv"
         x = np.arange(50, dtype=float)

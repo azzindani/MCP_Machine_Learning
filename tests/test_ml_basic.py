@@ -1,9 +1,9 @@
 """Tests for ml_basic engine — all tests call engine directly, no MCP server."""
 
+import pickle
 from pathlib import Path
 
 import pandas as pd
-import pickle
 import pytest
 
 from servers.ml_basic.engine import (
@@ -576,11 +576,13 @@ def test_get_predictions_xgb_regression(regression_simple):
 
 def test_get_predictions_xgb_multiclass(tmp_path):
     """Lines 101-104: XGBoost multiclass prediction path."""
-    df = pd.DataFrame({
-        "f1": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-        "f2": [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3],
-        "target": [0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2],
-    })
+    df = pd.DataFrame(
+        {
+            "f1": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+            "f2": [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3],
+            "target": [0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2],
+        }
+    )
     csv_path = tmp_path / "multiclass.csv"
     df.to_csv(csv_path, index=False)
 
@@ -594,11 +596,13 @@ def test_get_predictions_xgb_multiclass(tmp_path):
 
 def test_get_predictions_xgb_multiclass_proba(tmp_path):
     """Lines 103-104: XGBoost multiclass with return_proba returns per-class probabilities."""
-    df = pd.DataFrame({
-        "f1": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-        "f2": [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3],
-        "target": [0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2],
-    })
+    df = pd.DataFrame(
+        {
+            "f1": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+            "f2": [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3],
+            "target": [0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2],
+        }
+    )
     csv_path = tmp_path / "multiclass.csv"
     df.to_csv(csv_path, index=False)
 
@@ -661,7 +665,7 @@ def test_restore_version_with_valid_timestamp(classification_simple):
     backup_stem = Path(backup_path).stem
     # stem looks like: classification_simple_2026-04-18T...
     # The timestamp is everything after the first underscore-separated date part
-    ts = backup_stem[len(classification_simple.stem) + 1:]
+    ts = backup_stem[len(classification_simple.stem) + 1 :]
 
     r = restore_version(str(classification_simple), ts)
     assert r["success"] is True
@@ -674,6 +678,7 @@ def test_restore_version_bad_timestamp_returns_error(classification_simple):
     """No snapshot matching the timestamp → success=False error dict."""
     # Ensure a snapshot exists so the function gets past listing
     from shared.version_control import snapshot as _snap
+
     _snap(str(classification_simple))
 
     r = restore_version(str(classification_simple), "9999-INVALID-TIMESTAMP")
@@ -693,7 +698,9 @@ def test_restore_version_exception_path(tmp_path, monkeypatch):
 
     # Must re-import the function after monkeypatching
     import importlib
+
     import servers.ml_basic._basic_predict as bp_mod
+
     monkeypatch.setattr(bp_mod, "_restore_version", _boom)
 
     r = restore_version(str(tmp_path / "something.csv"))
@@ -802,11 +809,13 @@ def test_predict_single_xgb_binary(classification_simple):
 
 def test_predict_single_xgb_multiclass(tmp_path):
     """Lines 260-262: XGBoost Booster multiclass (n_classes > 2) predict path."""
-    df = pd.DataFrame({
-        "f1": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-        "f2": [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3],
-        "target": [0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2],
-    })
+    df = pd.DataFrame(
+        {
+            "f1": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+            "f2": [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3],
+            "target": [0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2],
+        }
+    )
     csv_path = tmp_path / "mc.csv"
     df.to_csv(csv_path, index=False)
 
@@ -1378,9 +1387,9 @@ class TestBasicHelpersPaths:
 
     def test_load_model_file_not_found(self, tmp_path):
         """Line 127: _load_model raises FileNotFoundError for missing file."""
-        from servers.ml_basic._basic_helpers import _load_model
-
         import pytest as _pytest
+
+        from servers.ml_basic._basic_helpers import _load_model
 
         with _pytest.raises(FileNotFoundError):
             _load_model(str(tmp_path / "ghost.pkl"))
@@ -1397,6 +1406,7 @@ class TestEngineGeneralExceptions:
     def test_inspect_dataset_general_exception(self, classification_simple):
         """Lines 102-104: general Exception in inspect_dataset returns error."""
         from unittest.mock import patch
+
         from servers.ml_basic.engine import inspect_dataset
 
         with patch("servers.ml_basic.engine.pd.read_csv", side_effect=RuntimeError("boom")):
@@ -1406,6 +1416,7 @@ class TestEngineGeneralExceptions:
     def test_read_column_profile_general_exception(self, classification_simple):
         """Lines 193-195: general Exception in read_column_profile returns error."""
         from unittest.mock import patch
+
         from servers.ml_basic.engine import read_column_profile
 
         with patch("servers.ml_basic.engine.pd.read_csv", side_effect=RuntimeError("boom")):
@@ -1424,6 +1435,7 @@ class TestEngineGeneralExceptions:
     def test_search_columns_general_exception(self, classification_simple):
         """Lines 264-266: general Exception in search_columns returns error."""
         from unittest.mock import patch
+
         from servers.ml_basic.engine import search_columns
 
         with patch("servers.ml_basic.engine.pd.read_csv", side_effect=RuntimeError("boom")):
@@ -1433,6 +1445,7 @@ class TestEngineGeneralExceptions:
     def test_read_rows_general_exception(self, classification_simple):
         """Lines 319-321: general Exception in read_rows returns error."""
         from unittest.mock import patch
+
         from servers.ml_basic.engine import read_rows
 
         with patch("servers.ml_basic.engine.pd.read_csv", side_effect=RuntimeError("boom")):
@@ -1448,7 +1461,8 @@ class TestEngineGeneralExceptions:
 class TestTrainClassifierMorePaths:
     def test_ram_check_failure_returns_error(self, classification_simple):
         """Line 93: check_memory returns error when RAM insufficient."""
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
+
         from servers.ml_basic.engine import train_classifier
 
         mock_vm = MagicMock()
@@ -1460,6 +1474,7 @@ class TestTrainClassifierMorePaths:
     def test_auc_roc_exception_swallowed(self, classification_simple):
         """Lines 229-230: AUC-ROC computation failure is logged, not raised."""
         from unittest.mock import patch
+
         from servers.ml_basic.engine import train_classifier
 
         with patch("sklearn.metrics.roc_auc_score", side_effect=Exception("auc fail")):
@@ -1470,6 +1485,7 @@ class TestTrainClassifierMorePaths:
     def test_general_exception_returns_error(self, classification_simple):
         """Lines 315-317: general exception caught and returned as error dict."""
         from unittest.mock import patch
+
         from servers.ml_basic.engine import train_classifier
 
         with patch("servers.ml_basic._basic_train._auto_preprocess", side_effect=RuntimeError("boom")):
@@ -1485,7 +1501,8 @@ class TestTrainClassifierMorePaths:
 class TestTrainRegressorMorePaths:
     def test_ram_check_failure(self, regression_simple):
         """Line 362: check_memory failure in train_regressor."""
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
+
         from servers.ml_basic.engine import train_regressor
 
         mock_vm = MagicMock()
@@ -1506,6 +1523,7 @@ class TestTrainRegressorMorePaths:
     def test_insufficient_rows_regressor(self, tmp_path):
         """Line 375: dataset smaller than MIN_ROWS_REGRESSOR returns error."""
         import pandas as pd
+
         from servers.ml_basic.engine import train_regressor
 
         p = tmp_path / "tiny.csv"
@@ -1517,6 +1535,7 @@ class TestTrainRegressorMorePaths:
     def test_general_exception_returns_error(self, regression_simple):
         """Lines 526-528: general exception in train_regressor returns error dict."""
         from unittest.mock import patch
+
         from servers.ml_basic.engine import train_regressor
 
         with patch("servers.ml_basic._basic_train._auto_preprocess", side_effect=RuntimeError("boom")):
@@ -1539,24 +1558,25 @@ class TestPredictSingleMorePaths:
 
     def test_null_numeric_value_filled(self, classification_simple, tmp_path):
         """Line 238: null numeric value in input is filled with 0."""
-        from servers.ml_basic.engine import train_classifier, predict_single
+        from servers.ml_basic.engine import predict_single, train_classifier
 
         mp = train_classifier(str(classification_simple), "churned", "rf")["model_path"]
         import json
-        rec = {"age": None, "tenure": 5, "monthly_charges": 50.0,
-               "total_charges": 1000.0, "num_products": 2}
+
+        rec = {"age": None, "tenure": 5, "monthly_charges": 50.0, "total_charges": 1000.0, "num_products": 2}
         r = predict_single(mp, json.dumps(rec))
         assert r["success"] is True
 
     def test_predict_exception_returns_error(self, classification_simple, tmp_path):
         """Lines 266-267: prediction exception returns error dict."""
-        from unittest.mock import patch, MagicMock
-        from servers.ml_basic.engine import train_classifier, predict_single
+        from unittest.mock import MagicMock, patch
+
+        from servers.ml_basic.engine import predict_single, train_classifier
 
         mp = train_classifier(str(classification_simple), "churned", "rf")["model_path"]
         import json
-        rec = {"age": 30, "tenure": 5, "monthly_charges": 50.0,
-               "total_charges": 1000.0, "num_products": 2}
+
+        rec = {"age": 30, "tenure": 5, "monthly_charges": 50.0, "total_charges": 1000.0, "num_products": 2}
         with patch("servers.ml_basic._basic_predict.pd.DataFrame") as mock_df:
             mock_df.return_value.map.side_effect = RuntimeError("predict fail")
             mock_df.return_value.select_dtypes.return_value.columns = []
@@ -1564,11 +1584,14 @@ class TestPredictSingleMorePaths:
             with patch("servers.ml_basic._basic_predict._load_model") as mock_load:
                 mock_clf = MagicMock()
                 mock_clf.predict.side_effect = RuntimeError("predict fail")
-                mock_load.return_value = (mock_clf, {
-                    "feature_columns": ["age", "tenure"],
-                    "task": "classification",
-                    "encoding_map": {},
-                })
+                mock_load.return_value = (
+                    mock_clf,
+                    {
+                        "feature_columns": ["age", "tenure"],
+                        "task": "classification",
+                        "encoding_map": {},
+                    },
+                )
                 r = predict_single(mp, json.dumps(rec))
         assert r["success"] is False
 
@@ -1588,11 +1611,11 @@ class TestListModelsMorePaths:
 
     def test_mcp_versions_pkl_is_skipped(self, classification_simple, tmp_path):
         """Line 308: .pkl files under .mcp_versions/ are skipped."""
-        from servers.ml_basic.engine import train_classifier, list_models
+        from servers.ml_basic.engine import list_models, train_classifier
 
         mp = train_classifier(str(classification_simple), "churned", "rf")["model_path"]
-        from pathlib import Path
         import shutil
+        from pathlib import Path
 
         versions_dir = tmp_path / ".mcp_versions"
         versions_dir.mkdir()
@@ -1619,6 +1642,7 @@ class TestSplitDatasetMorePaths:
     def test_snapshot_exception_swallowed(self, classification_simple, tmp_path):
         """Lines 410-411: snapshot exception during second split is ignored."""
         from unittest.mock import patch
+
         from servers.ml_basic.engine import split_dataset
 
         r1 = split_dataset(str(classification_simple), output_dir=str(tmp_path))
