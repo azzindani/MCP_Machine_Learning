@@ -664,8 +664,8 @@ def apply_dimensionality_reduction(
         [{"type": "dataset", "path": str(out_path), "role": "reduced_dataset"}],
     )
     resp["handover"] = make_handover(
-        step="TRAIN",
-        suggested_tools=["train_classifier", "train_regressor", "run_clustering"],
+        workflow_step="TRAIN",
+        suggested_next=["train_classifier", "train_regressor", "run_clustering"],
         carry_forward={"file_path": str(out_path)},
     )
     resp["token_estimate"] = len(str(resp)) // 4
@@ -794,8 +794,8 @@ def generate_training_report(
         [{"type": "report", "path": str(out_path), "role": "training_report"}],
     )
     resp["handover"] = make_handover(
-        step="REPORT",
-        suggested_tools=["plot_roc_curve", "plot_learning_curve", "read_model_report"],
+        workflow_step="REPORT",
+        suggested_next=["plot_roc_curve", "plot_learning_curve", "read_model_report"],
         carry_forward={"model_path": str(path)},
     )
     resp["token_estimate"] = len(str(resp)) // 4

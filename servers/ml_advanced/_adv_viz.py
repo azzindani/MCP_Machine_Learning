@@ -236,8 +236,8 @@ def plot_roc_curve(
             [{"type": "report", "path": out_abs, "role": "roc_chart"}],
         )
         resp["handover"] = make_handover(
-            step="REPORT",
-            suggested_tools=["plot_learning_curve", "generate_training_report", "read_model_report"],
+            workflow_step="REPORT",
+            suggested_next=["plot_learning_curve", "generate_training_report", "read_model_report"],
             carry_forward={"model_path": str(mp)},
         )
         resp["token_estimate"] = len(str(resp)) // 4
@@ -420,8 +420,8 @@ def plot_learning_curve(
             [{"type": "report", "path": out_abs, "role": "learning_curve_chart"}],
         )
         resp["handover"] = make_handover(
-            step="REPORT",
-            suggested_tools=["tune_hyperparameters", "generate_training_report", "compare_models"],
+            workflow_step="REPORT",
+            suggested_next=["tune_hyperparameters", "generate_training_report", "compare_models"],
             carry_forward={"file_path": str(dp), "model": model, "task": task},
         )
         resp["token_estimate"] = len(str(resp)) // 4
@@ -609,8 +609,8 @@ def plot_predictions_vs_actual(
             [{"type": "report", "path": out_abs, "role": "pred_vs_actual_chart"}],
         )
         resp["handover"] = make_handover(
-            step="REPORT",
-            suggested_tools=["tune_hyperparameters", "generate_training_report", "read_model_report"],
+            workflow_step="REPORT",
+            suggested_next=["tune_hyperparameters", "generate_training_report", "read_model_report"],
             carry_forward={"model_path": str(mp)},
         )
         resp["token_estimate"] = len(str(resp)) // 4
@@ -871,8 +871,8 @@ def generate_cluster_report(
             [{"type": "report", "path": str(out), "role": "cluster_report"}],
         )
         resp["handover"] = make_handover(
-            step="REPORT",
-            suggested_tools=["find_optimal_clusters", "run_clustering", "check_data_quality"],
+            workflow_step="REPORT",
+            suggested_next=["find_optimal_clusters", "run_clustering", "check_data_quality"],
             carry_forward={"file_path": str(dp), "label_column": label_column},
         )
         resp["token_estimate"] = len(str(resp)) // 4

@@ -410,6 +410,8 @@ def split_dataset(
         df = _read_csv(str(path))
     except Exception as exc:
         return _error(f"Failed to read CSV: {exc}", "Check the file is valid.")
+    if len(df) == 0:
+        return _error(f"No valid rows in {path.name}.", "Check the file has readable data rows.")
     progress.append(ok(f"Loaded {pname(file_path)}", f"{len(df):,} rows"))
 
     if test_size <= 0 or test_size >= 1:
