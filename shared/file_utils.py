@@ -131,8 +131,9 @@ def get_output_dir() -> Path:
     return out
 
 
-def atomic_write(target: Path, content: bytes) -> None:
+def atomic_write(target: Path | str, content: bytes) -> None:
     """Write bytes to target atomically via temp file + move."""
+    target = Path(target)
     fd, tmp_path = tempfile.mkstemp(dir=target.parent)
     try:
         with os.fdopen(fd, "wb") as f:
@@ -146,7 +147,7 @@ def atomic_write(target: Path, content: bytes) -> None:
         raise
 
 
-def atomic_write_text(target: Path, content: str, encoding: str = "utf-8") -> None:
+def atomic_write_text(target: Path | str, content: str, encoding: str = "utf-8") -> None:
     """Write text to target atomically."""
     atomic_write(target, content.encode(encoding))
 

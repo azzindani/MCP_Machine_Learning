@@ -6,9 +6,12 @@ from pathlib import Path
 
 import pandas as pd
 
+from shared.handover import make_context, make_handover
+
 from ._medium_helpers import (
     _apply_op,
     _error,
+    _read_csv,
     _validate_ops,
     append_receipt,
     info,
@@ -33,6 +36,8 @@ def run_preprocessing(
         return _error(str(exc), "Check that file_path is inside your home directory.")
     if not path.exists():
         return _error(f"File not found: {file_path}", "Check that file_path is absolute and the CSV file exists.")
+    if path.stat().st_size == 0:
+        return _error(f"File is empty: {path.name}", "Verify the file has header + data rows.")
     if path.suffix.lower() != ".csv":
         return _error(f"Expected .csv file, got {path.suffix!r}", "Provide a CSV file path.")
 
@@ -43,7 +48,7 @@ def run_preprocessing(
     progress.append(info("Validated ops", f"{len(ops)} ops"))
 
     try:
-        df = pd.read_csv(path, low_memory=False)
+        df = _read_csv(str(path))
     except Exception as exc:
         return _error(f"Failed to read CSV: {exc}", "Check the file is a valid CSV.")
     progress.append(ok(f"Loaded {path.name}", f"{len(df):,} rows × {len(df.columns)} cols"))
@@ -101,6 +106,16 @@ def run_preprocessing(
         "progress": progress,
         "token_estimate": 0,
     }
+    resp["context"] = make_context(
+        "run_preprocessing",
+        f"Applied {len(ops)} preprocessing op(s) to {path.name}, saved to {out_path_resolved.name}",
+        [{"type": "csv", "path": str(out_path_resolved), "role": "preprocessed_dataset"}],
+    )
+    resp["handover"] = make_handover(
+        "CLEAN",
+        ["train_classifier", "train_regressor", "train_with_cv", "detect_outliers"],
+        {"file_path": str(out_path_resolved)},
+    )
     resp["token_estimate"] = len(str(resp)) // 4
     return resp
 
@@ -120,12 +135,14 @@ def detect_outliers(
         return _error(str(exc), "Check that file_path is inside your home directory.")
     if not path.exists():
         return _error(f"File not found: {file_path}", "Check that file_path is absolute and the CSV file exists.")
+    if path.stat().st_size == 0:
+        return _error(f"File is empty: {path.name}", "Verify the file has header + data rows.")
 
     if method not in ("iqr", "std"):
         return _error(f"Unknown method: '{method}'.", "Use 'iqr' or 'std'.")
 
     try:
-        df = pd.read_csv(path, low_memory=False)
+        df = _read_csv(str(path))
     except Exception as exc:
         return _error(f"Failed to read CSV: {exc}", "Check the file is a valid CSV.")
 
@@ -136,10 +153,9 @@ def detect_outliers(
             "Use inspect_dataset() to list valid column names.",
         )
 
-    import pandas as _pd
-
     results: list[dict] = []
     for col in columns:
+        import pandas as _pd
         series = _pd.to_numeric(df[col], errors="coerce").dropna()
         if method == "iqr":
             q1 = series.quantile(th1)
@@ -166,6 +182,7 @@ def detect_outliers(
         )
         progress.append(ok(f"Analyzed {col}", f"{int(mask.sum())} outliers"))
 
+    total_outliers = sum(r["outlier_count"] for r in results)
     resp: dict = {
         "success": True,
         "op": "detect_outliers",
@@ -175,5 +192,14 @@ def detect_outliers(
         "progress": progress,
         "token_estimate": 0,
     }
+    resp["context"] = make_context(
+        "detect_outliers",
+        f"Detected {total_outliers} outlier(s) across {len(columns)} column(s) in {path.name} using {method}",
+    )
+    resp["handover"] = make_handover(
+        "INSPECT",
+        ["run_preprocessing", "train_classifier", "train_regressor"],
+        {"file_path": file_path},
+    )
     resp["token_estimate"] = len(str(resp)) // 4
     return resp

@@ -16,8 +16,8 @@ from sklearn.decomposition import PCA, FastICA
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 from sklearn.preprocessing import StandardScaler
 
-from shared.file_utils import atomic_write_json, atomic_write_text, get_output_dir, resolve_path
-from shared.handover import make_handover
+from shared.file_utils import atomic_write_json, atomic_write_text, get_output_dir, read_csv as _read_csv, resolve_path
+from shared.handover import make_context, make_handover
 from shared.html_layout import get_output_path as _get_output_path
 from shared.platform_utils import get_cv_folds, get_n_iter, is_constrained_mode
 from shared.progress import info, ok, warn
@@ -106,8 +106,10 @@ def tune_hyperparameters(
             "Use 'rf', 'svm', 'lr', 'knn', 'dtc', 'rfr', 'dtr', 'lar', or 'rr' for tuning.",
         )
 
+    if path.stat().st_size == 0:
+        return _error(f"File is empty: {path.name}", "Verify the file has header + data rows.")
     try:
-        df = pd.read_csv(path, low_memory=False)
+        df = _read_csv(str(path))
     except Exception as exc:
         return _error(f"Failed to read CSV: {exc}", "Check the file is a valid CSV.")
     progress.append(ok(f"Loaded {path.name}", f"{len(df):,} rows × {len(df.columns)} cols"))
@@ -216,6 +218,11 @@ def tune_hyperparameters(
         "progress": progress,
         "token_estimate": 0,
     }
+    resp["context"] = make_context(
+        "tune_hyperparameters",
+        f"Tuned {model} with {search} on {path.name}: best_score={float(searcher.best_score_):.4f}",
+        [{"type": "model", "path": str(mp), "role": "tuned_model"}],
+    )
     resp["handover"] = make_handover(
         "PATCH",
         ["evaluate_model", "generate_training_report", "read_model_report"],
@@ -318,6 +325,16 @@ def export_model(
         "progress": progress,
         "token_estimate": 0,
     }
+    resp["context"] = make_context(
+        "export_model",
+        f"Exported {src_path.name} → {dst_path.name} with manifest",
+        [{"type": "model", "path": str(dst_path), "role": "exported_model"}],
+    )
+    resp["handover"] = make_handover(
+        "REPORT",
+        ["read_model_report", "generate_training_report"],
+        {"model_path": str(dst_path)},
+    )
     resp["token_estimate"] = len(str(resp)) // 4
     return resp
 
@@ -389,6 +406,10 @@ def read_model_report(model_path: str) -> dict:
         "progress": progress,
         "token_estimate": 0,
     }
+    resp["context"] = make_context(
+        "read_model_report",
+        f"Read report for {path.name}: {task}, {model_type}, metrics={list(metrics.keys())}",
+    )
     resp["handover"] = make_handover(
         "VERIFY",
         ["generate_training_report", "evaluate_model", "plot_roc_curve"],
@@ -423,11 +444,13 @@ def run_profiling_report(
         return _error(str(exc), "Check that file_path is inside your home directory.")
     if not path.exists():
         return _error(f"File not found: {file_path}", "Check that file_path is absolute and the CSV file exists.")
+    if path.stat().st_size == 0:
+        return _error(f"File is empty: {path.name}", "Verify the file has header + data rows.")
     if path.suffix.lower() != ".csv":
         return _error(f"Expected .csv file, got {path.suffix!r}", "Provide a CSV file path.")
 
     try:
-        df = pd.read_csv(path, low_memory=False)
+        df = _read_csv(str(path))
     except Exception as exc:
         return _error(f"Failed to read CSV: {exc}", "Check the file is a valid CSV.")
 
@@ -509,6 +532,16 @@ def run_profiling_report(
         "progress": progress,
         "token_estimate": 0,
     }
+    resp["context"] = make_context(
+        "run_profiling_report",
+        f"Profile report for {path.name} ({len(df):,} rows) → {out_path.name}",
+        [{"type": "html", "path": str(out_path), "role": "profile_report"}],
+    )
+    resp["handover"] = make_handover(
+        "REPORT",
+        ["check_data_quality", "run_preprocessing", "generate_eda_report"],
+        {"file_path": file_path},
+    )
     resp["token_estimate"] = len(str(resp)) // 4
     return resp
 
@@ -543,8 +576,11 @@ def apply_dimensionality_reduction(
             "Use 'pca' or 'ica'.",
         )
 
+    if path.stat().st_size == 0:
+        return _error(f"File is empty: {path.name}", "Verify the file has header + data rows.")
+
     try:
-        df = pd.read_csv(path, low_memory=False)
+        df = _read_csv(str(path))
     except Exception as exc:
         return _error(f"Failed to read CSV: {exc}", "Check the file is a valid CSV.")
 
@@ -620,6 +656,16 @@ def apply_dimensionality_reduction(
     }
     if method == "pca":
         resp["variance_explained"] = variance_explained
+    resp["context"] = make_context(
+        "apply_dimensionality_reduction",
+        f"Reduced {pname(file_path)} to {n_components} {method.upper()} components → {out_path.name}",
+        [{"type": "dataset", "path": str(out_path), "role": "reduced_dataset"}],
+    )
+    resp["handover"] = make_handover(
+        step="TRAIN",
+        suggested_tools=["train_classifier", "train_regressor", "run_clustering"],
+        carry_forward={"file_path": str(out_path)},
+    )
     resp["token_estimate"] = len(str(resp)) // 4
     return resp
 
@@ -740,5 +786,15 @@ def generate_training_report(
         "progress": progress,
         "token_estimate": 0,
     }
+    resp["context"] = make_context(
+        "generate_training_report",
+        f"Generated training report for {path.name} ({model_type}, {task}) → {out_path.name}",
+        [{"type": "report", "path": str(out_path), "role": "training_report"}],
+    )
+    resp["handover"] = make_handover(
+        step="REPORT",
+        suggested_tools=["plot_roc_curve", "plot_learning_curve", "read_model_report"],
+        carry_forward={"model_path": str(path)},
+    )
     resp["token_estimate"] = len(str(resp)) // 4
     return resp
