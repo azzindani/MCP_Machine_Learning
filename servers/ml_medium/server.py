@@ -168,46 +168,6 @@ def generate_eda_report(
     annotations={
         "readOnlyHint": False,
         "destructiveHint": False,
-        "idempotentHint": False,
-        "openWorldHint": False,
-    }
-)
-def filter_rows(
-    file_path: str,
-    column: str,
-    operator: str,
-    value: str = "",
-    output_path: str = "",
-    dry_run: bool = False,
-) -> dict:
-    """Filter rows by column condition. Saves filtered CSV."""
-    return engine.filter_rows(file_path, column, operator, value, output_path, dry_run)
-
-
-@mcp.tool(
-    annotations={
-        "readOnlyHint": False,
-        "destructiveHint": False,
-        "idempotentHint": False,
-        "openWorldHint": False,
-    }
-)
-def merge_datasets(
-    file_path_1: str,
-    file_path_2: str,
-    on: str,
-    how: str = "left",
-    output_path: str = "",
-    dry_run: bool = False,
-) -> dict:
-    """Merge two CSVs on a key column. how: left right inner outer."""
-    return engine.merge_datasets(file_path_1, file_path_2, on, how, output_path, dry_run)
-
-
-@mcp.tool(
-    annotations={
-        "readOnlyHint": False,
-        "destructiveHint": False,
         "idempotentHint": True,
         "openWorldHint": False,
     }
