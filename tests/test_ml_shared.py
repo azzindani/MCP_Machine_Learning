@@ -357,61 +357,61 @@ class TestValidateOpsBasicStructure:
     """Tests for top-level structural validation of the ops array."""
 
     def test_empty_list_is_valid(self):
-        ok, msg = validate_ops([])
-        assert ok is True
+        valid, msg = validate_ops([])
+        assert valid is True
         assert msg == ""
 
     def test_non_list_ops_returns_false(self):
-        ok, msg = validate_ops({"op": "fill_nulls"})  # type: ignore[arg-type]
-        assert ok is False
+        valid, msg = validate_ops({"op": "fill_nulls"})  # type: ignore[arg-type]
+        assert valid is False
         assert "list" in msg.lower()
 
     def test_string_ops_returns_false(self):
-        ok, msg = validate_ops("fill_nulls")  # type: ignore[arg-type]
-        assert ok is False
+        valid, msg = validate_ops("fill_nulls")  # type: ignore[arg-type]
+        assert valid is False
         assert "list" in msg.lower()
 
     def test_none_ops_returns_false(self):
-        ok, msg = validate_ops(None)  # type: ignore[arg-type]
-        assert ok is False
+        valid, msg = validate_ops(None)  # type: ignore[arg-type]
+        assert valid is False
 
     def test_too_many_ops_returns_false(self):
         # 51 ops — one over the limit
         ops = [{"op": "drop_duplicates"} for _ in range(MAX_OPS + 1)]
-        ok, msg = validate_ops(ops)
-        assert ok is False
+        valid, msg = validate_ops(ops)
+        assert valid is False
         assert str(MAX_OPS + 1) in msg
         assert str(MAX_OPS) in msg
 
     def test_exactly_max_ops_is_valid(self):
         ops = [{"op": "drop_duplicates"} for _ in range(MAX_OPS)]
-        ok, msg = validate_ops(ops)
-        assert ok is True
+        valid, msg = validate_ops(ops)
+        assert valid is True
         assert msg == ""
 
     def test_op_not_a_dict_returns_false(self):
-        ok, msg = validate_ops(["not_a_dict"])
-        assert ok is False
+        valid, msg = validate_ops(["not_a_dict"])
+        assert valid is False
         assert "dict" in msg.lower()
 
     def test_op_as_integer_returns_false(self):
-        ok, msg = validate_ops([42])
-        assert ok is False
+        valid, msg = validate_ops([42])
+        assert valid is False
         assert "dict" in msg.lower()
 
     def test_op_missing_op_key_returns_false(self):
-        ok, msg = validate_ops([{"column": "age"}])
-        assert ok is False
+        valid, msg = validate_ops([{"column": "age"}])
+        assert valid is False
         assert "'op'" in msg or "op" in msg
 
     def test_op_empty_op_key_returns_false(self):
-        ok, msg = validate_ops([{"op": ""}])
-        assert ok is False
+        valid, msg = validate_ops([{"op": ""}])
+        assert valid is False
         assert "op" in msg.lower()
 
     def test_unknown_op_name_returns_false(self):
-        ok, msg = validate_ops([{"op": "delete_everything"}])
-        assert ok is False
+        valid, msg = validate_ops([{"op": "delete_everything"}])
+        assert valid is False
         assert "delete_everything" in msg
         assert "unknown" in msg.lower() or "allowed" in msg.lower()
 
@@ -421,8 +421,8 @@ class TestValidateOpsBasicStructure:
             {"op": "drop_duplicates"},
             {"op": "totally_fake"},
         ]
-        ok, msg = validate_ops(ops)
-        assert ok is False
+        valid, msg = validate_ops(ops)
+        assert valid is False
         # Should mention index 2
         assert "2" in msg
 
@@ -431,18 +431,18 @@ class TestValidateOpsAllowedSet:
     """Tests for the custom `allowed` parameter."""
 
     def test_custom_allowed_set_accepts_known_op(self):
-        ok, msg = validate_ops(
+        valid, msg = validate_ops(
             [{"op": "drop_duplicates"}],
             allowed={"drop_duplicates"},
         )
-        assert ok is True
+        assert valid is True
 
     def test_custom_allowed_set_rejects_op_not_in_set(self):
-        ok, msg = validate_ops(
+        valid, msg = validate_ops(
             [{"op": "drop_duplicates"}],
             allowed={"fill_nulls"},
         )
-        assert ok is False
+        assert valid is False
         assert "drop_duplicates" in msg
 
     def test_default_allowed_contains_all_14_ops(self):
@@ -453,24 +453,24 @@ class TestValidateFillNulls:
     """Tests for fill_nulls-specific validation."""
 
     def test_fill_nulls_missing_column_returns_false(self):
-        ok, msg = validate_ops([{"op": "fill_nulls", "strategy": "mean"}])
-        assert ok is False
+        valid, msg = validate_ops([{"op": "fill_nulls", "strategy": "mean"}])
+        assert valid is False
         assert "column" in msg
 
     def test_fill_nulls_missing_strategy_returns_false(self):
-        ok, msg = validate_ops([{"op": "fill_nulls", "column": "age"}])
-        assert ok is False
+        valid, msg = validate_ops([{"op": "fill_nulls", "column": "age"}])
+        assert valid is False
         assert "strategy" in msg
 
     def test_fill_nulls_invalid_strategy_returns_false(self):
-        ok, msg = validate_ops([{"op": "fill_nulls", "column": "age", "strategy": "interpolate"}])
-        assert ok is False
+        valid, msg = validate_ops([{"op": "fill_nulls", "column": "age", "strategy": "interpolate"}])
+        assert valid is False
         assert "interpolate" in msg
 
     @pytest.mark.parametrize("strategy", ["mean", "median", "mode", "ffill", "bfill", "zero"])
     def test_fill_nulls_valid_strategy(self, strategy):
-        ok, msg = validate_ops([{"op": "fill_nulls", "column": "age", "strategy": strategy}])
-        assert ok is True, f"Strategy '{strategy}' should be valid but got: {msg}"
+        valid, msg = validate_ops([{"op": "fill_nulls", "column": "age", "strategy": strategy}])
+        assert valid is True, f"Strategy '{strategy}' should be valid but got: {msg}"
         assert msg == ""
 
     def test_fill_nulls_all_strategies_covered(self):
@@ -483,34 +483,34 @@ class TestValidateScale:
     """Tests for scale-specific validation."""
 
     def test_scale_missing_columns_returns_false(self):
-        ok, msg = validate_ops([{"op": "scale", "method": "standard"}])
-        assert ok is False
+        valid, msg = validate_ops([{"op": "scale", "method": "standard"}])
+        assert valid is False
         assert "columns" in msg
 
     def test_scale_missing_method_returns_false(self):
-        ok, msg = validate_ops([{"op": "scale", "columns": ["age"]}])
-        assert ok is False
+        valid, msg = validate_ops([{"op": "scale", "columns": ["age"]}])
+        assert valid is False
         assert "method" in msg
 
     def test_scale_invalid_method_returns_false(self):
-        ok, msg = validate_ops([{"op": "scale", "columns": ["age"], "method": "robust"}])
-        assert ok is False
+        valid, msg = validate_ops([{"op": "scale", "columns": ["age"], "method": "robust"}])
+        assert valid is False
         assert "robust" in msg
 
     def test_scale_columns_must_be_list_not_string(self):
-        ok, msg = validate_ops([{"op": "scale", "columns": "age", "method": "standard"}])
-        assert ok is False
+        valid, msg = validate_ops([{"op": "scale", "columns": "age", "method": "standard"}])
+        assert valid is False
         assert "list" in msg.lower()
 
     def test_scale_columns_must_be_list_not_dict(self):
-        ok, msg = validate_ops([{"op": "scale", "columns": {"age": True}, "method": "standard"}])
-        assert ok is False
+        valid, msg = validate_ops([{"op": "scale", "columns": {"age": True}, "method": "standard"}])
+        assert valid is False
         assert "list" in msg.lower()
 
     @pytest.mark.parametrize("method", ["standard", "minmax"])
     def test_scale_valid_method(self, method):
-        ok, msg = validate_ops([{"op": "scale", "columns": ["age", "income"], "method": method}])
-        assert ok is True, f"Scale method '{method}' should be valid but got: {msg}"
+        valid, msg = validate_ops([{"op": "scale", "columns": ["age", "income"], "method": method}])
+        assert valid is True, f"Scale method '{method}' should be valid but got: {msg}"
 
     def test_scale_all_methods_covered(self):
         tested = {"standard", "minmax"}
@@ -521,24 +521,24 @@ class TestValidateDropOutliers:
     """Tests for drop_outliers-specific validation."""
 
     def test_drop_outliers_missing_column_returns_false(self):
-        ok, msg = validate_ops([{"op": "drop_outliers", "method": "iqr"}])
-        assert ok is False
+        valid, msg = validate_ops([{"op": "drop_outliers", "method": "iqr"}])
+        assert valid is False
         assert "column" in msg
 
     def test_drop_outliers_missing_method_returns_false(self):
-        ok, msg = validate_ops([{"op": "drop_outliers", "column": "price"}])
-        assert ok is False
+        valid, msg = validate_ops([{"op": "drop_outliers", "column": "price"}])
+        assert valid is False
         assert "method" in msg
 
     def test_drop_outliers_invalid_method_returns_false(self):
-        ok, msg = validate_ops([{"op": "drop_outliers", "column": "price", "method": "zscore"}])
-        assert ok is False
+        valid, msg = validate_ops([{"op": "drop_outliers", "column": "price", "method": "zscore"}])
+        assert valid is False
         assert "zscore" in msg
 
     @pytest.mark.parametrize("method", ["iqr", "std"])
     def test_drop_outliers_valid_method(self, method):
-        ok, msg = validate_ops([{"op": "drop_outliers", "column": "price", "method": method}])
-        assert ok is True, f"Outlier method '{method}' should be valid but got: {msg}"
+        valid, msg = validate_ops([{"op": "drop_outliers", "column": "price", "method": method}])
+        assert valid is True, f"Outlier method '{method}' should be valid but got: {msg}"
 
     def test_drop_outliers_all_methods_covered(self):
         tested = {"iqr", "std"}
@@ -549,36 +549,36 @@ class TestValidateConvertDtype:
     """Tests for convert_dtype-specific validation."""
 
     def test_convert_dtype_missing_column_returns_false(self):
-        ok, msg = validate_ops([{"op": "convert_dtype", "to": "int"}])
-        assert ok is False
+        valid, msg = validate_ops([{"op": "convert_dtype", "to": "int"}])
+        assert valid is False
         assert "column" in msg
 
     def test_convert_dtype_missing_to_returns_false(self):
-        ok, msg = validate_ops([{"op": "convert_dtype", "column": "age"}])
-        assert ok is False
+        valid, msg = validate_ops([{"op": "convert_dtype", "column": "age"}])
+        assert valid is False
         assert "'to'" in msg or "to" in msg
 
     def test_convert_dtype_invalid_dtype_returns_false(self):
-        ok, msg = validate_ops([{"op": "convert_dtype", "column": "age", "to": "complex128"}])
-        assert ok is False
+        valid, msg = validate_ops([{"op": "convert_dtype", "column": "age", "to": "complex128"}])
+        assert valid is False
         assert "complex128" in msg
 
     @pytest.mark.parametrize("dtype", ["int", "float", "str", "datetime", "bool", "numeric", "string"])
     def test_convert_dtype_valid_dtype(self, dtype):
-        ok, msg = validate_ops([{"op": "convert_dtype", "column": "age", "to": dtype}])
-        assert ok is True, f"dtype '{dtype}' should be valid but got: {msg}"
+        valid, msg = validate_ops([{"op": "convert_dtype", "column": "age", "to": dtype}])
+        assert valid is True, f"dtype '{dtype}' should be valid but got: {msg}"
 
 
 class TestValidateOpsNoFieldRequirements:
     """Tests for ops that require no fields beyond 'op' itself."""
 
     def test_drop_duplicates_valid_with_op_only(self):
-        ok, msg = validate_ops([{"op": "drop_duplicates"}])
-        assert ok is True
+        valid, msg = validate_ops([{"op": "drop_duplicates"}])
+        assert valid is True
 
     def test_drop_null_rows_valid_with_op_only(self):
-        ok, msg = validate_ops([{"op": "drop_null_rows"}])
-        assert ok is True
+        valid, msg = validate_ops([{"op": "drop_null_rows"}])
+        assert valid is True
 
 
 class TestValidateOpsSingleFieldOps:
@@ -586,40 +586,54 @@ class TestValidateOpsSingleFieldOps:
 
     @pytest.mark.parametrize(
         "op_name",
-        ["label_encode", "onehot_encode", "drop_column", "bin_numeric",
-         "add_date_parts", "log_transform", "clip_column"],
+        [
+            "label_encode",
+            "onehot_encode",
+            "drop_column",
+            "bin_numeric",
+            "add_date_parts",
+            "log_transform",
+            "clip_column",
+        ],
     )
     def test_single_column_op_missing_column_returns_false(self, op_name):
-        ok, msg = validate_ops([{"op": op_name}])
-        assert ok is False
+        valid, msg = validate_ops([{"op": op_name}])
+        assert valid is False
         assert "column" in msg
 
     @pytest.mark.parametrize(
         "op_name",
-        ["label_encode", "onehot_encode", "drop_column", "bin_numeric",
-         "add_date_parts", "log_transform", "clip_column"],
+        [
+            "label_encode",
+            "onehot_encode",
+            "drop_column",
+            "bin_numeric",
+            "add_date_parts",
+            "log_transform",
+            "clip_column",
+        ],
     )
     def test_single_column_op_with_column_is_valid(self, op_name):
-        ok, msg = validate_ops([{"op": op_name, "column": "mycolumn"}])
-        assert ok is True, f"Op '{op_name}' with column should be valid but got: {msg}"
+        valid, msg = validate_ops([{"op": op_name, "column": "mycolumn"}])
+        assert valid is True, f"Op '{op_name}' with column should be valid but got: {msg}"
 
 
 class TestValidateRenameColumn:
     """Tests for rename_column required fields."""
 
     def test_rename_column_missing_from_returns_false(self):
-        ok, msg = validate_ops([{"op": "rename_column", "to": "new_name"}])
-        assert ok is False
+        valid, msg = validate_ops([{"op": "rename_column", "to": "new_name"}])
+        assert valid is False
         assert "from" in msg
 
     def test_rename_column_missing_to_returns_false(self):
-        ok, msg = validate_ops([{"op": "rename_column", "from": "old_name"}])
-        assert ok is False
+        valid, msg = validate_ops([{"op": "rename_column", "from": "old_name"}])
+        assert valid is False
         assert "'to'" in msg or "to" in msg
 
     def test_rename_column_valid(self):
-        ok, msg = validate_ops([{"op": "rename_column", "from": "old", "to": "new"}])
-        assert ok is True
+        valid, msg = validate_ops([{"op": "rename_column", "from": "old", "to": "new"}])
+        assert valid is True
 
 
 class TestValidateOpsMultipleOps:
@@ -632,17 +646,17 @@ class TestValidateOpsMultipleOps:
             {"op": "drop_duplicates"},
             {"op": "label_encode", "column": "gender"},
         ]
-        ok, msg = validate_ops(ops)
-        assert ok is True
+        valid, msg = validate_ops(ops)
+        assert valid is True
 
     def test_fail_fast_on_first_bad_op(self):
         ops = [
             {"op": "drop_duplicates"},
-            {"op": "bad_op"},               # fails here at index 1
-            {"op": "another_bad_op"},        # never reached
+            {"op": "bad_op"},  # fails here at index 1
+            {"op": "another_bad_op"},  # never reached
         ]
-        ok, msg = validate_ops(ops)
-        assert ok is False
+        valid, msg = validate_ops(ops)
+        assert valid is False
         # Should reference index 1, not 2
         assert "1" in msg
         assert "bad_op" in msg
@@ -651,26 +665,26 @@ class TestValidateOpsMultipleOps:
         """Every op in ALLOWED_PREPROCESSING_OPS must pass when supplied with
         the minimum required fields."""
         minimal_args: dict[str, dict] = {
-            "fill_nulls":    {"column": "x", "strategy": "mean"},
+            "fill_nulls": {"column": "x", "strategy": "mean"},
             "drop_outliers": {"column": "x", "method": "iqr"},
-            "label_encode":  {"column": "x"},
+            "label_encode": {"column": "x"},
             "onehot_encode": {"column": "x"},
-            "scale":         {"columns": ["x"], "method": "standard"},
+            "scale": {"columns": ["x"], "method": "standard"},
             "drop_duplicates": {},
-            "drop_column":   {"column": "x"},
+            "drop_column": {"column": "x"},
             "rename_column": {"from": "old", "to": "new"},
             "convert_dtype": {"column": "x", "to": "int"},
-            "bin_numeric":   {"column": "x"},
-            "add_date_parts":{"column": "x"},
+            "bin_numeric": {"column": "x"},
+            "add_date_parts": {"column": "x"},
             "log_transform": {"column": "x"},
-            "drop_null_rows":{},
-            "clip_column":   {"column": "x"},
+            "drop_null_rows": {},
+            "clip_column": {"column": "x"},
         }
         for op_name in ALLOWED_PREPROCESSING_OPS:
             args = minimal_args[op_name]
             op = {"op": op_name, **args}
-            ok, msg = validate_ops([op])
-            assert ok is True, f"Op '{op_name}' with minimal args failed: {msg}"
+            valid, msg = validate_ops([op])
+            assert valid is True, f"Op '{op_name}' with minimal args failed: {msg}"
 
 
 # ===========================================================================
@@ -1220,7 +1234,7 @@ class TestAutoPreprocess:
         df = pd.DataFrame({"age": [25, 30, 35], "target": ["yes", "no", "yes"]})
         processed, enc_map, cols = _auto_preprocess(df, "target")
         # Target should be encoded (strings → ints)
-        assert f"__target__target" in enc_map
+        assert "__target__target" in enc_map
         assert processed["target"].dtype in (int, "int64", "int32")
 
     def test_auto_preprocess_categorical_target_values_are_ints(self):
@@ -1240,11 +1254,13 @@ class TestAutoPreprocess:
         assert len(processed) == 3
 
     def test_auto_preprocess_encodes_categorical_features(self):
-        df = pd.DataFrame({
-            "gender": ["M", "F", "M"],
-            "score": [10.0, 20.0, 30.0],
-            "target": [0, 1, 0],
-        })
+        df = pd.DataFrame(
+            {
+                "gender": ["M", "F", "M"],
+                "score": [10.0, 20.0, 30.0],
+                "target": [0, 1, 0],
+            }
+        )
         processed, enc_map, cols = _auto_preprocess(df, "target")
         assert "gender" in enc_map
         assert "gender" in cols
@@ -1316,6 +1332,7 @@ class TestReceiptAppend:
         append_receipt(csv_path, "test_tool", {"arg": "val"}, "ok")
         receipt_file = tmp_path / "data.csv.mcp_receipt.json"
         import json as _json
+
         records = _json.loads(receipt_file.read_text(encoding="utf-8"))
         assert isinstance(records, list)
         assert len(records) == 1
@@ -1460,6 +1477,7 @@ class TestReadCsvEncodingFallback:
         # Write a file with a byte that is valid latin-1 but invalid utf-8
         path.write_bytes(b"col1,col2\nfoo,caf\xe9\n")
         from shared.file_utils import read_csv as _read_csv
+
         df = _read_csv(str(path), encoding="utf-8")
         assert len(df) == 1
         assert "col1" in df.columns
@@ -1469,6 +1487,7 @@ class TestReadCsvEncodingFallback:
         path = tmp_path / "win.csv"
         path.write_bytes("name,value\ncaf\xe9,42\n".encode("cp1252"))
         from shared.file_utils import read_csv as _read_csv
+
         df = _read_csv(str(path), encoding="utf-8")
         assert len(df) == 1
 
@@ -1478,6 +1497,7 @@ class TestReadCsvEncodingFallback:
         # Write BOM-prefixed UTF-8
         path.write_bytes(b"\xef\xbb\xbfcol1,col2\n1,2\n")
         from shared.file_utils import read_csv as _read_csv
+
         # Request utf-8-sig explicitly (same as first fallback) — should succeed
         df = _read_csv(str(path), encoding="utf-8-sig")
         assert len(df) == 1
@@ -1879,7 +1899,7 @@ class TestOpenFile:
 # ===========================================================================
 
 
-class TestSnapshotCollisionCounter:
+class TestSnapshotCollisionCounterExtra:
     """Line 51-52: backup filename collision increments counter."""
 
     def test_collision_counter_increments(self, tmp_path):
@@ -1978,8 +1998,6 @@ class TestWorkspaceUtilsCoverage:
 
     def test_save_manifest_cleanup_on_failure(self, tmp_path):
         """Lines 93-95: shutil.move fails in save_manifest → temp cleaned, raises."""
-        from shared.workspace_utils import save_manifest
-
         ws_dir = tmp_path / "default"
         ws_dir.mkdir()
         with patch("shutil.move", side_effect=OSError("disk full")):
@@ -1989,6 +2007,7 @@ class TestWorkspaceUtilsCoverage:
     def test_register_file_row_count_exception(self, tmp_path):
         """Lines 131-132: row_count falls back to -1 on read error."""
         import json as _json
+
         from shared.workspace_utils import register_file
 
         ws_dir = tmp_path / "default"
@@ -2051,8 +2070,10 @@ class TestAtomicWriteOslinkFailure:
 
     def test_unlink_oserror_swallowed_during_cleanup(self, tmp_path):
         """Lines 144-145: os.unlink raises OSError but is silenced; original exc re-raised."""
-        import pytest
         from unittest.mock import patch
+
+        import pytest
+
         from shared.file_utils import atomic_write
 
         target = tmp_path / "out.bin"
