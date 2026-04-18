@@ -156,6 +156,7 @@ def detect_outliers(
     results: list[dict] = []
     for col in columns:
         import pandas as _pd
+
         series = _pd.to_numeric(df[col], errors="coerce").dropna()
         if method == "iqr":
             q1 = series.quantile(th1)

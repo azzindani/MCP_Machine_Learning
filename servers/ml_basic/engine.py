@@ -6,7 +6,8 @@ import logging
 
 import pandas as pd
 
-from shared.file_utils import read_csv as _read_csv, resolve_path
+from shared.file_utils import read_csv as _read_csv
+from shared.file_utils import resolve_path
 from shared.handover import make_context, make_handover
 from shared.platform_utils import get_max_columns, get_max_results, get_max_rows
 from shared.progress import name as pname

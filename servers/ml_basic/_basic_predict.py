@@ -9,7 +9,8 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 
-from shared.file_utils import get_output_dir, read_csv as _read_csv, resolve_path
+from shared.file_utils import get_output_dir, resolve_path
+from shared.file_utils import read_csv as _read_csv
 from shared.handover import make_context, make_handover
 from shared.platform_utils import get_max_rows
 from shared.progress import info, ok

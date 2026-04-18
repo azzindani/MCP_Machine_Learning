@@ -33,7 +33,8 @@ from sklearn.preprocessing import LabelEncoder, MinMaxScaler, StandardScaler
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
-from shared.file_utils import get_output_dir, read_csv as _read_csv, resolve_path
+from shared.file_utils import get_output_dir, resolve_path
+from shared.file_utils import read_csv as _read_csv
 from shared.html_layout import get_output_path
 from shared.html_theme import _open_file, save_chart
 from shared.ml_utils import _auto_preprocess
