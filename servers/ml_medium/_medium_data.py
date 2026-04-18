@@ -573,7 +573,7 @@ def evaluate_model(
         from sklearn.preprocessing import LabelEncoder
 
         le = None
-        if y_true.dtype == object or str(y_true.dtype) in ("string",):
+        if not pd.api.types.is_numeric_dtype(y_true):
             le = LabelEncoder()
             y_true = le.fit_transform(y_true)
 

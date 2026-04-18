@@ -114,7 +114,7 @@ def plot_roc_curve(
             }
 
         # Encode target if needed
-        if y_true.dtype == object or str(y_true.dtype) in ("string", "StringDtype"):
+        if not pd.api.types.is_numeric_dtype(y_true):
             from sklearn.preprocessing import LabelEncoder
 
             le = LabelEncoder()
