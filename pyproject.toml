@@ -38,6 +38,16 @@ packages = ["servers", "shared"]
 testpaths = ["tests"]
 addopts = "--tb=short"
 
+[tool.coverage.run]
+omit = ["*/server.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "def main\\(\\):",
+]
+
 [tool.ruff]
 line-length = 120
 target-version = "py312"

@@ -33,6 +33,7 @@ def snapshot(file_path: str) -> str:
     """
     try:
         from shared.file_utils import resolve_path as _resolve
+
         source = _resolve(str(file_path))
     except ValueError:
         source = Path(str(file_path)).resolve()
@@ -147,7 +148,7 @@ def list_snapshots(file_path: str) -> list[dict]:
     results = []
     for bak in sorted(versions_dir.glob(f"{stem}_*.bak"), reverse=True):
         # Slice off "stem_" prefix to isolate timestamp
-        ts_raw = bak.stem[len(stem) + 1:]
+        ts_raw = bak.stem[len(stem) + 1 :]
         # Strip embedded extension for backward compat with old .csv.bak format
         ts = ts_raw.split(".")[0] if "." in ts_raw else ts_raw
         results.append(

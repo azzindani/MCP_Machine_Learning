@@ -22,7 +22,6 @@ from shared.workspace_utils import (
     save_manifest,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -341,9 +340,7 @@ def test_ml_make_handover_str_list_backward_compat():
 
 
 def test_ml_make_handover_dict_list_new_style():
-    suggestions = [
-        {"tool": "check_data_quality", "server": "ml_medium", "domain": "ml", "reason": "verify"}
-    ]
+    suggestions = [{"tool": "check_data_quality", "server": "ml_medium", "domain": "ml", "reason": "verify"}]
     h = make_handover("PREPARE", suggestions, carry_forward={"file_path": "/tmp/data.csv"})
     assert h["suggested_next"][0]["server"] == "ml_medium"
     assert h["carry_forward"]["file_path"] == "/tmp/data.csv"

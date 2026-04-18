@@ -51,6 +51,7 @@ def append_receipt(
         )
 
         from shared.file_utils import atomic_write_text
+
         atomic_write_text(rpath, json.dumps(records, indent=2, default=str))
     except Exception as exc:
         logger.debug("append_receipt failed silently: %s", exc)

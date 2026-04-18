@@ -18,6 +18,7 @@ from sklearn.preprocessing import StandardScaler
 
 from shared.file_utils import atomic_write_json, atomic_write_text, get_output_dir, resolve_path
 from shared.handover import make_handover
+from shared.html_layout import get_output_path as _get_output_path
 from shared.platform_utils import get_cv_folds, get_n_iter, is_constrained_mode
 from shared.progress import info, ok, warn
 from shared.receipt import append_receipt
@@ -393,5 +394,351 @@ def read_model_report(model_path: str) -> dict:
         ["generate_training_report", "evaluate_model", "plot_roc_curve"],
         {"model_path": model_path},
     )
+    resp["token_estimate"] = len(str(resp)) // 4
+    return resp
+
+
+# ---------------------------------------------------------------------------
+# Tool: run_profiling_report
+# ---------------------------------------------------------------------------
+
+
+def run_profiling_report(
+    file_path: str,
+    output_path: str = "",
+    sample_rows: int = 0,
+    open_after: bool = True,
+    dry_run: bool = False,
+) -> dict:
+    """Generate Plotly HTML profile report for a dataset."""
+    import plotly.graph_objects as go
+    import plotly.io as pio
+
+    from shared.html_theme import build_html_report
+
+    progress: list[dict] = []
+    try:
+        path = resolve_path(file_path)
+    except ValueError as exc:
+        return _error(str(exc), "Check that file_path is inside your home directory.")
+    if not path.exists():
+        return _error(f"File not found: {file_path}", "Check that file_path is absolute and the CSV file exists.")
+    if path.suffix.lower() != ".csv":
+        return _error(f"Expected .csv file, got {path.suffix!r}", "Provide a CSV file path.")
+
+    try:
+        df = pd.read_csv(path, low_memory=False)
+    except Exception as exc:
+        return _error(f"Failed to read CSV: {exc}", "Check the file is a valid CSV.")
+
+    if sample_rows and sample_rows < len(df):
+        df = df.sample(n=sample_rows, random_state=42)
+
+    progress.append(ok(f"Loaded {path.name}", f"{len(df):,} rows × {len(df.columns)} cols"))
+
+    out_path = _get_output_path(output_path, path, "profile_report", "html")
+
+    if dry_run:
+        resp: dict = {
+            "success": True,
+            "op": "run_profiling_report",
+            "dry_run": True,
+            "output_path": str(out_path),
+            "output_name": out_path.name,
+            "progress": progress,
+            "token_estimate": 0,
+        }
+        resp["token_estimate"] = len(str(resp)) // 4
+        return resp
+
+    from shared.html_theme import theme_plot_colors
+
+    plot_bg, font_color, _accent = theme_plot_colors("dark")
+    template = "plotly_dark"
+
+    sections: list[dict] = []
+
+    stats_html = (
+        "<table><thead><tr>"
+        + "".join(f"<th>{c}</th>" for c in ["Column", "Count", "Missing%", "Unique", "Type"])
+        + "</tr></thead><tbody>"
+    )
+    for col in df.columns:
+        count = int(df[col].count())
+        unique = int(df[col].nunique())
+        missing_pct = round(float(df[col].isna().mean()) * 100, 1)
+        dtype = str(df[col].dtype)
+        stats_html += f"<tr><td>{col}</td><td>{count}</td><td>{missing_pct}%</td><td>{unique}</td><td>{dtype}</td></tr>"
+    stats_html += "</tbody></table>"
+    sections.append({"id": "summary", "heading": "Dataset Summary", "html": stats_html})
+
+    numeric_cols = df.select_dtypes(include="number").columns.tolist()
+    if numeric_cols:
+        fig = go.Figure()
+        for col in numeric_cols[:10]:
+            fig.add_trace(go.Histogram(x=df[col].dropna(), name=col, opacity=0.7))
+        fig.update_layout(
+            barmode="overlay",
+            paper_bgcolor=plot_bg,
+            plot_bgcolor=plot_bg,
+            font={"color": font_color},
+            template=template,
+            autosize=True,
+        )
+        chart_html = pio.to_html(fig, full_html=False, include_plotlyjs=False)
+        sections.append({"id": "distributions", "heading": "Numeric Distributions", "html": chart_html})
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    build_html_report(
+        title=f"Profile Report: {path.name}",
+        subtitle=f"{len(df):,} rows × {len(df.columns)} columns",
+        sections=sections,
+        theme="dark",
+        open_after=open_after,
+        output_path=str(out_path),
+    )
+    progress.append(ok("Profile report saved", out_path.name))
+
+    resp = {
+        "success": True,
+        "op": "run_profiling_report",
+        "output_path": str(out_path),
+        "output_name": out_path.name,
+        "row_count": len(df),
+        "column_count": len(df.columns),
+        "progress": progress,
+        "token_estimate": 0,
+    }
+    resp["token_estimate"] = len(str(resp)) // 4
+    return resp
+
+
+# ---------------------------------------------------------------------------
+# Tool: apply_dimensionality_reduction
+# ---------------------------------------------------------------------------
+
+ALLOWED_DR_METHODS = {"pca", "ica"}
+
+
+def apply_dimensionality_reduction(
+    file_path: str,
+    feature_columns: list[str],
+    method: str,
+    n_components: int = 2,
+    output_path: str = "",
+    dry_run: bool = False,
+) -> dict:
+    """Reduce dimensions with PCA or ICA. Saves reduced dataset."""
+    progress: list[dict] = []
+    try:
+        path = resolve_path(file_path)
+    except ValueError as exc:
+        return _error(str(exc), "Check that file_path is inside your home directory.")
+    if not path.exists():
+        return _error(f"File not found: {file_path}", "Check that file_path is absolute and the CSV file exists.")
+
+    if method not in ALLOWED_DR_METHODS:
+        return _error(
+            f"Unknown method: '{method}'. Allowed: pca ica",
+            "Use 'pca' or 'ica'.",
+        )
+
+    try:
+        df = pd.read_csv(path, low_memory=False)
+    except Exception as exc:
+        return _error(f"Failed to read CSV: {exc}", "Check the file is a valid CSV.")
+
+    missing = [c for c in feature_columns if c not in df.columns]
+    if missing:
+        return _error(
+            f"Columns not found: {', '.join(missing)}",
+            "Use inspect_dataset() to list all column names.",
+        )
+
+    progress.append(ok(f"Loaded {path.name}", f"{len(df):,} rows × {len(df.columns)} cols"))
+
+    out_path = _get_output_path(output_path, path, f"{method}_reduced", "csv")
+
+    if dry_run:
+        resp: dict = {
+            "success": True,
+            "op": "apply_dimensionality_reduction",
+            "dry_run": True,
+            "method": method,
+            "n_components": n_components,
+            "output_path": str(out_path),
+            "backup": "",
+            "progress": progress,
+            "token_estimate": 0,
+        }
+        resp["token_estimate"] = len(str(resp)) // 4
+        return resp
+
+    backup = ""
+    if out_path.exists():
+        try:
+            backup = snapshot(str(out_path))
+            progress.append(ok("Snapshot created", Path(backup).name))
+        except Exception as exc:
+            progress.append(warn("Snapshot failed", str(exc)))
+
+    x = df[feature_columns].values
+    scaler = StandardScaler()
+    x_scaled = scaler.fit_transform(x)
+
+    n_components = min(n_components, len(feature_columns), len(df))
+    variance_explained: list[float] = []
+
+    if method == "pca":
+        reducer = PCA(n_components=n_components)
+        x_reduced = reducer.fit_transform(x_scaled)
+        variance_explained = [round(float(v), 4) for v in reducer.explained_variance_ratio_]
+    else:
+        reducer = FastICA(n_components=n_components, random_state=42)
+        x_reduced = reducer.fit_transform(x_scaled)
+
+    component_cols = {f"component_{i + 1}": x_reduced[:, i] for i in range(n_components)}
+    out_df = df.copy()
+    for col_name, values in component_cols.items():
+        out_df[col_name] = values
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_df.to_csv(out_path, index=False)
+    progress.append(ok("Saved reduced dataset", out_path.name))
+
+    resp = {
+        "success": True,
+        "op": "apply_dimensionality_reduction",
+        "method": method,
+        "n_components": n_components,
+        "feature_columns": feature_columns,
+        "output_path": str(out_path),
+        "output_name": out_path.name,
+        "backup": backup,
+        "progress": progress,
+        "token_estimate": 0,
+    }
+    if method == "pca":
+        resp["variance_explained"] = variance_explained
+    resp["token_estimate"] = len(str(resp)) // 4
+    return resp
+
+
+# ---------------------------------------------------------------------------
+# Tool: generate_training_report
+# ---------------------------------------------------------------------------
+
+
+def generate_training_report(
+    model_path: str,
+    theme: str = "dark",
+    output_path: str = "",
+    open_after: bool = True,
+    dry_run: bool = False,
+) -> dict:
+    """Generate HTML report: metrics, confusion matrix, feature importance."""
+    from shared.html_theme import build_html_report
+
+    progress: list[dict] = []
+    try:
+        path = resolve_path(model_path)
+    except ValueError as exc:
+        return _error(str(exc), "Check that model_path is inside your home directory.")
+    if not path.exists():
+        return _error(
+            f"Model file not found: {model_path}",
+            "Use train_classifier() or train_regressor() to train a model first.",
+        )
+
+    try:
+        model_obj, metadata = _load_model(str(path))
+    except Exception as exc:
+        return _error(f"Failed to load model: {exc}", "Check model_path points to a valid .pkl file.")
+
+    progress.append(ok("Loaded model", path.name))
+
+    out_path = _get_output_path(output_path, path, "training_report", "html")
+
+    if dry_run:
+        resp: dict = {
+            "success": True,
+            "op": "generate_training_report",
+            "dry_run": True,
+            "output_path": str(out_path),
+            "output_name": out_path.name,
+            "progress": progress,
+            "token_estimate": 0,
+        }
+        resp["token_estimate"] = len(str(resp)) // 4
+        return resp
+
+    task = metadata.get("task", "unknown")
+    model_type = metadata.get("model_type", "unknown")
+    metrics = metadata.get("metrics", {})
+    feature_columns = metadata.get("feature_columns", [])
+    target_column = metadata.get("target_column", "")
+    trained_on = metadata.get("trained_on", "")
+    training_date = metadata.get("training_date", "")
+
+    sections: list[dict] = []
+
+    overview_html = (
+        f"<table><tbody>"
+        f"<tr><td>Model</td><td>{model_type}</td></tr>"
+        f"<tr><td>Task</td><td>{task}</td></tr>"
+        f"<tr><td>Target</td><td>{target_column}</td></tr>"
+        f"<tr><td>Trained on</td><td>{trained_on}</td></tr>"
+        f"<tr><td>Date</td><td>{training_date[:19] if training_date else ''}</td></tr>"
+        f"<tr><td>Features</td><td>{len(feature_columns)}</td></tr>"
+        f"</tbody></table>"
+    )
+    sections.append({"id": "overview", "heading": "Model Overview", "html": overview_html})
+
+    metrics_rows = "".join(
+        f"<tr><td>{k}</td><td>{round(v, 4) if isinstance(v, float) else v}</td></tr>"
+        for k, v in metrics.items()
+        if not isinstance(v, dict)
+    )
+    if metrics_rows:
+        metrics_html = (
+            f"<table><thead><tr><th>Metric</th><th>Value</th></tr></thead><tbody>{metrics_rows}</tbody></table>"
+        )
+        sections.append({"id": "metrics", "heading": "Evaluation Metrics", "html": metrics_html})
+
+    confusion = metrics.get("confusion_matrix", {})
+    if confusion:
+        cm_rows = "".join(f"<tr><td>{k}</td><td>{v}</td></tr>" for k, v in confusion.items())
+        cm_html = f"<table><thead><tr><th>Category</th><th>Count</th></tr></thead><tbody>{cm_rows}</tbody></table>"
+        sections.append({"id": "confusion", "heading": "Confusion Matrix", "html": cm_html})
+
+    if model_obj is not None and hasattr(model_obj, "feature_importances_"):
+        importances = model_obj.feature_importances_
+        fi_pairs = sorted(zip(feature_columns, importances.tolist()), key=lambda x: x[1], reverse=True)[:10]
+        fi_rows = "".join(f"<tr><td>{f}</td><td>{round(i, 4)}</td></tr>" for f, i in fi_pairs)
+        fi_html = f"<table><thead><tr><th>Feature</th><th>Importance</th></tr></thead><tbody>{fi_rows}</tbody></table>"
+        sections.append({"id": "importance", "heading": "Feature Importance (Top 10)", "html": fi_html})
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    build_html_report(
+        title=f"Training Report: {path.stem}",
+        subtitle=f"{model_type} — {task}",
+        sections=sections,
+        theme=theme,
+        open_after=open_after,
+        output_path=str(out_path),
+    )
+    progress.append(ok("Training report saved", out_path.name))
+
+    resp = {
+        "success": True,
+        "op": "generate_training_report",
+        "model_path": str(path),
+        "output_path": str(out_path),
+        "output_name": out_path.name,
+        "model_type": model_type,
+        "task": task,
+        "progress": progress,
+        "token_estimate": 0,
+    }
     resp["token_estimate"] = len(str(resp)) // 4
     return resp
