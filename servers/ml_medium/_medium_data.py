@@ -588,7 +588,12 @@ def evaluate_model(
         poly = metadata.get("poly")
 
         if dp.stat().st_size == 0:
-            return {"success": False, "error": f"File is empty: {dp.name}", "hint": "Verify the file has header + data rows.", "token_estimate": 30}
+            return {
+                "success": False,
+                "error": f"File is empty: {dp.name}",
+                "hint": "Verify the file has header + data rows.",
+                "token_estimate": 30,
+            }
         df = _read_csv(str(dp))
         progress.append(ok("Loaded test data", f"{len(df)} rows"))
 
@@ -691,7 +696,8 @@ def evaluate_model(
         }
         resp["context"] = make_context(
             "evaluate_model",
-            f"Evaluated {mp.name} on {dp.name}: " + ", ".join(f"{k}={v}" for k, v in metrics.items() if not isinstance(v, dict))[:80],
+            f"Evaluated {mp.name} on {dp.name}: "
+            + ", ".join(f"{k}={v}" for k, v in metrics.items() if not isinstance(v, dict))[:80],
             [{"type": "model", "path": str(mp), "role": "evaluated_model"}],
         )
         resp["handover"] = make_handover(
@@ -783,7 +789,12 @@ def batch_predict(
         n_classes = metadata.get("n_classes", 2)
 
         if dp.stat().st_size == 0:
-            return {"success": False, "error": f"File is empty: {dp.name}", "hint": "Verify the file has header + data rows.", "token_estimate": 30}
+            return {
+                "success": False,
+                "error": f"File is empty: {dp.name}",
+                "hint": "Verify the file has header + data rows.",
+                "token_estimate": 30,
+            }
         df = _read_csv(str(dp))
         progress.append(ok("Loaded data", f"{len(df):,} rows"))
 
@@ -896,7 +907,12 @@ def check_data_quality(file_path: str) -> dict:
             "token_estimate": 30,
         }
     if path.stat().st_size == 0:
-        return {"success": False, "error": f"File is empty: {path.name}", "hint": "Verify the file has header + data rows.", "token_estimate": 30}
+        return {
+            "success": False,
+            "error": f"File is empty: {path.name}",
+            "hint": "Verify the file has header + data rows.",
+            "token_estimate": 30,
+        }
 
     try:
         df = _read_csv(str(path))

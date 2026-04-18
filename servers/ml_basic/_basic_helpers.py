@@ -38,7 +38,8 @@ from sklearn.preprocessing import (
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
-from shared.file_utils import atomic_write_json, get_output_dir, read_csv as _read_csv, resolve_path
+from shared.file_utils import atomic_write_json, get_output_dir, resolve_path
+from shared.file_utils import read_csv as _read_csv
 from shared.ml_utils import _auto_preprocess
 from shared.platform_utils import get_max_columns, get_max_results, get_max_rows
 from shared.progress import info, ok

@@ -8,7 +8,8 @@ import pickle
 import numpy as np
 import pandas as pd
 
-from shared.file_utils import atomic_write_text, read_csv as _read_csv
+from shared.file_utils import atomic_write_text
+from shared.file_utils import read_csv as _read_csv
 from shared.handover import make_context, make_handover
 from shared.html_theme import apply_fig_theme, calc_chart_height, get_theme, plotly_template
 from shared.progress import info, ok
@@ -87,7 +88,12 @@ def plot_roc_curve(
         encoding_map = metadata.get("encoding_map", {})
 
         if dp.stat().st_size == 0:
-            return {"success": False, "error": f"File is empty: {dp.name}", "hint": "Verify the file has header + data rows.", "token_estimate": 30}
+            return {
+                "success": False,
+                "error": f"File is empty: {dp.name}",
+                "hint": "Verify the file has header + data rows.",
+                "token_estimate": 30,
+            }
         df = _read_csv(str(dp))
         progress.append(ok("Loaded data", f"{len(df)} rows"))
 
@@ -295,7 +301,12 @@ def plot_learning_curve(
         from sklearn.preprocessing import LabelEncoder
 
         if dp.stat().st_size == 0:
-            return {"success": False, "error": f"File is empty: {dp.name}", "hint": "Verify the file has header + data rows.", "token_estimate": 30}
+            return {
+                "success": False,
+                "error": f"File is empty: {dp.name}",
+                "hint": "Verify the file has header + data rows.",
+                "token_estimate": 30,
+            }
         df = _read_csv(str(dp))
         progress.append(ok("Loaded data", f"{len(df)} rows"))
 
@@ -494,7 +505,12 @@ def plot_predictions_vs_actual(
         encoding_map = metadata.get("encoding_map", {})
 
         if dp.stat().st_size == 0:
-            return {"success": False, "error": f"File is empty: {dp.name}", "hint": "Verify the file has header + data rows.", "token_estimate": 30}
+            return {
+                "success": False,
+                "error": f"File is empty: {dp.name}",
+                "hint": "Verify the file has header + data rows.",
+                "token_estimate": 30,
+            }
         df = _read_csv(str(dp))
         progress.append(ok("Loaded data", f"{len(df)} rows"))
 
@@ -663,7 +679,12 @@ def generate_cluster_report(
         from sklearn.preprocessing import StandardScaler
 
         if dp.stat().st_size == 0:
-            return {"success": False, "error": f"File is empty: {dp.name}", "hint": "Verify the file has header + data rows.", "token_estimate": 30}
+            return {
+                "success": False,
+                "error": f"File is empty: {dp.name}",
+                "hint": "Verify the file has header + data rows.",
+                "token_estimate": 30,
+            }
         df = _read_csv(str(dp))
         progress.append(ok("Loaded data", f"{len(df)} rows"))
 
