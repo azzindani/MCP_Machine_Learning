@@ -1,7 +1,8 @@
 """Path resolution, CSV reading, and atomic write helpers.
 
 resolve_path() supports:
-  - 'project:name/alias' -> resolves via shared project_utils (DA-compatible)
+  - 'workspace:name/alias' -> resolves via workspace_utils (new canonical form)
+  - 'project:name/alias'   -> resolves via workspace_utils (legacy DA-compatible)
   - Absolute/relative paths with null-byte and filesystem-root blocking
 
 read_csv() provides auto-encoding detection with utf-8-sig / cp1252 / latin-1
@@ -24,33 +25,27 @@ def resolve_path(
     file_path: str,
     allowed_extensions: tuple[str, ...] = (),
 ) -> Path:
-    """Resolve to absolute path. Supports project:name/alias syntax.
+    """Resolve to absolute path. Supports workspace:name/alias and project:name/alias.
 
-    If file_path starts with 'project:', delegates to project_utils.resolve_alias
-    to translate the alias into an absolute path (DA-compatible format).
-    Both servers share the same ~/mcp_projects root so aliases registered
-    by MCP_Data_Analyst are resolvable here without any extra configuration.
-
+    Both prefix forms delegate to workspace_utils.resolve_alias.
     Also blocks null bytes and bare filesystem roots for path traversal safety.
 
     Raises:
         ValueError: invalid path, null byte, filesystem root, or bad extension
-        FileNotFoundError: project alias project not found
+        FileNotFoundError: workspace/alias not found
     """
-    # Project alias resolution (DA-compatible)
-    if file_path.startswith("project:"):
+    if file_path.startswith("workspace:") or file_path.startswith("project:"):
         try:
-            from shared.project_utils import resolve_alias
+            from shared.workspace_utils import resolve_alias
+
             path = resolve_alias(file_path)
         except Exception as exc:
             raise ValueError(f"Cannot resolve project alias '{file_path}': {exc}") from exc
     else:
         raw = str(file_path)
-        # Block null bytes — common in traversal payloads
         if "\x00" in raw:
             raise ValueError(f"Invalid path (null byte): {file_path}")
         path = Path(raw).resolve()
-        # Block bare filesystem roots — nothing useful lives at '/' or 'C:\\'
         if path.parent == path:
             raise ValueError(f"Path resolves to filesystem root: {file_path}")
 
@@ -61,10 +56,6 @@ def resolve_path(
 
     return path
 
-
-# ---------------------------------------------------------------------------
-# read_csv — encoding-aware, compatible with DA-produced files
-# ---------------------------------------------------------------------------
 
 _ENCODING_FALLBACKS = ("utf-8-sig", "cp1252", "latin-1")
 
@@ -116,11 +107,6 @@ def read_csv(
     return df
 
 
-# ---------------------------------------------------------------------------
-# Output directory helpers
-# ---------------------------------------------------------------------------
-
-
 def get_default_output_dir(input_path: str | None = None) -> Path:
     """Return default output dir: input file's parent if provided, else ~/Downloads."""
     if input_path:
@@ -144,11 +130,6 @@ def get_output_dir() -> Path:
     out = Path.home() / "Downloads"
     out.mkdir(parents=True, exist_ok=True)
     return out
-
-
-# ---------------------------------------------------------------------------
-# Atomic writes
-# ---------------------------------------------------------------------------
 
 
 def atomic_write(target: Path, content: bytes) -> None:
