@@ -405,8 +405,9 @@ def compare_models(
 
     append_receipt(str(path), "compare_models", {"task": task, "models": models}, "success", backup)
 
-    best_score_key = list(results[0]["metrics"].keys())[0] if results else "score"
-    best_score_val = results[0]["metrics"].get(best_score_key, 0) if results else 0
+    score_keys = [k for k in (results[0].keys() if results else []) if k not in ("model", "rank", "error")]
+    best_score_key = score_keys[0] if score_keys else "score"
+    best_score_val = results[0].get(best_score_key, 0) if results else 0
     resp = {
         "success": True,
         "op": "compare_models",
