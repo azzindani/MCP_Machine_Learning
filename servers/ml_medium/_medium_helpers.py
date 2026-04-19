@@ -247,8 +247,10 @@ def _validate_ops(ops: list[dict]) -> tuple[bool, list[dict], str]:
                 return False, ops, f"Op '{op_name}' missing required field: 'column'"
             strategy = op.get("strategy", "median")
             if strategy not in FILL_STRATEGIES:
-                return False, ops, (
-                    f"Strategy '{strategy}' not valid for fill_nulls. Allowed: {' '.join(sorted(FILL_STRATEGIES))}"
+                return (
+                    False,
+                    ops,
+                    (f"Strategy '{strategy}' not valid for fill_nulls. Allowed: {' '.join(sorted(FILL_STRATEGIES))}"),
                 )
         elif op_name == "scale":
             if "columns" not in op:
