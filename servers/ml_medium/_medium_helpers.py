@@ -212,41 +212,58 @@ def _fit_predict_regressor(
 
 MAX_OPS = 50
 
+_OP_KEY_ALIASES: dict[str, str] = {"operation": "op", "column_name": "column", "col": "column"}
+_OP_NAME_ALIASES: dict[str, str] = {"impute_missing": "fill_nulls", "fillna": "fill_nulls"}
+_FILL_KEY_ALIASES: dict[str, str] = {"method": "strategy"}
 
-def _validate_ops(ops: list[dict]) -> tuple[bool, str]:
-    """Validate preprocessing ops array. Returns (ok, error_msg)."""
+
+def _normalize_op(op: dict) -> dict:
+    """Return a copy of op with aliased keys/values normalized to canonical form."""
+    normalized = {_OP_KEY_ALIASES.get(k, k): v for k, v in op.items()}
+    if "op" in normalized:
+        normalized["op"] = _OP_NAME_ALIASES.get(normalized["op"], normalized["op"])
+    if normalized.get("op") == "fill_nulls":
+        normalized = {_FILL_KEY_ALIASES.get(k, k): v for k, v in normalized.items()}
+    return normalized
+
+
+def _validate_ops(ops: list[dict]) -> tuple[bool, list[dict], str]:
+    """Validate and normalize preprocessing ops. Returns (ok, normalized_ops, error_msg)."""
     if not isinstance(ops, list):
-        return False, "ops must be a list of dicts."
+        return False, ops, "ops must be a list of dicts."
     if len(ops) > MAX_OPS:
-        return False, f"Too many ops: {len(ops)}. Max is {MAX_OPS}."
+        return False, ops, f"Too many ops: {len(ops)}. Max is {MAX_OPS}."
+    normalized: list[dict] = []
     for i, op in enumerate(ops):
         if not isinstance(op, dict):
-            return False, f"Op #{i} is not a dict."
+            return False, ops, f"Op #{i} is not a dict."
+        op = _normalize_op(op)
+        normalized.append(op)
         op_name = op.get("op", "")
         if op_name not in ALLOWED_OPS:
-            return False, f"Unknown op: '{op_name}'. Allowed: {', '.join(sorted(ALLOWED_OPS))}"
+            return False, ops, f"Unknown op: '{op_name}'. Allowed: {', '.join(sorted(ALLOWED_OPS))}"
         if op_name == "fill_nulls":
             if "column" not in op:
-                return False, f"Op '{op_name}' missing required field: 'column'"
+                return False, ops, f"Op '{op_name}' missing required field: 'column'"
             strategy = op.get("strategy", "median")
             if strategy not in FILL_STRATEGIES:
-                return False, (
+                return False, ops, (
                     f"Strategy '{strategy}' not valid for fill_nulls. Allowed: {' '.join(sorted(FILL_STRATEGIES))}"
                 )
         elif op_name == "scale":
             if "columns" not in op:
-                return False, f"Op '{op_name}' missing required field: 'columns'"
+                return False, ops, f"Op '{op_name}' missing required field: 'columns'"
             method = op.get("method", "standard")
             if method not in SCALE_METHODS:
-                return False, f"Method '{method}' not valid for scale. Allowed: standard minmax"
+                return False, ops, f"Method '{method}' not valid for scale. Allowed: standard minmax"
         elif op_name in {"label_encode", "onehot_encode", "drop_column", "drop_outliers", "convert_dtype"}:
             if "column" not in op:
-                return False, f"Op '{op_name}' missing required field: 'column'"
+                return False, ops, f"Op '{op_name}' missing required field: 'column'"
         elif op_name == "rename_column":
             for field in ("from", "to"):
                 if field not in op:
-                    return False, f"Op '{op_name}' missing required field: '{field}'"
-    return True, ""
+                    return False, ops, f"Op '{op_name}' missing required field: '{field}'"
+    return True, normalized, ""
 
 
 def _apply_op(df: pd.DataFrame, op: dict) -> tuple[pd.DataFrame, dict]:
