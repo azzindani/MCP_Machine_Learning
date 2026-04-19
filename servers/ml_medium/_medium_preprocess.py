@@ -41,7 +41,7 @@ def run_preprocessing(
     if path.suffix.lower() != ".csv":
         return _error(f"Expected .csv file, got {path.suffix!r}", "Provide a CSV file path.")
 
-    valid, err_msg = _validate_ops(ops)
+    valid, ops, err_msg = _validate_ops(ops)
     if not valid:
         return _error(err_msg, "Check the op array. See run_preprocessing docstring for valid ops.")
 
