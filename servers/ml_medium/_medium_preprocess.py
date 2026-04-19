@@ -79,7 +79,10 @@ def run_preprocessing(
         ops_summary.append(summary)
         progress.append(ok(f"Applied {op['op']}", str(summary.get("filled", summary.get("removed", "")))))
 
-    out_path = Path(output_path) if output_path else path
+    if output_path:
+        out_path = Path(output_path)
+    else:
+        out_path = path.parent / f"{path.stem}_preprocessed{path.suffix}"
     try:
         out_path_resolved = resolve_path(str(out_path))
     except ValueError:
