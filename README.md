@@ -478,6 +478,22 @@ Not for production: Quick Tunnels are unauthenticated at the transport layer.
 Set `ML_API_KEY` or `ML_TOKENS_FILE` before tunneling so `/<tier>/mcp` still
 requires a bearer token even while it's publicly reachable.
 
+### Remote smoke test (`remote_smoke_test.sh`)
+
+Not part of pytest/CI — the separate, manual/on-demand check that exercises
+the real deployed HTTP endpoint: auth enforcement plus a real
+handwritten-prompt-style call for **all 33 tools** across all 3 tiers
+(basic/medium/advanced), against a real generated dataset, chaining real
+outputs (`model_path`, cluster labels, etc.) between calls the way an actual
+workflow would — e.g. `train_classifier` → `plot_roc_curve` on the resulting
+model.
+
+```bash
+./remote_smoke_test.sh                      # reads ML_API_KEY from .env, targets ml.casava.space
+DOMAIN=http://localhost:8820 ./remote_smoke_test.sh   # test a different target
+CONTAINER=mcp-ml ./remote_smoke_test.sh      # override container name
+```
+
 ## Uninstall
 
 **Step 1:** Remove from LM Studio
