@@ -408,22 +408,29 @@ For lower-memory machines, set `MCP_CONSTRAINED_MODE=1` in the `env` section of 
 | **Local Docker / HTTP** | Testing, or one other machine on your LAN | HTTP | optional |
 | **VPS Docker** | Remote MCP clients (claude.ai, hosted harnesses) | HTTP | **required** |
 
-Each tier runs as its own HTTP server/port; all three share one bearer-token set.
+Each tier keeps its own stdio server (`servers/ml_*/server.py`) for local LM
+Studio "add one tier" installs. For Docker/remote deployment all 3 tiers run
+as separate MCP endpoints inside **one process** (`unified_server.py`) on
+**one port** — pandas/numpy/scikit-learn/xgboost load once instead of three
+times (~240 MiB vs ~520 MiB idle), and all three still share one bearer-token
+set.
 
 ### HTTP transport (no Docker)
 
 ```bash
-ML_BASIC_TRANSPORT=http ML_BASIC_PORT=8820 uv run python servers/ml_basic/server.py
-curl http://localhost:8820/health   # {"status":"ok","version":"0.1.0"}
+uv run python unified_server.py --port 8820
+curl http://localhost:8820/health            # {"status":"ok","version":"0.1.0","tiers":[...]}
+curl http://localhost:8820/basic/health      # per-tier health
 ```
 
 ### Docker
 
 ```bash
 docker compose up -d --build
-curl http://localhost:8820/health   # ml-basic
-curl http://localhost:8821/health   # ml-medium
-curl http://localhost:8822/health   # ml-advanced
+curl http://localhost:8820/health            # aggregate
+curl http://localhost:8820/basic/mcp         # basic tier
+curl http://localhost:8820/medium/mcp        # medium tier
+curl http://localhost:8820/advanced/mcp      # advanced tier
 ```
 
 With auth (recommended for any network-reachable deploy):
@@ -433,15 +440,16 @@ cp tokens.example.json tokens.json   # edit: replace placeholders with `openssl 
 docker compose up -d --build
 ```
 
-`/mcp` requires `Authorization: Bearer <token>` once any of `ML_TOKENS_FILE` /
-`ML_TOKENS` / `ML_API_KEY` is set; `/health` and `/version` stay unauthenticated.
+`/<tier>/mcp` requires `Authorization: Bearer <token>` once any of
+`ML_TOKENS_FILE` / `ML_TOKENS` / `ML_API_KEY` is set; `/health` and
+`/version` (aggregate and per-tier) stay unauthenticated.
 
 ### Deployment environment variables
 
 | Variable | Default | Description |
 |---|---|---|
-| `ML_BASIC_TRANSPORT` / `ML_MEDIUM_TRANSPORT` / `ML_ADVANCED_TRANSPORT` | `stdio` | `stdio` or `http`, per tier |
-| `ML_BASIC_PORT` / `ML_MEDIUM_PORT` / `ML_ADVANCED_PORT` | `8820` / `8821` / `8822` | Port per tier, HTTP mode |
+| `ML_HOST` | `0.0.0.0` | Bind address for the unified server |
+| `ML_PORT` | `8820` | Port for the unified server (all 3 tiers) |
 | `ML_TOKENS_FILE` | unset | JSON file of named bearer tokens (`{"name": "token"}`) — highest priority, shared across all 3 tiers |
 | `ML_TOKENS` | unset | Inline `"name:token,name2:token2"` |
 | `ML_API_KEY` | unset | Single shared bearer token |
@@ -449,17 +457,17 @@ docker compose up -d --build
 ### Remote testing (Cloudflare Quick Tunnel)
 
 Same idea as `azzindani/Folio`'s `launch.sh`: bring the Docker deployment up
-and expose each of the 3 tiers at its own ephemeral `*.trycloudflare.com`
-URL — no VPS, no DNS, no account — so they're reachable from any
-MCP-compatible harness for a quick remote smoke test.
+and expose it at an ephemeral `*.trycloudflare.com` URL — no VPS, no DNS, no
+account — so all 3 tiers are reachable from any MCP-compatible harness for a
+quick remote smoke test.
 
 ```bash
-./launch_tunnel.sh          # docker compose up -d --build, then tunnel all 3
-./launch_tunnel.sh stop     # tear the tunnels down (containers keep running)
+./launch_tunnel.sh          # docker compose up -d --build, then tunnel
+./launch_tunnel.sh stop     # tear the tunnel down (container keeps running)
 ```
 
 Not for production: Quick Tunnels are unauthenticated at the transport layer.
-Set `ML_API_KEY` or `ML_TOKENS_FILE` before tunneling so `/mcp` still
+Set `ML_API_KEY` or `ML_TOKENS_FILE` before tunneling so `/<tier>/mcp` still
 requires a bearer token even while it's publicly reachable.
 
 ## Uninstall

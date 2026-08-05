@@ -1,83 +1,42 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # mcp-machine-learning — local & VPS-friendly compose stack.
 #
-# One image (see Dockerfile), three services — ml-basic, ml-medium,
-# ml-advanced — each its own container/port, selected via SERVER_SCRIPT.
-# All three share one bearer-auth token set (ML_TOKENS_FILE / ML_TOKENS /
-# ML_API_KEY) since they're one logical deployment unit.
+# One image, ONE container: unified_server.py mounts all 3 tiers
+# (basic/medium/advanced) as separate MCP endpoints on one port, so pandas/
+# numpy/scikit-learn/xgboost load once instead of three times. All three
+# share one bearer-auth token set (ML_TOKENS_FILE / ML_TOKENS / ML_API_KEY)
+# since they're one logical deployment unit.
 #
 # Quick start (open mode, no auth — localhost/private network only):
 #   docker compose up -d --build
-#   curl http://localhost:8820/health   # ml-basic
-#   curl http://localhost:8821/health   # ml-medium
-#   curl http://localhost:8822/health   # ml-advanced
+#   curl http://localhost:8820/health            # aggregate
+#   curl http://localhost:8820/basic/health       # per tier
+#   curl http://localhost:8820/medium/health
+#   curl http://localhost:8820/advanced/health
 #
 # With auth: cp tokens.example.json tokens.json && docker compose up -d --build
 # ─────────────────────────────────────────────────────────────────────────────
-x-ml-common: &ml-common
-  build:
-    context: .
-  image: ${ML_IMAGE:-mcp-machine-learning:latest}
-  restart: unless-stopped
-  environment: &ml-common-env
-    ML_TOKENS_FILE: ${ML_TOKENS_FILE:-}
-    ML_TOKENS: ${ML_TOKENS:-}
-    ML_API_KEY: ${ML_API_KEY:-}
-    MCP_CONSTRAINED_MODE: ${MCP_CONSTRAINED_MODE:-0}
-  mem_limit: ${ML_MEM_LIMIT:-2g}
-  volumes:
-    - ./tokens.json:/home/app/tokens.json:ro
-
 services:
-  ml-basic:
-    <<: *ml-common
-    container_name: mcp-ml-basic
+  ml:
+    build:
+      context: .
+    image: ${ML_IMAGE:-mcp-machine-learning:latest}
+    container_name: mcp-ml
+    restart: unless-stopped
     ports:
-      - "${ML_BASIC_HOST_PORT:-8820}:8820"
+      - "${ML_HOST_PORT:-8820}:8820"
     environment:
-      <<: *ml-common-env
-      SERVER_SCRIPT: ml-basic
-      ML_BASIC_TRANSPORT: http
-      ML_BASIC_HOST: 0.0.0.0
-      ML_BASIC_PORT: 8820
+      ML_HOST: 0.0.0.0
+      ML_PORT: 8820
+      ML_TOKENS_FILE: ${ML_TOKENS_FILE:-}
+      ML_TOKENS: ${ML_TOKENS:-}
+      ML_API_KEY: ${ML_API_KEY:-}
+      MCP_CONSTRAINED_MODE: ${MCP_CONSTRAINED_MODE:-0}
+    mem_limit: ${ML_MEM_LIMIT:-1g}
+    volumes:
+      - ./tokens.json:/home/app/tokens.json:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8820/health', timeout=3)"]
-      interval: 30s
-      timeout: 5s
-      start_period: 10s
-      retries: 3
-
-  ml-medium:
-    <<: *ml-common
-    container_name: mcp-ml-medium
-    ports:
-      - "${ML_MEDIUM_HOST_PORT:-8821}:8821"
-    environment:
-      <<: *ml-common-env
-      SERVER_SCRIPT: ml-medium
-      ML_MEDIUM_TRANSPORT: http
-      ML_MEDIUM_HOST: 0.0.0.0
-      ML_MEDIUM_PORT: 8821
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8821/health', timeout=3)"]
-      interval: 30s
-      timeout: 5s
-      start_period: 10s
-      retries: 3
-
-  ml-advanced:
-    <<: *ml-common
-    container_name: mcp-ml-advanced
-    ports:
-      - "${ML_ADVANCED_HOST_PORT:-8822}:8822"
-    environment:
-      <<: *ml-common-env
-      SERVER_SCRIPT: ml-advanced
-      ML_ADVANCED_TRANSPORT: http
-      ML_ADVANCED_HOST: 0.0.0.0
-      ML_ADVANCED_PORT: 8822
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8822/health', timeout=3)"]
       interval: 30s
       timeout: 5s
       start_period: 10s
