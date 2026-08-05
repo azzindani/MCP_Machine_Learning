@@ -2,19 +2,40 @@
 
 from __future__ import annotations
 
+import argparse
 import logging
+import os
 import sys
 
 logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
 
 from fastmcp import FastMCP
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 try:
+    from shared.deploy_auth import build_token_verifier
+
     from . import engine
 except ImportError:
     from servers.ml_basic import engine
+    from shared.deploy_auth import build_token_verifier
 
-mcp = FastMCP("ml-basic")
+_VERSION = "0.1.0"  # keep in sync with pyproject.toml [project].version
+
+mcp = FastMCP("ml-basic", auth=build_token_verifier("ML"))
+
+
+@mcp.custom_route("/health", methods=["GET"])
+async def health(request: Request) -> JSONResponse:
+    """Liveness check. Unauthenticated."""
+    return JSONResponse({"status": "ok", "version": _VERSION})
+
+
+@mcp.custom_route("/version", methods=["GET"])
+async def version(request: Request) -> JSONResponse:
+    """Report running version. Unauthenticated."""
+    return JSONResponse({"current": _VERSION})
 
 
 @mcp.tool(
@@ -177,7 +198,16 @@ def split_dataset(
 
 
 def main() -> None:
-    mcp.run()
+    parser = argparse.ArgumentParser(description="ml_basic MCP Server")
+    parser.add_argument("--transport", choices=["stdio", "http"], default=os.environ.get("ML_BASIC_TRANSPORT", "stdio"))
+    parser.add_argument("--host", default=os.environ.get("ML_BASIC_HOST", "127.0.0.1"))
+    parser.add_argument("--port", type=int, default=int(os.environ.get("ML_BASIC_PORT", "8820")))
+    args = parser.parse_args()
+
+    if args.transport == "http":
+        mcp.run(transport="http", host=args.host, port=args.port)
+    else:
+        mcp.run(transport="stdio")
 
 
 if __name__ == "__main__":
