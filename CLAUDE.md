@@ -1,5 +1,8 @@
 # CLAUDE.md — MCP Machine Learning Server Development Guide
 
+> Standards reference: https://github.com/azzindani/Standards/blob/main/local_mcp/STANDARDS.md
+> When this file conflicts with the general STANDARDS.md, this file takes precedence.
+
 This document is the authoritative development guide for AI coding agents working on
 this repository. Read it completely before writing any code. All rules here are binding.
 
@@ -1053,3 +1056,28 @@ steps:
 
 21. **Never import heavy libraries (sklearn, xgboost, ydata_profiling) at module
     level in sub-modules.** Use lazy imports inside functions.
+
+---
+
+## 22. Transport and Deployment (STANDARDS.md §30, §31)
+
+Each of the 3 servers supports `--transport {stdio,http}` via `main()`'s argparse,
+defaulting from `ML_BASIC_TRANSPORT` / `ML_MEDIUM_TRANSPORT` / `ML_ADVANCED_TRANSPORT`
+env vars. HTTP mode binds `--host`/`--port` (default `ML_BASIC_PORT=8820`,
+`ML_MEDIUM_PORT=8821`, `ML_ADVANCED_PORT=8822`) and exposes unauthenticated
+`/health` and `/version` routes plus the authenticated `/mcp` endpoint.
+
+Bearer auth (`shared/deploy_auth.py`, `build_token_verifier("ML")`) is shared across
+all 3 servers — one token set governs the whole repo:
+
+- `ML_TOKENS_FILE` (named tokens, JSON `{name: token}`) — highest priority
+- `ML_TOKENS` (inline `"name:token,name2:token2"`)
+- `ML_API_KEY` (single shared token)
+- unset = open mode (no auth) — localhost/private-network use only
+
+`Dockerfile` + `docker-compose.yml` build one image (root `uv sync` covers all
+3 servers' shared dependency set) and run one container per server via
+`SERVER_SCRIPT` (`ml-basic` / `ml-medium` / `ml-advanced`, the `[project.scripts]`
+console entrypoints). CI builds the image on every push (`docker-build` job,
+no push); `release.yml` publishes `ghcr.io/<owner>/mcp-machine-learning:<version>`
+on tag via the shared `azzindani/MCP_Math` composite action.
