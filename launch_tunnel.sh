@@ -2,10 +2,11 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # MCP_Machine_Learning — remote testing protocol (Cloudflare Quick Tunnel).
 #
-# Brings the local Docker deployment up and exposes each sub-server through
-# an ephemeral *.trycloudflare.com URL — no account, no DNS, no config.
-# Same pattern as azzindani/Folio's launch.sh, adapted for a docker-compose
-# stack with N services instead of a single process.
+# Brings the local Docker deployment up and exposes it through an ephemeral
+# *.trycloudflare.com URL — no account, no DNS, no config. Same pattern as
+# azzindani/Folio's launch.sh. One process serves all 3 tiers (basic/medium/
+# advanced) as separate MCP endpoints under one port — /basic/mcp,
+# /medium/mcp, /advanced/mcp.
 #
 # This makes the server reachable by ANY MCP-compatible harness or AI
 # platform (Claude, ChatGPT custom connectors, LM Studio, etc.) without
@@ -24,10 +25,9 @@ set -euo pipefail
 
 # name:host_port pairs — one per sub-server. Edit for this repo's services.
 PORTS=(
-  "ml-basic:8820"
-  "ml-medium:8821"
-  "ml-advanced:8822"
+  "ml:8820"
 )
+TIERS=(basic medium advanced)
 
 LOG_DIR="/tmp/ml-tunnels"
 mkdir -p "$LOG_DIR"
@@ -87,16 +87,15 @@ done
 
 echo ""
 echo "  remote endpoints:"
-for entry in "${PORTS[@]}"; do
-  name="${entry%%:*}"
-  port="${entry##*:}"
-  echo "    ${name} (:${port})  ->  ${URLS[$name]}/mcp"
+url="${URLS[ml]}"
+for tier in "${TIERS[@]}"; do
+  echo "    ${tier}  ->  ${url}/${tier}/mcp"
 done
 echo ""
 echo "  health checks:"
-for entry in "${PORTS[@]}"; do
-  name="${entry%%:*}"
-  echo "    ${URLS[$name]}/health"
+echo "    ${url}/health   (aggregate)"
+for tier in "${TIERS[@]}"; do
+  echo "    ${url}/${tier}/health"
 done
 echo ""
 echo "  stop tunnels:  ./launch_tunnel.sh stop"

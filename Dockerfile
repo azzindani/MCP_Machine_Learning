@@ -1,19 +1,18 @@
 # syntax=docker/dockerfile:1.7
 # ─────────────────────────────────────────────────────────────────────────────
-# mcp-machine-learning — production container for all 3 ML MCP servers
-# (ml-basic, ml-medium, ml-advanced). One root `uv sync` covers every
-# sub-server (they share one dependency set); each installs a console script
-# (ml-basic/ml-medium/ml-advanced) already on PATH after sync.
+# mcp-machine-learning — production container, ONE process for all 3 tiers.
 #
-# One image, N containers: select which sub-server a given container runs via
-# SERVER_SCRIPT. See docker-compose.yml for the one-service-per-sub-server
-# layout (each with its own port).
+# unified_server.py mounts basic/medium/advanced as separate MCP endpoints
+# (/basic/mcp, /medium/mcp, /advanced/mcp) inside one Starlette app on one
+# port, so pandas/numpy/scikit-learn/xgboost load once instead of three
+# times — was previously 3 containers (~520 MiB idle combined), now 1
+# (~240 MiB idle). Each tier's own /health, /version, /mcp routes (defined
+# via @mcp.custom_route in its own server.py) come along for free under its
+# mount prefix. Per-tier stdio/individual-HTTP servers (servers/ml_*/server.py)
+# are untouched — still usable directly for local LM Studio installs.
 #
 # Build:  docker build -t mcp-machine-learning:latest .
-# Run ml_basic:
-#   docker run --rm -p 8820:8820 -e SERVER_SCRIPT=ml-basic \
-#     -e ML_BASIC_TRANSPORT=http -e ML_BASIC_HOST=0.0.0.0 \
-#     mcp-machine-learning:latest
+# Run:    docker run --rm -p 8820:8820 -e ML_TRANSPORT=http mcp-machine-learning:latest
 # ─────────────────────────────────────────────────────────────────────────────
 
 ARG PYTHON_VERSION=3.12-slim
@@ -32,18 +31,17 @@ WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app/shared /app/shared
 COPY --from=builder /app/servers /app/servers
-COPY pyproject.toml ./
+COPY pyproject.toml unified_server.py ./
 
 ENV PATH="/app/.venv/bin:${PATH}" \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    ML_HOST=0.0.0.0 \
+    ML_PORT=8820
 
 USER app
+EXPOSE 8820
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD python -c "\
-import os, urllib.request; \
-prefix = os.environ.get('SERVER_SCRIPT', 'ml-basic').upper().replace('-', '_'); \
-port = os.environ[f'{prefix}_PORT']; \
-urllib.request.urlopen(f'http://127.0.0.1:{port}/health', timeout=3)" || exit 1
+    CMD python -c "import os, urllib.request; urllib.request.urlopen(f'http://127.0.0.1:{os.environ[\"ML_PORT\"]}/health', timeout=3)" || exit 1
 
-ENTRYPOINT ["sh", "-c", "exec \"$SERVER_SCRIPT\""]
+ENTRYPOINT ["python", "unified_server.py"]

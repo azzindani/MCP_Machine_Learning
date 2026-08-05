@@ -1061,23 +1061,34 @@ steps:
 
 ## 22. Transport and Deployment (STANDARDS.md §30, §31)
 
-Each of the 3 servers supports `--transport {stdio,http}` via `main()`'s argparse,
-defaulting from `ML_BASIC_TRANSPORT` / `ML_MEDIUM_TRANSPORT` / `ML_ADVANCED_TRANSPORT`
-env vars. HTTP mode binds `--host`/`--port` (default `ML_BASIC_PORT=8820`,
-`ML_MEDIUM_PORT=8821`, `ML_ADVANCED_PORT=8822`) and exposes unauthenticated
-`/health` and `/version` routes plus the authenticated `/mcp` endpoint.
+Each of the 3 tiers still supports `--transport {stdio,http}` via its own
+`server.py::main()` for local/individual use (LM Studio "add one tier"
+installs) — that per-tier code is unchanged.
+
+For Docker/remote deployment, `unified_server.py` (repo root) combines all 3
+tiers into **one process on one port**: each tier's `FastMCP` instance is
+mounted at its own path (`/basic`, `/medium`, `/advanced`) inside one
+Starlette app via `http_app()` + `Mount()`, with each tier's session-manager
+lifespan explicitly entered through `contextlib.AsyncExitStack` (Starlette's
+`Mount()` does not auto-propagate lifespan events to sub-apps — verified
+live against real tiers before relying on it). Every tier's own `/health`,
+`/version`, and `/mcp` routes (already defined via `@mcp.custom_route` in its
+own `server.py`) come along for free under its mount prefix — nothing
+tier-specific is duplicated in `unified_server.py`. This exists specifically
+to cut idle RAM: pandas/numpy/scikit-learn/xgboost previously loaded three
+times (one per tier's own process, ~520 MiB combined) now load once
+(~180–240 MiB total).
 
 Bearer auth (`shared/deploy_auth.py`, `build_token_verifier("ML")`) is shared across
-all 3 servers — one token set governs the whole repo:
+all 3 tiers — one token set governs the whole repo:
 
 - `ML_TOKENS_FILE` (named tokens, JSON `{name: token}`) — highest priority
 - `ML_TOKENS` (inline `"name:token,name2:token2"`)
 - `ML_API_KEY` (single shared token)
 - unset = open mode (no auth) — localhost/private-network use only
 
-`Dockerfile` + `docker-compose.yml` build one image (root `uv sync` covers all
-3 servers' shared dependency set) and run one container per server via
-`SERVER_SCRIPT` (`ml-basic` / `ml-medium` / `ml-advanced`, the `[project.scripts]`
-console entrypoints). CI builds the image on every push (`docker-build` job,
-no push); `release.yml` publishes `ghcr.io/<owner>/mcp-machine-learning:<version>`
-on tag via the shared `azzindani/MCP_Math` composite action.
+`Dockerfile` + `docker-compose.yml` build one image and run **one container**
+(`unified_server.py`, `ML_HOST`/`ML_PORT`, default port `8820`). CI builds the
+image on every push (`docker-build` job, no push); `release.yml` publishes
+`ghcr.io/<owner>/mcp-machine-learning:<version>` on tag via the shared
+`azzindani/MCP_Math` composite action.
