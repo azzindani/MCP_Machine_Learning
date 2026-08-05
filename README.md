@@ -433,11 +433,19 @@ curl http://localhost:8820/medium/mcp        # medium tier
 curl http://localhost:8820/advanced/mcp      # advanced tier
 ```
 
-With auth (recommended for any network-reachable deploy):
+With auth (**required** for any publicly reachable deploy — this is how the
+production `ml.casava.space` endpoint runs):
+
+```bash
+echo "ML_API_KEY=$(openssl rand -hex 24)" > .env   # gitignored, auto-loaded by docker-compose.yml
+docker compose up -d --build
+```
+
+For multiple named clients instead of one shared key (Folio-style):
 
 ```bash
 cp tokens.example.json tokens.json   # edit: replace placeholders with `openssl rand -hex 32`
-docker compose up -d --build
+ML_TOKENS_FILE=/path/to/tokens.json docker compose up -d --build
 ```
 
 `/<tier>/mcp` requires `Authorization: Bearer <token>` once any of
