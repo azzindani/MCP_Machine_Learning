@@ -5,3 +5,6 @@
 .coverage
 htmlcov/
 tokens.json
+
+# Deployment secrets
+.env
