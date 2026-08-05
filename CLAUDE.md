@@ -55,6 +55,15 @@ All execution is **100% local**. No data leaves the user's machine. No cloud API
 No API keys. No subscriptions. The tools run on the user's CPU using scikit-learn,
 XGBoost, pandas, and numpy.
 
+**Deployment scope:** local-first is the default and the constraints above always
+hold for the computation itself. On top of that, this server can also run in HTTP
+mode, self-hosted behind a reverse proxy, so it can be connected as a remote
+endpoint by AI platforms and harnesses (Claude Desktop, claude.ai remote MCP,
+other MCP clients) rather than only as a local LM Studio stdio process — see §22.
+Remote mode is opt-in, bearer-token authenticated, and still runs on
+infrastructure you control. This is one of six sibling `MCP_*` repos brought to
+this same deployment model.
+
 ---
 
 ## 2. Goals and Non-Goals
@@ -968,6 +977,15 @@ Every write tool additionally:
 | `servers/ml_medium/engine.py` | ≥ 90% |
 | `servers/ml_advanced/engine.py` | ≥ 85% |
 
+### Remote smoke tests (not part of pytest / CI)
+
+`pytest` above stays offline-only — never spins up an MCP process, never
+touches the network. Verifying the deployed HTTP endpoint (auth enforcement,
+real tool calls against the real public domain, using real generated
+datasets) is a separate, manual/on-demand check — hand-authored `curl`
+sessions or a `remote_smoke_test.sh`, run after `docker compose up`, never
+wired into CI, never storing the live `ML_API_KEY` in the repo.
+
 ### CI Configuration
 
 ```yaml
@@ -1061,6 +1079,11 @@ steps:
 
 ## 22. Transport and Deployment (STANDARDS.md §30, §31)
 
+This section covers connecting the server as a remote, hosted endpoint for AI
+platforms and harnesses (Claude Desktop, claude.ai remote MCP, other MCP
+clients) — additive to, and independent of, the local LM Studio stdio path
+above; nothing about local/offline use changes.
+
 Each of the 3 tiers still supports `--transport {stdio,http}` via its own
 `server.py::main()` for local/individual use (LM Studio "add one tier"
 installs) — that per-tier code is unchanged.
@@ -1085,7 +1108,13 @@ all 3 tiers — one token set governs the whole repo:
 - `ML_TOKENS_FILE` (named tokens, JSON `{name: token}`) — highest priority
 - `ML_TOKENS` (inline `"name:token,name2:token2"`)
 - `ML_API_KEY` (single shared token)
-- unset = open mode (no auth) — localhost/private-network use only
+- unset = open mode (no auth) — localhost/private-network use only, never for
+  a publicly reachable deployment
+
+The production deployment runs `ML_API_KEY` set from a local `.env` file
+(gitignored, never committed) behind a reverse proxy; a request without a
+valid `Authorization: Bearer <token>` header is rejected with `401` before it
+reaches any tool.
 
 `Dockerfile` + `docker-compose.yml` build one image and run **one container**
 (`unified_server.py`, `ML_HOST`/`ML_PORT`, default port `8820`). CI builds the
