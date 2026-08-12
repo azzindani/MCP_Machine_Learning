@@ -1275,6 +1275,22 @@ class TestAutoPreprocess:
         result = _auto_preprocess(df, "target")
         assert len(result) == 3
 
+    def test_auto_preprocess_replaces_inf_like_a_null(self):
+        """A ratio feature (e.g. clicks/impressions) is commonly inf when the
+        denominator is 0 — a real, not synthetic, pattern. It must be median-
+        filled like a null instead of reaching sklearn raw and crashing with
+        "Input X contains infinity". Regression test for that crash."""
+        df = pd.DataFrame(
+            {
+                "ctr": [20.0, float("inf"), 20.0, float("-inf"), 20.0],
+                "target": [0, 1, 0, 1, 0],
+            }
+        )
+        processed, enc_map, cols = _auto_preprocess(df, "target")
+        assert not processed["ctr"].isin([float("inf"), float("-inf")]).any()
+        assert processed["ctr"].isna().sum() == 0
+        assert processed.loc[1, "ctr"] == 20.0  # median-filled, not left as inf
+
 
 # ===========================================================================
 # NEW: shared/platform_utils.py — get_max_depth(), get_n_iter()
