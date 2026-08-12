@@ -14,16 +14,21 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 try:
-    from shared.deploy_auth import build_token_verifier
+    from shared.deploy_auth import build_oauth_bridge, build_token_verifier
 
     from . import engine
 except ImportError:
     from servers.ml_advanced import engine
-    from shared.deploy_auth import build_token_verifier
+    from shared.deploy_auth import build_oauth_bridge, build_token_verifier
 
-_VERSION = "0.1.0"  # keep in sync with pyproject.toml [project].version
+_VERSION = "0.1.1"  # keep in sync with pyproject.toml [project].version
 
-mcp = FastMCP("ml-advanced", auth=build_token_verifier("ML"))
+_oauth_bridge = build_oauth_bridge(
+    "ML", state_dir=os.environ.get("ML_ADVANCED_OAUTH_STATE_DIR", "/tmp/ml-advanced-oauth-state")
+)
+mcp = FastMCP("ml-advanced", auth=build_token_verifier("ML", _oauth_bridge))
+if _oauth_bridge is not None:
+    _oauth_bridge.register_routes(mcp)
 
 
 @mcp.custom_route("/health", methods=["GET"])
