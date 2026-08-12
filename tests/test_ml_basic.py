@@ -99,6 +99,25 @@ def test_read_column_profile_column_not_found(classification_simple):
     assert "hint" in r
 
 
+def test_read_column_profile_numeric_with_inf(tmp_path):
+    """A ratio column (e.g. CTR = clicks/impressions*100) commonly contains
+    inf when the denominator is 0 — a real pattern, not an edge case. Profile
+    stats must stay finite/reportable instead of silently going null.
+    Regression test for a bug where mean/std/max/skewness all came back None
+    because a handful of inf values poisoned pandas' aggregate functions."""
+    f = tmp_path / "ratios.csv"
+    f.write_text("impressions,clicks,ctr_pct\n10,2,20.0\n0,1,inf\n5,1,20.0\n0,3,inf\n20,4,20.0\n")
+    r = read_column_profile(str(f), "ctr_pct")
+    assert r["success"] is True
+    profile = r["profile"]
+    assert profile["kind"] == "numeric"
+    assert profile["mean"] is not None
+    assert profile["std"] is not None
+    assert profile["max"] is not None
+    assert profile["inf_count"] == 2
+    assert profile["max"] == 20.0
+
+
 def test_read_column_profile_token_estimate_present(regression_simple):
     r = read_column_profile(regression_simple, "salary")
     assert "token_estimate" in r

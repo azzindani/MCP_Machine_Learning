@@ -30,6 +30,23 @@ def regression_simple(tmp_path) -> Path:
 
 
 @pytest.fixture
+def ad_data_real_sample_with_ctr(tmp_path) -> Path:
+    """294-row real (not synthetic) stratified sample of Ad_Data.csv, with a
+    derived ctr_pct column added exactly as it was during the 2026-08-12
+    comprehensive real-world sweep (clicks/impressions*100 via data_basic
+    column_math). Includes 4 genuine impressions=0/clicks>0 rows, so ctr_pct
+    genuinely contains +inf — the real pattern that broke read_column_profile
+    and every training tool before the _auto_preprocess fix."""
+    import pandas as pd
+
+    df = pd.read_csv(FIXTURES_DIR / "ad_data_real_sample.csv")
+    df["ctr_pct"] = df["clicks"] / df["impressions"] * 100
+    dst = tmp_path / "ad_data_real_sample_with_ctr.csv"
+    df.to_csv(dst, index=False)
+    return dst
+
+
+@pytest.fixture
 def regression_messy(tmp_path) -> Path:
     dst = tmp_path / "regression_messy.csv"
     shutil.copy(FIXTURES_DIR / "regression_messy.csv", dst)

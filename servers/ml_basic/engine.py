@@ -153,7 +153,9 @@ def read_column_profile(file_path: str, column_name: str) -> dict:
                 "balance_ratio": round(true_count / max(false_count, 1), 4),
             }
         elif pd.api.types.is_numeric_dtype(series):
-            clean = series.dropna()
+            dropped = series.dropna()
+            inf_count = int(dropped.isin([float("inf"), float("-inf")]).sum())
+            clean = dropped[~dropped.isin([float("inf"), float("-inf")])]
             profile = {
                 "dtype": dtype_str,
                 "kind": "numeric",
@@ -165,6 +167,7 @@ def read_column_profile(file_path: str, column_name: str) -> dict:
                 "q25": round(float(clean.quantile(0.25)), 4) if len(clean) else None,
                 "q75": round(float(clean.quantile(0.75)), 4) if len(clean) else None,
                 "skewness": round(float(clean.skew()), 4) if len(clean) else None,
+                "inf_count": inf_count,
                 "null_count": null_count,
                 "null_pct": null_pct,
             }

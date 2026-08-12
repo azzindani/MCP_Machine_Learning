@@ -35,8 +35,14 @@ def _auto_preprocess(df: pd.DataFrame, target_column: str) -> tuple[pd.DataFrame
         df[target_column] = le_tgt.fit_transform(df[target_column].astype(str))
         encoding_map[f"__target__{target_column}"] = {str(cls): int(idx) for idx, cls in enumerate(le_tgt.classes_)}
 
-    # fill numeric nulls with median (vectorized — single pass)
+    # +/-inf (e.g. a ratio column divided by zero) is not a valid model input either —
+    # treat it the same as a missing value so it gets median-filled below, instead of
+    # reaching sklearn raw and crashing with "Input X contains infinity".
     num_cols = df.select_dtypes(include="number").columns
+    if len(num_cols) > 0:
+        df[num_cols] = df[num_cols].replace([np.inf, -np.inf], np.nan)
+
+    # fill numeric nulls with median (vectorized — single pass)
     if len(num_cols) > 0:
         medians = df[num_cols].median()
         df[num_cols] = df[num_cols].fillna(medians)
