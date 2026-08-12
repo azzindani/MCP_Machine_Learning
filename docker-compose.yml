@@ -37,6 +37,13 @@ services:
       # One state dir per tier (each is its own claude.ai connector, at its
       # own /basic, /medium, /advanced path) even though it's one process/port.
       # Only takes effect when a token source above is set; harmless otherwise.
+      # ML_PUBLIC_URL is the public HTTPS origin (no trailing slash, no tier
+      # suffix) this service is reachable at through the reverse proxy — each
+      # server.py appends its own /basic, /medium, /advanced. REQUIRED for
+      # OAuth discovery to work once mounted behind a path prefix: without it,
+      # the 401's WWW-Authenticate hint falls back to the internal bind
+      # address, which claude.ai can't reach.
+      ML_PUBLIC_URL: ${ML_PUBLIC_URL:-}
       ML_BASIC_OAUTH_STATE_DIR: /home/app/.oauth-state/basic
       ML_MEDIUM_OAUTH_STATE_DIR: /home/app/.oauth-state/medium
       ML_ADVANCED_OAUTH_STATE_DIR: /home/app/.oauth-state/advanced

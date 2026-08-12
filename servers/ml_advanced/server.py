@@ -26,7 +26,9 @@ _VERSION = "0.1.1"  # keep in sync with pyproject.toml [project].version
 _oauth_bridge = build_oauth_bridge(
     "ML", state_dir=os.environ.get("ML_ADVANCED_OAUTH_STATE_DIR", "/tmp/ml-advanced-oauth-state")
 )
-mcp = FastMCP("ml-advanced", auth=build_token_verifier("ML", _oauth_bridge))
+_public_origin = os.environ.get("ML_PUBLIC_URL", "").rstrip("/")
+_base_url = f"{_public_origin}/advanced" if _public_origin else None
+mcp = FastMCP("ml-advanced", auth=build_token_verifier("ML", _oauth_bridge, base_url=_base_url))
 if _oauth_bridge is not None:
     _oauth_bridge.register_routes(mcp)
 
