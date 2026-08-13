@@ -1949,10 +1949,8 @@ class TestEvaluateModelCoverage:
         """Force an exception inside the try block to hit the except handler."""
         tr = train_classifier(str(classification_simple), "churned", "rf")
         assert tr["success"] is True
-        # Monkeypatch pickle.load to raise
-        import pickle
-
-        monkeypatch.setattr(pickle, "load", lambda f: (_ for _ in ()).throw(RuntimeError("boom")))
+        # Monkeypatch load_signed (model loader) to raise
+        monkeypatch.setattr("shared.model_signing.load_signed", lambda f: (_ for _ in ()).throw(RuntimeError("boom")))
         r = evaluate_model(tr["model_path"], str(classification_simple), "churned")
         assert r["success"] is False
         assert "hint" in r
@@ -2048,9 +2046,7 @@ class TestBatchPredictCoverage:
     def test_general_exception_handler(self, classification_simple, tmp_path, monkeypatch):
         tr = train_classifier(str(classification_simple), "churned", "rf")
         assert tr["success"] is True
-        import pickle
-
-        monkeypatch.setattr(pickle, "load", lambda f: (_ for _ in ()).throw(RuntimeError("boom")))
+        monkeypatch.setattr("shared.model_signing.load_signed", lambda f: (_ for _ in ()).throw(RuntimeError("boom")))
         out = str(tmp_path / "err_preds.csv")
         r = batch_predict(tr["model_path"], str(classification_simple), output_path=out)
         assert r["success"] is False
@@ -3109,10 +3105,10 @@ class TestEvaluateModelXGBPaths:
 
     def test_no_auc_when_no_predict_proba(self, classification_simple, tmp_path):
         """Lines 607, 610-611: SVC without probability=True skips AUC."""
-        import pickle
-
         import pandas as pd
         from sklearn.svm import SVC
+
+        from shared.model_signing import dump_signed
 
         df = pd.read_csv(str(classification_simple))
         X = df[["age", "tenure"]].values
@@ -3121,7 +3117,7 @@ class TestEvaluateModelXGBPaths:
         clf.fit(X, y)
         mp = tmp_path / "noproba.pkl"
         with open(mp, "wb") as fh:
-            pickle.dump(
+            dump_signed(
                 {
                     "model": clf,
                     "metadata": {

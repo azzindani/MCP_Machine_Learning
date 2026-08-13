@@ -3,8 +3,6 @@ plot_predictions_vs_actual, generate_cluster_report."""
 
 from __future__ import annotations
 
-import pickle
-
 import numpy as np
 import pandas as pd
 
@@ -12,6 +10,7 @@ from shared.file_utils import atomic_write_text
 from shared.file_utils import read_csv as _read_csv
 from shared.handover import make_context, make_handover
 from shared.html_theme import apply_fig_theme, calc_chart_height, get_theme, plotly_template
+from shared.model_signing import load_signed
 from shared.progress import info, ok, warn
 
 from ._adv_helpers import _save_chart, get_output_path, resolve_path
@@ -69,7 +68,7 @@ def plot_roc_curve(
         from sklearn.preprocessing import label_binarize
 
         with open(mp, "rb") as f:
-            payload = pickle.load(f)
+            payload = load_signed(f)
         model = payload["model"]
         metadata = payload.get("metadata", {})
         progress.append(ok("Loaded model", mp.name))
@@ -486,7 +485,7 @@ def plot_predictions_vs_actual(
         from sklearn.metrics import mean_squared_error, r2_score
 
         with open(mp, "rb") as f:
-            payload = pickle.load(f)
+            payload = load_signed(f)
         model = payload["model"]
         metadata = payload.get("metadata", {})
         progress.append(ok("Loaded model", mp.name))

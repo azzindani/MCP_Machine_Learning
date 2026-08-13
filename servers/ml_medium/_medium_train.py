@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pickle
 import shutil
 import tempfile
 from datetime import UTC, datetime
@@ -13,6 +12,7 @@ import sklearn
 
 from shared.file_utils import atomic_write_json
 from shared.handover import make_context, make_handover
+from shared.model_signing import dump_signed
 
 from ._medium_helpers import (
     ALLOWED_CLASSIFIERS,
@@ -218,7 +218,7 @@ def train_with_cv(
 
     payload = {"model": None, "metadata": metadata}
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pkl", dir=models_dir) as tmp:
-        pickle.dump(payload, tmp)
+        dump_signed(payload, tmp)
         tmp_path = tmp.name
     shutil.move(tmp_path, model_path)
     atomic_write_json(manifest_path, metadata)
@@ -396,7 +396,7 @@ def compare_models(
         }
         payload = {"model": None, "metadata": metadata}
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pkl", dir=models_dir) as tmp:
-            pickle.dump(payload, tmp)
+            dump_signed(payload, tmp)
             tmp_path = tmp.name
         shutil.move(tmp_path, mp)
         atomic_write_json(mp.with_suffix(".manifest.json"), metadata)

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import pickle
 import shutil
 import sys
 import tempfile
@@ -35,6 +34,7 @@ from shared.file_utils import atomic_write_json, get_output_dir, resolve_path
 from shared.html_layout import get_output_path  # noqa: F401  (re-exported)
 from shared.html_theme import _open_file, save_chart  # noqa: F401  (re-exported)
 from shared.ml_utils import _auto_preprocess
+from shared.model_signing import dump_signed, load_signed
 from shared.platform_utils import get_cv_folds, is_constrained_mode  # noqa: F401
 from shared.progress import info, ok, warn  # noqa: F401
 from shared.receipt import append_receipt  # noqa: F401
@@ -133,7 +133,7 @@ def _build_estimator(model: str, task: str) -> object:
 def _save_model(model_obj: object, path: Path, metadata: dict) -> None:
     payload = {"model": model_obj, "metadata": metadata}
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pkl", dir=path.parent) as tmp:
-        pickle.dump(payload, tmp)
+        dump_signed(payload, tmp)
         tmp_path = tmp.name
     shutil.move(tmp_path, path)
     manifest_path = path.with_suffix(".manifest.json")
@@ -145,7 +145,7 @@ def _load_model(model_path: str) -> tuple[object, dict]:
     if not path.exists():
         raise FileNotFoundError(f"Model file not found: {model_path}")
     with open(path, "rb") as f:
-        payload = pickle.load(f)
+        payload = load_signed(f)
     return payload.get("model"), payload.get("metadata", {})
 
 
