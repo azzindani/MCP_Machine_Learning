@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from shared.file_utils import atomic_write_text
+from shared.file_utils import atomic_write_text, embed_content
 from shared.handover import make_context, make_handover
 
 from ._medium_helpers import (
@@ -246,6 +246,7 @@ def generate_eda_report(
     output_path: str = "",
     open_after: bool = True,
     dry_run: bool = False,
+    return_content: bool = False,
 ) -> dict:
     """Generate interactive HTML EDA report with Plotly charts."""
     import plotly.express as px
@@ -579,6 +580,7 @@ def generate_eda_report(
         ["run_preprocessing", "check_data_quality", "train_classifier"],
         {"file_path": file_path},
     )
+    embed_content(resp, out_path, return_content)
     resp["token_estimate"] = len(str(resp)) // 4
     return resp
 

@@ -3,10 +3,12 @@ plot_predictions_vs_actual, generate_cluster_report."""
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
-from shared.file_utils import atomic_write_text
+from shared.file_utils import atomic_write_text, embed_content
 from shared.file_utils import read_csv as _read_csv
 from shared.handover import make_context, make_handover
 from shared.html_theme import apply_fig_theme, calc_chart_height, get_theme, plotly_template
@@ -27,6 +29,7 @@ def plot_roc_curve(
     output_path: str = "",
     open_after: bool = True,
     dry_run: bool = False,
+    return_content: bool = False,
 ) -> dict:
     """Plot ROC curve for a classifier model. Saves interactive HTML."""
     progress = []
@@ -239,6 +242,7 @@ def plot_roc_curve(
             suggested_next=["plot_learning_curve", "generate_training_report", "read_model_report"],
             carry_forward={"model_path": str(mp)},
         )
+        embed_content(resp, Path(out_abs), return_content)
         resp["token_estimate"] = len(str(resp)) // 4
         return resp
 
@@ -266,6 +270,7 @@ def plot_learning_curve(
     output_path: str = "",
     open_after: bool = True,
     dry_run: bool = False,
+    return_content: bool = False,
 ) -> dict:
     """Plot learning curve (train vs val score vs training size). HTML output."""
     progress = []
@@ -423,6 +428,7 @@ def plot_learning_curve(
             suggested_next=["tune_hyperparameters", "generate_training_report", "compare_models"],
             carry_forward={"file_path": str(dp), "model": model, "task": task},
         )
+        embed_content(resp, Path(out_abs), return_content)
         resp["token_estimate"] = len(str(resp)) // 4
         return resp
 
@@ -447,6 +453,7 @@ def plot_predictions_vs_actual(
     output_path: str = "",
     open_after: bool = True,
     dry_run: bool = False,
+    return_content: bool = False,
 ) -> dict:
     """Scatter plot of predicted vs actual values for regression. HTML."""
     progress = []
@@ -630,6 +637,7 @@ def plot_predictions_vs_actual(
             suggested_next=["tune_hyperparameters", "generate_training_report", "read_model_report"],
             carry_forward={"model_path": str(mp)},
         )
+        embed_content(resp, Path(out_abs), return_content)
         resp["token_estimate"] = len(str(resp)) // 4
         return resp
 
@@ -655,6 +663,7 @@ def generate_cluster_report(
     output_path: str = "",
     open_after: bool = True,
     dry_run: bool = False,
+    return_content: bool = False,
 ) -> dict:
     """Generate HTML cluster visualization report with scatter and profile."""
     from shared.html_theme import (
@@ -892,6 +901,7 @@ def generate_cluster_report(
             suggested_next=["find_optimal_clusters", "run_clustering", "check_data_quality"],
             carry_forward={"file_path": str(dp), "label_column": label_column},
         )
+        embed_content(resp, out, return_content)
         resp["token_estimate"] = len(str(resp)) // 4
         return resp
 

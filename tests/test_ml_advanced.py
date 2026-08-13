@@ -133,6 +133,22 @@ class TestExportModel:
         assert r["op"] == "export_model"
         assert "manifest_path" in r
 
+    def test_return_content_embeds_real_signed_bytes(self, classification_simple):
+        import base64
+        from pathlib import Path
+
+        mp = _train_basic_model(classification_simple)
+        r = export_model(mp, return_content=True)
+        assert r["success"] is True
+        decoded = base64.b64decode(r["content_base64"])
+        assert decoded == Path(r["model_path"]).read_bytes()
+        assert r["content_mime_type"] == "application/octet-stream"
+
+    def test_no_return_content_by_default(self, classification_simple):
+        mp = _train_basic_model(classification_simple)
+        r = export_model(mp)
+        assert "content_base64" not in r
+
     def test_file_not_found(self, tmp_path):
         r = export_model(str(tmp_path / "nope.pkl"))
         assert r["success"] is False
@@ -494,6 +510,22 @@ class TestPlotRocCurve:
         assert r["success"] is True
         assert r["op"] == "plot_roc_curve"
         assert Path(out).exists()
+
+    def test_return_content_embeds_real_bytes(self, classification_simple, tmp_path):
+        import base64
+
+        mp = _train_basic_model(classification_simple, model="lr")
+        out = tmp_path / "roc_content.html"
+        r = plot_roc_curve(mp, classification_simple, output_path=str(out), open_after=False, return_content=True)
+        assert r["success"] is True
+        assert base64.b64decode(r["content_base64"]) == out.read_bytes()
+        assert r["content_mime_type"] == "text/html"
+
+    def test_no_return_content_by_default(self, classification_simple, tmp_path):
+        mp = _train_basic_model(classification_simple, model="lr")
+        out = str(tmp_path / "roc_default.html")
+        r = plot_roc_curve(mp, classification_simple, output_path=out, open_after=False)
+        assert "content_base64" not in r
 
     def test_model_not_found(self, classification_simple, tmp_path):
         r = plot_roc_curve(str(tmp_path / "ghost.pkl"), classification_simple, open_after=False)

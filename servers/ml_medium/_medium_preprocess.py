@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from shared.file_utils import embed_content
 from shared.handover import make_context, make_handover
 
 from ._medium_helpers import (
@@ -27,6 +28,7 @@ def run_preprocessing(
     ops: list[dict],
     output_path: str = "",
     dry_run: bool = False,
+    return_content: bool = False,
 ) -> dict:
     """Apply preprocessing pipeline ops to dataset. Snapshot before write."""
     progress: list[dict] = []
@@ -119,6 +121,7 @@ def run_preprocessing(
         ["train_classifier", "train_regressor", "train_with_cv", "detect_outliers"],
         {"file_path": str(out_path_resolved)},
     )
+    embed_content(resp, out_path_resolved, return_content)
     resp["token_estimate"] = len(str(resp)) // 4
     return resp
 

@@ -81,9 +81,10 @@ def export_model(
     output_dir: str = "",
     format: str = "pickle",
     dry_run: bool = False,
+    return_content: bool = False,
 ) -> dict:
     """Export trained model with metadata manifest. format: pickle."""
-    return engine.export_model(model_path, output_dir, format, dry_run)
+    return engine.export_model(model_path, output_dir, format, dry_run, return_content)
 
 
 @mcp.tool(
@@ -113,9 +114,10 @@ def run_profiling_report(
     sample_rows: int = 0,
     open_after: bool = True,
     dry_run: bool = False,
+    return_content: bool = False,
 ) -> dict:
     """Generate Plotly HTML profile report for a dataset."""
-    return engine.run_profiling_report(file_path, output_path, sample_rows, open_after, dry_run)
+    return engine.run_profiling_report(file_path, output_path, sample_rows, open_after, dry_run, return_content)
 
 
 @mcp.tool(
@@ -133,9 +135,12 @@ def apply_dimensionality_reduction(
     n_components: int = 2,
     output_path: str = "",
     dry_run: bool = False,
+    return_content: bool = False,
 ) -> dict:
     """Reduce dimensions with PCA or ICA. Saves reduced dataset."""
-    return engine.apply_dimensionality_reduction(file_path, feature_columns, method, n_components, output_path, dry_run)
+    return engine.apply_dimensionality_reduction(
+        file_path, feature_columns, method, n_components, output_path, dry_run, return_content
+    )
 
 
 @mcp.tool(
@@ -152,9 +157,10 @@ def generate_training_report(
     output_path: str = "",
     open_after: bool = True,
     dry_run: bool = False,
+    return_content: bool = False,
 ) -> dict:
     """Generate HTML report: metrics, confusion matrix, feature importance."""
-    return engine.generate_training_report(model_path, theme, output_path, open_after, dry_run)
+    return engine.generate_training_report(model_path, theme, output_path, open_after, dry_run, return_content)
 
 
 @mcp.tool(
@@ -172,9 +178,10 @@ def plot_roc_curve(
     output_path: str = "",
     open_after: bool = True,
     dry_run: bool = False,
+    return_content: bool = False,
 ) -> dict:
     """Plot ROC curve for classifier. Saves interactive HTML."""
-    return engine.plot_roc_curve(model_path, file_path, theme, output_path, open_after, dry_run)
+    return engine.plot_roc_curve(model_path, file_path, theme, output_path, open_after, dry_run, return_content)
 
 
 @mcp.tool(
@@ -195,10 +202,11 @@ def plot_learning_curve(
     output_path: str = "",
     open_after: bool = True,
     dry_run: bool = False,
+    return_content: bool = False,
 ) -> dict:
     """Plot train vs val score by training size. HTML output."""
     return engine.plot_learning_curve(
-        file_path, target_column, model, task, cv, theme, output_path, open_after, dry_run
+        file_path, target_column, model, task, cv, theme, output_path, open_after, dry_run, return_content
     )
 
 
@@ -217,9 +225,12 @@ def plot_predictions_vs_actual(
     output_path: str = "",
     open_after: bool = True,
     dry_run: bool = False,
+    return_content: bool = False,
 ) -> dict:
     """Scatter predicted vs actual for regression. HTML output."""
-    return engine.plot_predictions_vs_actual(model_path, file_path, theme, output_path, open_after, dry_run)
+    return engine.plot_predictions_vs_actual(
+        model_path, file_path, theme, output_path, open_after, dry_run, return_content
+    )
 
 
 @mcp.tool(
@@ -238,10 +249,11 @@ def generate_cluster_report(
     output_path: str = "",
     open_after: bool = True,
     dry_run: bool = False,
+    return_content: bool = False,
 ) -> dict:
     """Generate HTML cluster visualization with PCA scatter and profile."""
     return engine.generate_cluster_report(
-        file_path, feature_columns, label_column, theme, output_path, open_after, dry_run
+        file_path, feature_columns, label_column, theme, output_path, open_after, dry_run, return_content
     )
 
 

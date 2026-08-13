@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from shared.file_utils import embed_content
 from shared.handover import make_context, make_handover
 
 from ._medium_helpers import (
@@ -295,6 +296,7 @@ def find_optimal_clusters(
     theme: str = "dark",
     output_path: str = "",
     open_after: bool = True,
+    return_content: bool = False,
 ) -> dict:
     """Find optimal K for K-Means via elbow + silhouette. Saves HTML chart."""
     import plotly.graph_objects as go
@@ -402,6 +404,7 @@ def find_optimal_clusters(
         ["run_clustering", "generate_cluster_report"],
         {"file_path": file_path, "feature_columns": feature_columns},
     )
+    embed_content(resp, Path(out_abs), return_content)
     resp["token_estimate"] = len(str(resp)) // 4
     return resp
 
@@ -726,6 +729,7 @@ def batch_predict(
     file_path: str,
     output_path: str = "",
     dry_run: bool = False,
+    return_content: bool = False,
 ) -> dict:
     """Run predictions on all rows and save to CSV. No row limit."""
     import numpy as np
@@ -870,6 +874,7 @@ def batch_predict(
             ["evaluate_model", "read_model_report", "inspect_dataset"],
             {"model_path": model_path, "file_path": str(out)},
         )
+        embed_content(resp, out, return_content)
         resp["token_estimate"] = len(str(resp)) // 4
         return resp
 
