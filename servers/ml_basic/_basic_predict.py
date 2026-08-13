@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json as _json
 import logging
+import os as _os
 
 import numpy as np
 import pandas as pd
@@ -327,7 +328,12 @@ def list_models(directory: str = "") -> dict:
         except ValueError as exc:
             return _error(str(exc), "Check that directory is inside your home directory.")
     else:
-        search_dir = get_output_dir()
+        # Mirror train_classifier/train_regressor's own save-location logic
+        # (MCP_OUTPUT_DIR override, else <csv_dir>/.mcp_models) instead of
+        # get_output_dir()'s unrelated ~/Downloads default, so a no-argument
+        # call finds models trained without an explicit output_dir.
+        override = _os.environ.get("MCP_OUTPUT_DIR")
+        search_dir = Path(override) if override else Path.home() / ".mcp_models"
 
     models: list[dict] = []
     for pkl in sorted(search_dir.glob("*.pkl")):

@@ -186,7 +186,7 @@ def predict_single(model_path: str, input_data: str) -> dict:
 
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False})
 def list_models(directory: str = "") -> dict:
-    """List all saved .pkl models with metadata. Empty = home dir."""
+    """List all saved .pkl models with metadata. Empty = ~/.mcp_models."""
     return engine.list_models(directory)
 
 

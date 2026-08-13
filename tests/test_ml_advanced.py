@@ -328,6 +328,25 @@ class TestApplyDimensionalityReduction:
         r = apply_dimensionality_reduction(clustering_simple, ["x", "y"], "ica", n_components=2, output_path=out)
         assert r["success"] is True
 
+    def test_does_not_crash_on_null_column(self, clustering_simple, tmp_path):
+        """Regression test: crashed with a raw sklearn "Input X contains NaN"
+        on a feature column with real nulls (same root cause already fixed in
+        ml_medium's run_clustering) — found live via the opencode harness
+        real-tool sweep on the full Ad_Data.csv (546 real nulls in
+        link_clicks). Median-fill keeps behavior consistent with
+        run_clustering's fix."""
+        import pandas as pd
+
+        df = pd.read_csv(clustering_simple)
+        df.loc[df.index[0], "x"] = None
+        src = tmp_path / "clustering_with_nulls.csv"
+        df.to_csv(src, index=False)
+
+        out = str(tmp_path / "pca_nulls_out.csv")
+        r = apply_dimensionality_reduction(str(src), ["x", "y"], "pca", n_components=2, output_path=out)
+        assert r["success"] is True
+        assert "x" in " ".join(p.get("detail", "") for p in r["progress"])
+
     def test_file_not_found(self, tmp_path):
         r = apply_dimensionality_reduction(str(tmp_path / "nope.csv"), ["x"], "pca")
         assert r["success"] is False
