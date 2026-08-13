@@ -8,6 +8,7 @@ See ad_data_full_with_ctr fixture in conftest.py.
 from __future__ import annotations
 
 from servers.ml_basic.engine import read_column_profile, train_classifier, train_regressor
+from servers.ml_medium.engine import run_clustering
 
 
 class TestRealWorldInfHandling:
@@ -35,3 +36,19 @@ class TestRealWorldInfHandling:
             model="dtr",
         )
         assert r["success"] is True
+
+    def test_run_clustering_does_not_crash_on_null_column(self, ad_data_full_with_ctr):
+        """Regression test: run_clustering crashed with a raw sklearn
+        "Input X contains NaN" on link_clicks' real null values (546 of
+        them in the full dataset) — found training real clusters on the
+        full Ad_Data.csv. Median-fill keeps rows aligned for save_labels,
+        unlike find_optimal_clusters' dropna() (which has no such
+        requirement)."""
+        r = run_clustering(
+            str(ad_data_full_with_ctr),
+            feature_columns=["spends", "impressions", "clicks", "link_clicks"],
+            algorithm="kmeans",
+            n_clusters=4,
+        )
+        assert r["success"] is True
+        assert "link_clicks" in " ".join(p.get("detail", "") for p in r["progress"])
