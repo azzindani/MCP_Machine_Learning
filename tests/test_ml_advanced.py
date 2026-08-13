@@ -1473,11 +1473,10 @@ class TestReadModelReportMorePaths:
 
     def test_long_classification_report_truncated(self, classification_simple, tmp_path):
         """Line 364: classification_report > 500 chars is truncated."""
-        import pickle
-
         from sklearn.ensemble import RandomForestClassifier
 
         from servers.ml_advanced.engine import read_model_report
+        from shared.model_signing import dump_signed
 
         mp = tmp_path / "long_report.pkl"
         clf = RandomForestClassifier(n_estimators=2, random_state=42)
@@ -1493,7 +1492,7 @@ class TestReadModelReportMorePaths:
             },
         }
         with open(mp, "wb") as fh:
-            pickle.dump(payload, fh)
+            dump_signed(payload, fh)
         mp.with_suffix(".manifest.json").write_text("{}")
         r = read_model_report(str(mp))
         assert r["success"] is True
@@ -1624,12 +1623,11 @@ class TestPlotRocXGBAndNoProba:
 
     def test_no_proba_model_returns_error(self, classification_simple, tmp_path):
         """Line 145: model without predict_proba returns error."""
-        import pickle
-
         import pandas as pd
         from sklearn.svm import SVC
 
         from servers.ml_advanced.engine import plot_roc_curve
+        from shared.model_signing import dump_signed
 
         df = pd.read_csv(str(classification_simple))
         X = df[["age", "tenure"]].values
@@ -1638,7 +1636,7 @@ class TestPlotRocXGBAndNoProba:
         clf.fit(X, y)
         mp = tmp_path / "noproba.pkl"
         with open(mp, "wb") as fh:
-            pickle.dump(
+            dump_signed(
                 {
                     "model": clf,
                     "metadata": {

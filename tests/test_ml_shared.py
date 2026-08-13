@@ -2097,3 +2097,87 @@ class TestAtomicWriteOslinkFailure:
             with patch("os.unlink", side_effect=OSError("unlink also failed")):
                 with pytest.raises(OSError, match="move failed"):
                     atomic_write(target, b"data")
+
+
+# ─── model_signing ────────────────────────────────────────────────────────────
+
+from shared.model_signing import ModelIntegrityError, dump_signed, load_signed  # noqa: E402
+
+
+class TestModelSigning:
+    @pytest.fixture(autouse=True)
+    def _isolate_key(self, tmp_path, monkeypatch):
+        import shared.model_signing as model_signing
+
+        monkeypatch.setattr(model_signing, "_KEY_PATH", tmp_path / ".mcp_ml_signing_key")
+
+    def test_round_trip(self, tmp_path):
+        p = tmp_path / "model.pkl"
+        payload = {"model": "fake_estimator", "metadata": {"task": "classification"}}
+        with open(p, "wb") as f:
+            dump_signed(payload, f)
+        with open(p, "rb") as f:
+            assert load_signed(f) == payload
+
+    def test_key_persists_across_calls(self, tmp_path):
+        # Simulates a model saved by one process and loaded by another —
+        # both must resolve the same on-disk key.
+        p1 = tmp_path / "a.pkl"
+        p2 = tmp_path / "b.pkl"
+        with open(p1, "wb") as f:
+            dump_signed({"model": "a"}, f)
+        with open(p2, "wb") as f:
+            dump_signed({"model": "b"}, f)
+        with open(p1, "rb") as f:
+            assert load_signed(f) == {"model": "a"}
+        with open(p2, "rb") as f:
+            assert load_signed(f) == {"model": "b"}
+
+    def test_rejects_unsigned_pickle(self, tmp_path):
+        # Simulates an attacker planting a file at a path later passed as
+        # model_path — a plain pickle.dump() with no signature must never
+        # unpickle successfully.
+        import pickle
+
+        p = tmp_path / "attacker.pkl"
+        with open(p, "wb") as f:
+            pickle.dump({"model": "evil"}, f)
+        with open(p, "rb") as f:
+            with pytest.raises(ModelIntegrityError):
+                load_signed(f)
+
+    def test_rejects_tampered_payload(self, tmp_path):
+        p = tmp_path / "model.pkl"
+        with open(p, "wb") as f:
+            dump_signed({"model": "real"}, f)
+        raw = bytearray(p.read_bytes())
+        raw[-1] ^= 0xFF  # flip a bit in the pickled payload, after the signature
+        p.write_bytes(bytes(raw))
+        with open(p, "rb") as f:
+            with pytest.raises(ModelIntegrityError):
+                load_signed(f)
+
+    def test_rejects_truncated_file(self, tmp_path):
+        p = tmp_path / "short.pkl"
+        p.write_bytes(b"tooshort")
+        with open(p, "rb") as f:
+            with pytest.raises(ModelIntegrityError):
+                load_signed(f)
+
+    def test_key_file_created_with_owner_only_permissions(self, tmp_path):
+        import stat
+        import sys
+
+        if sys.platform == "win32":
+            pytest.skip("POSIX permission bits don't apply on Windows")
+
+        p = tmp_path / "model.pkl"
+        with open(p, "wb") as f:
+            dump_signed({"model": "x"}, f)
+
+        import shared.model_signing as model_signing
+
+        key_path = model_signing._KEY_PATH
+        assert key_path.exists()
+        mode = stat.S_IMODE(key_path.stat().st_mode)
+        assert mode == 0o600

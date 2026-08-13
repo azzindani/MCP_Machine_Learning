@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import pickle
 import shutil
 import sys
 import tempfile
@@ -41,6 +40,7 @@ from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 from shared.file_utils import atomic_write_json, get_output_dir, resolve_path
 from shared.file_utils import read_csv as _read_csv
 from shared.ml_utils import _auto_preprocess
+from shared.model_signing import dump_signed, load_signed
 from shared.platform_utils import get_max_columns, get_max_results, get_max_rows
 from shared.progress import info, ok
 from shared.progress import name as pname
@@ -115,7 +115,7 @@ def _save_model(model: Any, path: Path, metadata: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {"model": model, "metadata": metadata}
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pkl", dir=path.parent) as tmp:
-        pickle.dump(payload, tmp)
+        dump_signed(payload, tmp)
         tmp_path = tmp.name
     shutil.move(tmp_path, str(path))
     manifest_path = path.with_suffix(".manifest.json")
@@ -127,7 +127,7 @@ def _load_model(model_path: str) -> tuple[Any, dict]:
     if not path.exists():
         raise FileNotFoundError(f"Model file not found: {model_path}")
     with open(path, "rb") as f:
-        payload = pickle.load(f)
+        payload = load_signed(f)
     return payload["model"], payload["metadata"]
 
 

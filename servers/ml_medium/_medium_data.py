@@ -535,8 +535,6 @@ def evaluate_model(
     target_column: str,
 ) -> dict:
     """Score a saved model on a labeled test CSV. Returns metrics dict."""
-    import pickle
-
     import numpy as np
     import pandas as pd
     from sklearn.metrics import (
@@ -548,6 +546,7 @@ def evaluate_model(
     )
 
     from shared.file_utils import resolve_path
+    from shared.model_signing import load_signed
     from shared.progress import ok
 
     progress = []
@@ -576,7 +575,7 @@ def evaluate_model(
         import xgboost as xgb
 
         with open(mp, "rb") as f:
-            payload = pickle.load(f)
+            payload = load_signed(f)
         model_obj = payload["model"]
         metadata = payload.get("metadata", {})
         progress.append(ok("Loaded model", mp.name))
@@ -729,12 +728,11 @@ def batch_predict(
     dry_run: bool = False,
 ) -> dict:
     """Run predictions on all rows and save to CSV. No row limit."""
-    import pickle
-
     import numpy as np
     import pandas as pd
 
     from shared.file_utils import resolve_path
+    from shared.model_signing import load_signed
     from shared.progress import info, ok
     from shared.version_control import snapshot
 
@@ -775,7 +773,7 @@ def batch_predict(
         import xgboost as xgb
 
         with open(mp, "rb") as f:
-            payload = pickle.load(f)
+            payload = load_signed(f)
         model_obj = payload["model"]
         metadata = payload.get("metadata", {})
         progress.append(ok("Loaded model", mp.name))
