@@ -30,8 +30,8 @@ def regression_simple(tmp_path) -> Path:
 
 
 @pytest.fixture
-def ad_data_real_sample_with_ctr(tmp_path) -> Path:
-    """294-row real (not synthetic) stratified sample of Ad_Data.csv, with a
+def ad_data_full_with_ctr(tmp_path) -> Path:
+    """Full 16,834-row real (not synthetic) Ad_Data.csv dataset, with a
     derived ctr_pct column added exactly as it was during the 2026-08-12
     comprehensive real-world sweep (clicks/impressions*100 via data_basic
     column_math). Includes 4 genuine impressions=0/clicks>0 rows, so ctr_pct
@@ -39,9 +39,9 @@ def ad_data_real_sample_with_ctr(tmp_path) -> Path:
     and every training tool before the _auto_preprocess fix."""
     import pandas as pd
 
-    df = pd.read_csv(FIXTURES_DIR / "ad_data_real_sample.csv")
+    df = pd.read_csv(FIXTURES_DIR / "ad_data_full.csv")
     df["ctr_pct"] = df["clicks"] / df["impressions"] * 100
-    dst = tmp_path / "ad_data_real_sample_with_ctr.csv"
+    dst = tmp_path / "ad_data_full_with_ctr.csv"
     df.to_csv(dst, index=False)
     return dst
 
