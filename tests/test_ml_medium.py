@@ -481,6 +481,26 @@ class TestGenerateEdaReport:
         assert r["op"] == "generate_eda_report"
         assert Path(out).exists()
 
+    def test_return_content_embeds_real_bytes(self, classification_simple, tmp_path):
+        import base64
+
+        out = tmp_path / "eda_content.html"
+        r = generate_eda_report(
+            classification_simple,
+            target_column="churned",
+            output_path=str(out),
+            open_after=False,
+            return_content=True,
+        )
+        assert r["success"] is True
+        assert base64.b64decode(r["content_base64"]) == out.read_bytes()
+        assert r["content_mime_type"] == "text/html"
+
+    def test_no_return_content_by_default(self, classification_simple, tmp_path):
+        out = str(tmp_path / "eda_default.html")
+        r = generate_eda_report(classification_simple, output_path=out, open_after=False)
+        assert "content_base64" not in r
+
     def test_quality_score_present(self, classification_simple, tmp_path):
         out = str(tmp_path / "eda_qs.html")
         r = generate_eda_report(classification_simple, output_path=out, open_after=False)
@@ -980,6 +1000,22 @@ class TestBatchPredict:
         assert r["success"] is True
         assert r["op"] == "batch_predict"
         assert Path(out).exists()
+
+    def test_return_content_embeds_real_bytes(self, classification_simple, tmp_path):
+        import base64
+
+        tr = train_classifier(classification_simple, "churned", "rf")
+        out = tmp_path / "predictions_content.csv"
+        r = batch_predict(tr["model_path"], classification_simple, output_path=str(out), return_content=True)
+        assert r["success"] is True
+        assert base64.b64decode(r["content_base64"]) == out.read_bytes()
+        assert r["content_mime_type"] == "text/csv"
+
+    def test_no_return_content_by_default(self, classification_simple, tmp_path):
+        tr = train_classifier(classification_simple, "churned", "rf")
+        out = str(tmp_path / "predictions_default.csv")
+        r = batch_predict(tr["model_path"], classification_simple, output_path=out)
+        assert "content_base64" not in r
 
     def test_all_rows_predicted(self, classification_simple, tmp_path):
         tr = train_classifier(classification_simple, "churned", "rf")

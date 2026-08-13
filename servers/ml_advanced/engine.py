@@ -17,7 +17,7 @@ from sklearn.decomposition import PCA, FastICA
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 from sklearn.preprocessing import StandardScaler
 
-from shared.file_utils import atomic_write_json, atomic_write_text, get_output_dir, resolve_path
+from shared.file_utils import atomic_write_json, atomic_write_text, embed_content, get_output_dir, resolve_path
 from shared.file_utils import read_csv as _read_csv
 from shared.handover import make_context, make_handover
 from shared.html_layout import get_output_path as _get_output_path
@@ -245,6 +245,7 @@ def export_model(
     output_dir: str = "",
     format: str = "pickle",
     dry_run: bool = False,
+    return_content: bool = False,
 ) -> dict:
     """Export trained model with metadata manifest. format: pickle."""
     progress: list[dict] = []
@@ -338,6 +339,7 @@ def export_model(
         ["read_model_report", "generate_training_report"],
         {"model_path": str(dst_path)},
     )
+    embed_content(resp, dst_path, return_content)
     resp["token_estimate"] = len(str(resp)) // 4
     return resp
 
@@ -433,6 +435,7 @@ def run_profiling_report(
     sample_rows: int = 0,
     open_after: bool = True,
     dry_run: bool = False,
+    return_content: bool = False,
 ) -> dict:
     """Generate Plotly HTML profile report for a dataset."""
     import plotly.graph_objects as go
@@ -545,6 +548,7 @@ def run_profiling_report(
         ["check_data_quality", "run_preprocessing", "generate_eda_report"],
         {"file_path": file_path},
     )
+    embed_content(resp, out_path, return_content)
     resp["token_estimate"] = len(str(resp)) // 4
     return resp
 
@@ -563,6 +567,7 @@ def apply_dimensionality_reduction(
     n_components: int = 2,
     output_path: str = "",
     dry_run: bool = False,
+    return_content: bool = False,
 ) -> dict:
     """Reduce dimensions with PCA or ICA. Saves reduced dataset."""
     progress: list[dict] = []
@@ -679,6 +684,7 @@ def apply_dimensionality_reduction(
         suggested_next=["train_classifier", "train_regressor", "run_clustering"],
         carry_forward={"file_path": str(out_path)},
     )
+    embed_content(resp, out_path, return_content)
     resp["token_estimate"] = len(str(resp)) // 4
     return resp
 
@@ -694,6 +700,7 @@ def generate_training_report(
     output_path: str = "",
     open_after: bool = True,
     dry_run: bool = False,
+    return_content: bool = False,
 ) -> dict:
     """Generate HTML report: metrics, confusion matrix, feature importance."""
     from shared.html_theme import build_html_report
@@ -809,5 +816,6 @@ def generate_training_report(
         suggested_next=["plot_roc_curve", "plot_learning_curve", "read_model_report"],
         carry_forward={"model_path": str(path)},
     )
+    embed_content(resp, out_path, return_content)
     resp["token_estimate"] = len(str(resp)) // 4
     return resp

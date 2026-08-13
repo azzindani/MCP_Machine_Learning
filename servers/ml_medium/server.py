@@ -58,9 +58,10 @@ def run_preprocessing(
     ops: list[dict],
     output_path: str = "",
     dry_run: bool = False,
+    return_content: bool = False,
 ) -> dict:
     """Apply preprocessing ops to dataset. Snapshot before write."""
-    return engine.run_preprocessing(file_path, ops, output_path, dry_run)
+    return engine.run_preprocessing(file_path, ops, output_path, dry_run, return_content)
 
 
 @mcp.tool(
@@ -187,9 +188,10 @@ def generate_eda_report(
     output_path: str = "",
     open_after: bool = True,
     dry_run: bool = False,
+    return_content: bool = False,
 ) -> dict:
     """Generate interactive HTML EDA report. theme: light dark."""
-    return engine.generate_eda_report(file_path, target_column, theme, output_path, open_after, dry_run)
+    return engine.generate_eda_report(file_path, target_column, theme, output_path, open_after, dry_run, return_content)
 
 
 @mcp.tool(
@@ -207,9 +209,12 @@ def find_optimal_clusters(
     theme: str = "dark",
     output_path: str = "",
     open_after: bool = True,
+    return_content: bool = False,
 ) -> dict:
     """Find optimal K via elbow + silhouette. Saves HTML chart."""
-    return engine.find_optimal_clusters(file_path, feature_columns, max_k, theme, output_path, open_after)
+    return engine.find_optimal_clusters(
+        file_path, feature_columns, max_k, theme, output_path, open_after, return_content
+    )
 
 
 @mcp.tool(
@@ -275,9 +280,10 @@ def batch_predict(
     file_path: str,
     output_path: str = "",
     dry_run: bool = False,
+    return_content: bool = False,
 ) -> dict:
     """Predict all rows, save to CSV. No row limit. Returns output path."""
-    return engine.batch_predict(model_path, file_path, output_path, dry_run)
+    return engine.batch_predict(model_path, file_path, output_path, dry_run, return_content)
 
 
 def main() -> None:
