@@ -1041,13 +1041,23 @@ def check_data_quality(file_path: str) -> dict:
                         alerts.append(
                             {
                                 "type": "multicollinearity",
-                                "severity": "high",
+                                # "medium", not "high": this is a modeling caveat (affects
+                                # linear models), not a correctness defect like missing/
+                                # duplicate data. Also matches generate_eda_report's own
+                                # multicollinearity alert, which already scores this
+                                # "medium" — the two were inconsistent for the identical
+                                # alert type, letting the same file score 0.0 here and 3.5
+                                # there. Naturally correlated funnel metrics (impressions/
+                                # clicks/link_clicks) trip this on nearly every real ad
+                                # dataset, so a -15-per-pair "high" penalty made realistic,
+                                # usable data indistinguishable from actual garbage.
+                                "severity": "medium",
                                 "column_pair": [c1, c2],
                                 "message": f"Columns '{c1}' and '{c2}' have |r|={corr_matrix.iloc[i, j]:.2f}.",
                                 "recommendation": f"Drop one of '{c1}' or '{c2}' to reduce multicollinearity.",
                             }
                         )
-                        score -= 15
+                        score -= 8
         except Exception:
             pass
 

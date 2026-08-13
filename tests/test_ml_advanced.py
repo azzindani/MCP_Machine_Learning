@@ -653,6 +653,29 @@ class TestPlotPredictionsVsActual:
         assert r["success"] is False
         assert "hint" in r
 
+    def test_does_not_crash_on_null_target(self, regression_simple, tmp_path):
+        """Regression test: crashed with a raw sklearn "Input contains NaN"
+        from mean_squared_error/r2_score when the target column had real
+        nulls — found live via the opencode harness real-tool retest sweep
+        on the full Ad_Data.csv (546 real nulls in link_clicks, the
+        regression target). Unlike feature nulls (safe to zero-fill for
+        prediction), a null target has no "actual" to plot or score
+        against, so those rows must be dropped instead of fabricated."""
+        import pandas as pd
+
+        mp = _train_basic_model(regression_simple, target="salary", model="rfr", task="regression")
+
+        df = pd.read_csv(regression_simple)
+        df.loc[df.index[0], "salary"] = None
+        src = tmp_path / "regression_with_null_target.csv"
+        df.to_csv(src, index=False)
+
+        out = str(tmp_path / "pva_null_target.html")
+        r = plot_predictions_vs_actual(mp, str(src), output_path=out, open_after=False)
+        assert r["success"] is True
+        assert Path(out).exists()
+        assert "salary" in " ".join(p.get("detail", "") for p in r["progress"])
+
     def test_file_not_found(self, regression_simple, tmp_path):
         mp = _train_basic_model(regression_simple, target="salary", model="rfr", task="regression")
         r = plot_predictions_vs_actual(mp, str(tmp_path / "ghost.csv"), open_after=False)

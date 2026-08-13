@@ -12,7 +12,7 @@ from shared.file_utils import atomic_write_text
 from shared.file_utils import read_csv as _read_csv
 from shared.handover import make_context, make_handover
 from shared.html_theme import apply_fig_theme, calc_chart_height, get_theme, plotly_template
-from shared.progress import info, ok
+from shared.progress import info, ok, warn
 
 from ._adv_helpers import _save_chart, get_output_path, resolve_path
 
@@ -519,16 +519,34 @@ def plot_predictions_vs_actual(
                 df[col] = df[col].map(mapping).fillna(df[col])
 
         available = [c for c in feature_columns if c in df.columns]
-        X = df[available].select_dtypes(include="number").fillna(0)
-        y_true = df[target_column].values if target_column in df.columns else None
 
-        if y_true is None:
+        if target_column not in df.columns:
             return {
                 "success": False,
                 "error": f"Target '{target_column}' not found.",
                 "hint": "Provide the same dataset used for training.",
                 "token_estimate": 30,
             }
+
+        # A null target has no "actual" value to plot or score against — drop
+        # those rows rather than fabricate one (unlike feature nulls below,
+        # which are safe to zero-fill since they only feed model.predict()).
+        # Same principle as apply_dimensionality_reduction's null handling,
+        # applied to the target instead of a feature.
+        valid_mask = df[target_column].notna()
+        n_dropped = int((~valid_mask).sum())
+        if n_dropped:
+            progress.append(warn(f"Dropped {n_dropped} row(s) with null target", target_column))
+        if not valid_mask.any():
+            return {
+                "success": False,
+                "error": f"All rows have a null '{target_column}' — nothing to plot.",
+                "hint": "Provide a dataset where the target column has real values.",
+                "token_estimate": 30,
+            }
+
+        X = df.loc[valid_mask, available].select_dtypes(include="number").fillna(0)
+        y_true = df.loc[valid_mask, target_column].values
 
         try:
             import xgboost as xgb

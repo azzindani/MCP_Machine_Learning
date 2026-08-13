@@ -2173,6 +2173,34 @@ class TestCheckDataQualityCoverage:
         alert_types = [a["type"] for a in r.get("alerts", [])]
         assert "multicollinearity" in alert_types
 
+    def test_multicollinearity_severity_matches_eda_report(self, tmp_path):
+        """Regression test: check_data_quality's multicollinearity alert used
+        to be "high" severity (-15) while generate_eda_report's own
+        multicollinearity alert for the identical condition was "medium"
+        (-8) — the two disagreed on how bad the same real file was (a real
+        16,834-row ad dataset scored 0.0 here and 3.5 via the EDA report).
+        Naturally correlated funnel metrics trip this on nearly every real
+        ad dataset, so the harsher weight made realistic, usable data
+        indistinguishable from actual garbage. Found live via the opencode
+        harness real-tool retest sweep. Both should now agree: "medium"."""
+        import pandas as pd
+
+        csv_path = tmp_path / "multicol_severity.csv"
+        n = 50
+        base = list(range(n))
+        pd.DataFrame(
+            {
+                "col1": base,
+                "col2": [v * 2 + (i % 3) * 0.01 for i, v in enumerate(base)],
+                "other": list(range(n, 2 * n)),
+            }
+        ).to_csv(csv_path, index=False)
+        r = check_data_quality(str(csv_path))
+        assert r["success"] is True
+        mc_alerts = [a for a in r["alerts"] if a["type"] == "multicollinearity"]
+        assert mc_alerts
+        assert all(a["severity"] == "medium" for a in mc_alerts)
+
     # Score decreases from constant column (score penalty = 15 per constant col)
     def test_quality_score_decreases_for_constant_column(self, tmp_path):
         import pandas as pd
