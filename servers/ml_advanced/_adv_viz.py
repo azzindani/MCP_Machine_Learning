@@ -537,7 +537,7 @@ def plot_predictions_vs_actual(
         n_dropped = int((~valid_mask).sum())
         if n_dropped:
             progress.append(warn(f"Dropped {n_dropped} row(s) with null target", target_column))
-        if not valid_mask.any():
+        if n_dropped == len(df):
             return {
                 "success": False,
                 "error": f"All rows have a null '{target_column}' — nothing to plot.",
