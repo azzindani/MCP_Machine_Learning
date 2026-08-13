@@ -970,14 +970,25 @@ def test_list_models_without_manifest(tmp_path):
 
 
 def test_list_models_default_directory(classification_simple, monkeypatch, tmp_path):
-    """Lines 302-303: no directory arg → uses get_output_dir()."""
-    monkeypatch.setenv("MCP_OUTPUT_DIR", str(tmp_path))
+    """Regression test: no directory arg must find models saved by
+    train_classifier's own default location (<csv_dir>/.mcp_models), not
+    ~/Downloads. A prior version of this test only asserted success=True
+    without checking model_count, which let a real path-mismatch bug pass
+    silently — found live via the opencode harness real-tool sweep.
+
+    The conftest autouse fixture forces MCP_OUTPUT_DIR for every test, so it
+    must be unset here to exercise the real no-override fallback path that
+    production hits when MCP_OUTPUT_DIR isn't set."""
+    monkeypatch.delenv("MCP_OUTPUT_DIR", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
     tr = train_classifier(classification_simple, "churned", "rf")
     assert tr["success"] is True
+    assert Path(tr["model_path"]).parent == tmp_path / ".mcp_models"
 
     r = list_models()  # no directory argument
     assert r["success"] is True
-    assert isinstance(r["models"], list)
+    assert r["model_count"] >= 1
+    assert any(Path(tr["model_path"]).name == m["name"] for m in r["models"])
 
 
 def test_list_models_multiple_models(classification_simple, tmp_path):

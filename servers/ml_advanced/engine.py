@@ -9,6 +9,7 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import sklearn
 import xgboost as xgb
@@ -620,7 +621,17 @@ def apply_dimensionality_reduction(
         except Exception as exc:
             progress.append(warn("Snapshot failed", str(exc)))
 
-    x = df[feature_columns].values
+    # +/-inf and nulls are not valid PCA/ICA input — median-fill both instead
+    # of letting sklearn crash with a raw "Input X contains NaN" (same fix
+    # applied to ml_medium's run_clustering).
+    feat_df = df[feature_columns].replace([np.inf, -np.inf], np.nan)
+    null_counts = feat_df.isna().sum()
+    filled_cols = [c for c in feat_df.columns if null_counts[c] > 0]
+    if filled_cols:
+        feat_df = feat_df.fillna(feat_df.median())
+        progress.append(warn(f"Median-filled {len(filled_cols)} column(s) with nulls/inf", ", ".join(filled_cols)))
+
+    x = feat_df.values
     scaler = StandardScaler()
     x_scaled = scaler.fit_transform(x)
 
