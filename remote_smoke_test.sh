@@ -34,6 +34,7 @@ DATASET_PATH="/tmp/remote-smoke-test/dataset.csv"
 pass() { echo "  PASS: $1"; }
 fail() { echo "  FAIL: $1"; exit 1; }
 ok_json() { echo "$1" | grep -Eq '\\?"success\\?":[[:space:]]*true'; }
+fail_json() { echo "$1" | grep -Eq '\\?"success\\?":[[:space:]]*false'; }
 
 echo "Target: $DOMAIN"
 echo
@@ -238,4 +239,40 @@ R=$(call advanced "$SID_ADVANCED" 59 generate_cluster_report "{\"file_path\":\"$
 ok_json "$R" && pass "generate_cluster_report reported on the real clusters saved earlier" || fail "$R"
 
 echo
-echo "ALL 33 TOOLS PASSED against $DOMAIN"
+echo "===== security regression: HMAC-signed model files (shared/model_signing.py) ====="
+echo "A model file that fails signature verification must be rejected with a clean"
+echo "error, never unpickled, and never crash the tool — checked here against the"
+echo "real deployed endpoint's real tool-call path, not just the internal function."
+
+echo '== a plain (unsigned) pickle at model_path is rejected, not unpickled =='
+docker exec "$CONTAINER" python3 -c "
+import pickle, os
+os.makedirs('/tmp/remote-smoke-test', exist_ok=True)
+with open('/tmp/remote-smoke-test/unsigned_model.pkl', 'wb') as f:
+    pickle.dump({'model': 'not a real model', 'metadata': {}}, f)
+"
+docker exec -u root "$CONTAINER" chown app:app /tmp/remote-smoke-test/unsigned_model.pkl
+R=$(call basic "$SID_BASIC" 60 predict_single "{\"model_path\":\"/tmp/remote-smoke-test/unsigned_model.pkl\",\"input_data\":\"{}\"}")
+fail_json "$R" || fail "unsigned pickle model_path should have been rejected, got: $R"
+echo "$R" | grep -Eiq 'integrity|signature' && pass "unsigned pickle model file rejected as an integrity failure (not a crash)" || fail "expected an integrity/signature error message, got: $R"
+
+echo '== a signed model file that was tampered with after signing is rejected =='
+docker exec "$CONTAINER" python3 -c "
+import sys
+sys.path.insert(0, '/app')
+from shared.model_signing import dump_signed
+with open('/tmp/remote-smoke-test/tampered_model.pkl', 'wb') as f:
+    dump_signed({'model': 'not a real model either', 'metadata': {}}, f)
+with open('/tmp/remote-smoke-test/tampered_model.pkl', 'r+b') as f:
+    data = bytearray(f.read())
+    data[-1] ^= 0xFF
+    f.seek(0)
+    f.write(data)
+"
+docker exec -u root "$CONTAINER" chown app:app /tmp/remote-smoke-test/tampered_model.pkl
+R=$(call basic "$SID_BASIC" 61 predict_single "{\"model_path\":\"/tmp/remote-smoke-test/tampered_model.pkl\",\"input_data\":\"{}\"}")
+fail_json "$R" || fail "tampered signed model_path should have been rejected, got: $R"
+echo "$R" | grep -Eiq 'integrity|signature' && pass "signed-then-tampered model file rejected as an integrity failure (not a crash)" || fail "expected an integrity/signature error message, got: $R"
+
+echo
+echo "ALL 33 TOOLS + security regression PASSED against $DOMAIN"
