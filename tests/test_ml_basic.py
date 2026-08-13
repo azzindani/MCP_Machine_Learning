@@ -978,9 +978,12 @@ def test_list_models_default_directory(classification_simple, monkeypatch, tmp_p
 
     The conftest autouse fixture forces MCP_OUTPUT_DIR for every test, so it
     must be unset here to exercise the real no-override fallback path that
-    production hits when MCP_OUTPUT_DIR isn't set."""
+    production hits when MCP_OUTPUT_DIR isn't set. Patch Path.home directly
+    rather than the HOME env var — Path.home() reads USERPROFILE on Windows,
+    not HOME, so an env-var-only patch passes on Linux/macOS CI and silently
+    fails on Windows CI (caught by that exact failure)."""
     monkeypatch.delenv("MCP_OUTPUT_DIR", raising=False)
-    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
     tr = train_classifier(classification_simple, "churned", "rf")
     assert tr["success"] is True
     assert Path(tr["model_path"]).parent == tmp_path / ".mcp_models"
