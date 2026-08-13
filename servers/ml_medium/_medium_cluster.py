@@ -74,9 +74,22 @@ def run_clustering(
             "Use inspect_dataset() to list valid column names.",
         )
 
-    x = df[feature_columns].select_dtypes(include="number").values
-    if x.shape[1] == 0:
+    numeric_df = df[feature_columns].select_dtypes(include="number")
+    if numeric_df.shape[1] == 0:
         return _error("No numeric feature columns found.", "Select numeric columns for clustering.")
+
+    # +/-inf (e.g. a ratio column divided by zero) and nulls are not valid
+    # clustering input — median-fill both instead of letting sklearn crash
+    # with a raw "Input X contains NaN". Median-fill (not row-drop) keeps
+    # every row aligned with the original df for save_labels.
+    numeric_df = numeric_df.replace([np.inf, -np.inf], np.nan)
+    null_counts = numeric_df.isna().sum()
+    filled_cols = [c for c in numeric_df.columns if null_counts[c] > 0]
+    if filled_cols:
+        numeric_df = numeric_df.fillna(numeric_df.median())
+        progress.append(warn(f"Median-filled {len(filled_cols)} column(s) with nulls/inf", ", ".join(filled_cols)))
+
+    x = numeric_df.values
 
     if dry_run:
         resp: dict = {
