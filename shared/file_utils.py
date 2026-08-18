@@ -23,6 +23,35 @@ from typing import Any
 
 import pandas as pd
 
+from shared.exchange import (
+    attach_public_url,
+    fetch_url,
+    get_inbox_dir,
+    is_url,
+    public_url_for,
+    url_fetch_enabled,
+)
+from shared.exchange import (
+    get_output_dir as get_output_dir,  # re-exported; exchange.py owns the impl
+)
+
+__all__ = [
+    "atomic_write",
+    "atomic_write_json",
+    "atomic_write_text",
+    "attach_public_url",
+    "embed_content",
+    "fetch_url",
+    "get_default_output_dir",
+    "get_inbox_dir",
+    "get_output_dir",
+    "is_url",
+    "public_url_for",
+    "read_csv",
+    "resolve_path",
+    "url_fetch_enabled",
+]
+
 
 def resolve_path(
     file_path: str,
@@ -33,11 +62,20 @@ def resolve_path(
     Both prefix forms delegate to workspace_utils.resolve_alias.
     Also blocks null bytes and bare filesystem roots for path traversal safety.
 
+    An http(s) URL is downloaded into the inbox dir first and its local path
+    returned, so every tool that takes a file path also takes a link once the
+    server runs with MCP_FETCH_URLS=1 (off by default — see shared/exchange.py).
+
     Raises:
         ValueError: invalid path, null byte, filesystem root, or bad extension
         FileNotFoundError: workspace/alias not found
     """
     file_path = str(file_path)
+    if is_url(file_path):
+        path = fetch_url(file_path)
+        if allowed_extensions and path.suffix.lower() not in allowed_extensions:
+            raise ValueError(f"Extension {path.suffix!r} not allowed. Expected one of: {', '.join(allowed_extensions)}")
+        return path
     if file_path.startswith("workspace:") or file_path.startswith("project:"):
         try:
             from shared.workspace_utils import resolve_alias
@@ -110,28 +148,19 @@ def read_csv(
 
 
 def get_default_output_dir(input_path: str | None = None) -> Path:
-    """Return default output dir: input file's parent if provided, else ~/Downloads."""
+    """Return default output dir: MCP_OUTPUT_DIR, else input's parent, else ~/Downloads.
+
+    MCP_OUTPUT_DIR outranks the input file's directory: a remote deployment
+    sets it precisely so generated files land somewhere the caller can reach,
+    which an input file's own directory is not guaranteed to be.
+    """
+    if os.environ.get("MCP_OUTPUT_DIR", "").strip():
+        return get_output_dir()
     if input_path:
         p = Path(input_path).resolve()
         if p.parent.exists():
             return p.parent
     return Path.home() / "Downloads"
-
-
-def get_output_dir() -> Path:
-    """Return the standard output directory for generated files.
-
-    Checks MCP_OUTPUT_DIR env var first (used in tests to redirect to tmp_path),
-    then falls back to ~/Downloads/. The directory is created automatically.
-    """
-    override = os.environ.get("MCP_OUTPUT_DIR")
-    if override:
-        out = Path(override)
-        out.mkdir(parents=True, exist_ok=True)
-        return out
-    out = Path.home() / "Downloads"
-    out.mkdir(parents=True, exist_ok=True)
-    return out
 
 
 def atomic_write(target: Path | str, content: bytes) -> None:
@@ -182,14 +211,18 @@ _KNOWN_MIME_TYPES = {
 
 
 def embed_content(result: dict[str, Any], path: Path, return_content: bool) -> dict[str, Any]:
-    """Attach base64 file bytes to a tool result dict when requested.
+    """Attach `public_url`, and base64 file bytes when return_content is set.
 
-    In remote/HTTP deployments the caller has no filesystem in common
-    with this server, so a server-local output path is useless to it —
-    this lets the caller get the real bytes back over the wire instead.
-    A read failure here doesn't fail the whole tool call.
+    In remote/HTTP deployments the caller has no filesystem in common with this
+    server, so a server-local output path is useless to it. `public_url` (set
+    whenever the file lands under a publicly served MCP_OUTPUT_DIR) gives it a
+    link; return_content gives it the bytes themselves. A read failure here
+    doesn't fail the whole tool call.
     """
-    if not return_content or not result.get("success"):
+    if not result.get("success"):
+        return result
+    attach_public_url(result, path)
+    if not return_content:
         return result
     try:
         data = path.read_bytes()
