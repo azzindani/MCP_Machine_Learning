@@ -439,6 +439,7 @@ def run_profiling_report(
     open_after: bool = True,
     dry_run: bool = False,
     return_content: bool = False,
+    theme: str = "device",
 ) -> dict:
     """Generate Plotly HTML profile report for a dataset."""
     import plotly.graph_objects as go
@@ -483,10 +484,10 @@ def run_profiling_report(
         resp["token_estimate"] = len(str(resp)) // 4
         return resp
 
-    from shared.html_theme import theme_plot_colors
+    from shared.html_theme import plotly_template, theme_plot_colors
 
-    plot_bg, font_color, _accent = theme_plot_colors("dark")
-    template = "plotly_dark"
+    plot_bg, font_color, _accent = theme_plot_colors(theme)
+    template = plotly_template(theme)
 
     sections: list[dict] = []
 
@@ -525,7 +526,7 @@ def run_profiling_report(
         title=f"Profile Report: {path.name}",
         subtitle=f"{len(df):,} rows × {len(df.columns)} columns",
         sections=sections,
-        theme="dark",
+        theme=theme,
         open_after=open_after,
         output_path=str(out_path),
     )

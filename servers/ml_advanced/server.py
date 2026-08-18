@@ -115,9 +115,10 @@ def run_profiling_report(
     open_after: bool = True,
     dry_run: bool = False,
     return_content: bool = False,
+    theme: str = "device",
 ) -> dict:
     """Generate Plotly HTML profile report for a dataset."""
-    return engine.run_profiling_report(file_path, output_path, sample_rows, open_after, dry_run, return_content)
+    return engine.run_profiling_report(file_path, output_path, sample_rows, open_after, dry_run, return_content, theme)
 
 
 @mcp.tool(
