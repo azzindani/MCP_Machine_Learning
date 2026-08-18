@@ -153,7 +153,7 @@ def apply_dimensionality_reduction(
 )
 def generate_training_report(
     model_path: str,
-    theme: str = "dark",
+    theme: str = "device",
     output_path: str = "",
     open_after: bool = True,
     dry_run: bool = False,
@@ -174,7 +174,7 @@ def generate_training_report(
 def plot_roc_curve(
     model_path: str,
     file_path: str,
-    theme: str = "dark",
+    theme: str = "device",
     output_path: str = "",
     open_after: bool = True,
     dry_run: bool = False,
@@ -198,7 +198,7 @@ def plot_learning_curve(
     model: str,
     task: str,
     cv: int = 5,
-    theme: str = "dark",
+    theme: str = "device",
     output_path: str = "",
     open_after: bool = True,
     dry_run: bool = False,
@@ -221,7 +221,7 @@ def plot_learning_curve(
 def plot_predictions_vs_actual(
     model_path: str,
     file_path: str,
-    theme: str = "dark",
+    theme: str = "device",
     output_path: str = "",
     open_after: bool = True,
     dry_run: bool = False,
@@ -245,7 +245,7 @@ def generate_cluster_report(
     file_path: str,
     feature_columns: list[str],
     label_column: str,
-    theme: str = "dark",
+    theme: str = "device",
     output_path: str = "",
     open_after: bool = True,
     dry_run: bool = False,

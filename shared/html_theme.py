@@ -118,9 +118,9 @@ THEMES: dict[str, dict] = {
 THEMES["device"] = THEMES["light"]
 
 
-def get_theme(theme: str = "dark") -> dict:
-    """Return theme config dict. Falls back to dark for unknown themes."""
-    return THEMES.get(theme, THEMES["dark"])
+def get_theme(theme: str = "device") -> dict:
+    """Return theme config dict. Falls back to the default for unknown themes."""
+    return THEMES.get(theme, THEMES["device"])
 
 
 def theme_plot_colors(theme: str) -> tuple[str, str, str]:
@@ -172,10 +172,12 @@ def css_vars(theme: str) -> str:
     layout = _LAYOUT_VARS
     if theme == "light":
         return f":root{{{_LIGHT_VARS}{layout}}}"
-    elif theme == "device":
-        return f":root{{{_LIGHT_VARS}{layout}}}@media(prefers-color-scheme:dark){{:root{{{_DARK_VARS}}}}}"
-    else:  # dark
+    if theme == "dark":
         return f":root{{{_DARK_VARS}{layout}}}"
+    # "device" and anything unrecognised: ship the light palette and let the
+    # viewer's own setting override it, so one artifact reads correctly on a
+    # colleague's machine whichever way they have their system set.
+    return f":root{{{_LIGHT_VARS}{layout}}}@media(prefers-color-scheme:dark){{:root{{{_DARK_VARS}}}}}"
 
 
 # ---------------------------------------------------------------------------
@@ -518,7 +520,7 @@ def save_chart(
     output_path: str,
     stem_suffix: str,
     input_path: Path,
-    theme: str = "dark",
+    theme: str = "device",
     open_after: bool = True,
     open_func=None,
 ) -> tuple[str, str]:
@@ -762,7 +764,7 @@ def build_html_report(
     title: str,
     subtitle: str,
     sections: list[dict],
-    theme: str = "dark",
+    theme: str = "device",
     open_after: bool = True,
     output_path: str | Path = "",
     sidebar_title: str = "",
@@ -900,7 +902,7 @@ def data_table_html(rows: list[dict], max_rows: int = 50) -> str:
     return f'<div class="table-wrap"><table><tr>{th}</tr><tbody>{trs}</tbody></table></div>'
 
 
-def plotly_div(fig: object, height: int = 450, theme: str = "dark") -> str:
+def plotly_div(fig: object, height: int = 450, theme: str = "device") -> str:
     """Embed a Plotly figure as an inline div, with theme-matched background.
 
     Applies paper_bgcolor / plot_bgcolor matching the CSS surface token so

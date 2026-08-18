@@ -293,7 +293,7 @@ def find_optimal_clusters(
     file_path: str,
     feature_columns: list[str],
     max_k: int = 10,
-    theme: str = "dark",
+    theme: str = "device",
     output_path: str = "",
     open_after: bool = True,
     return_content: bool = False,
