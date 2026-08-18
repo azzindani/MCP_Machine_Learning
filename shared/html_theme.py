@@ -68,6 +68,17 @@ def get_plotlyjs_script() -> str:
     return _PLOTLYJS_SCRIPT
 
 
+# Every marker Plotly leaves in generated markup. Reports that draw nothing —
+# the training report is all tables — used to ship the 4.85 MB bundle anyway,
+# which was 99.6% of the file.
+_PLOTLY_MARKERS = ("Plotly.newPlot", "plotly-graph-div", "js-plotly-plot", "Plotly.react")
+
+
+def needs_plotly(html_fragments: str) -> bool:
+    """True when the rendered markup actually contains a Plotly figure."""
+    return any(marker in html_fragments for marker in _PLOTLY_MARKERS)
+
+
 # ---------------------------------------------------------------------------
 # Theme color tokens
 # ---------------------------------------------------------------------------
@@ -756,10 +767,17 @@ def build_html_report(
     output_path: str | Path = "",
     sidebar_title: str = "",
     sidebar_meta: str = "",
+    extra_body: str = "",
 ) -> str:
     """Build a full multi-section HTML report with responsive sidebar.
 
     Each section dict: {"id": str, "heading": str, "html": str}
+
+    `extra_body` is injected before the closing body tag, for report-specific
+    scripts such as an embedded model's scorer.
+
+    Plotly's bundle is included only when a section actually contains a figure —
+    it is 4.85 MB, and an all-tables report used to be 99.6% dead weight.
 
     Supports themes: "light", "dark", "device" (auto-detects system pref).
     Returns rendered HTML string. Writes to output_path if provided.
@@ -775,13 +793,15 @@ def build_html_report(
 
     sb_title = sidebar_title or title
     sb_meta_html = f'<p class="meta">{sidebar_meta}</p>' if sidebar_meta else ""
+    plotly_js = get_plotlyjs_script() if needs_plotly(sections_html) else ""
+    extra = extra_body or ""
 
     html = f"""<!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="utf-8">
 {VIEWPORT_META}
 <title>{title}</title>
-{get_plotlyjs_script()}
+{plotly_js}
 <style>
 {css_block}
 </style></head><body>
@@ -815,6 +835,7 @@ def build_html_report(
 {_PRINT_BTN_JS}
 {_BACK_TO_TOP_JS}
 {dev_js}
+{extra}
 </body></html>"""
 
     if output_path:

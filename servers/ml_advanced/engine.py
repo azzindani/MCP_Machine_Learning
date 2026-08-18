@@ -22,6 +22,8 @@ from shared.file_utils import atomic_write_json, atomic_write_text, embed_conten
 from shared.file_utils import read_csv as _read_csv
 from shared.handover import make_context, make_handover
 from shared.html_layout import get_output_path as _get_output_path
+from shared.model_js import ModelNotEmbeddable, prediction_panel
+from shared.model_js import build_payload as build_model_payload
 from shared.platform_utils import get_cv_folds, get_n_iter, is_constrained_mode
 from shared.progress import info, ok, warn
 from shared.progress import name as pname
@@ -695,6 +697,17 @@ def apply_dimensionality_reduction(
 # ---------------------------------------------------------------------------
 
 
+def _panel_defaults(metadata: dict) -> dict:
+    """Starting values for the prediction inputs.
+
+    Models trained after this feature record a typical row (median for numeric
+    columns, most common value for categorical ones) so the panel opens on a
+    realistic example rather than a row of zeros. Older models simply start blank.
+    """
+    stored = metadata.get("feature_defaults")
+    return dict(stored) if isinstance(stored, dict) else {}
+
+
 def generate_training_report(
     model_path: str,
     theme: str = "dark",
@@ -798,6 +811,27 @@ def generate_training_report(
         fi_html = f"<table><thead><tr><th>Feature</th><th>Importance</th></tr></thead><tbody>{fi_rows}</tbody></table>"
         sections.append({"id": "importance", "heading": "Feature Importance (Top 10)", "html": fi_html})
 
+    # The model itself, as a scoring function the page can run. A metrics table
+    # says how the model scored; this says what it does — and it keeps working
+    # from a file:// URL with nothing running behind it.
+    panel_script = ""
+    embedded = False
+    if model_obj is not None:
+        try:
+            payload = build_model_payload(model_obj, metadata)
+            panel_html, panel_script = prediction_panel(payload, _panel_defaults(metadata))
+            sections.insert(
+                1 if leakage else 0,
+                {"id": "predict", "heading": "Try the model", "html": panel_html},
+            )
+            embedded = True
+            progress.append(ok("Embedded model for in-page prediction", f"{len(payload['features'])} inputs"))
+        except ModelNotEmbeddable as exc:
+            progress.append(info("Model not embeddable", str(exc)))
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("model embedding skipped: %s", exc)
+            progress.append(info("Model not embeddable", type(exc).__name__))
+
     out_path.parent.mkdir(parents=True, exist_ok=True)
     build_html_report(
         title=f"Training Report: {path.stem}",
@@ -806,6 +840,7 @@ def generate_training_report(
         theme=theme,
         open_after=open_after,
         output_path=str(out_path),
+        extra_body=panel_script,
     )
     progress.append(ok("Training report saved", out_path.name))
 
@@ -817,6 +852,7 @@ def generate_training_report(
         "output_name": out_path.name,
         "model_type": model_type,
         "task": task,
+        "interactive_prediction": embedded,
         "progress": progress,
         "token_estimate": 0,
     }

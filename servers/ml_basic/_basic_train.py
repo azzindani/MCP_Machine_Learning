@@ -49,6 +49,7 @@ from ._basic_helpers import (
     snapshot,
     sys,
     train_test_split,
+    typical_row,
     warn,
     xgb,
 )
@@ -284,6 +285,7 @@ def train_classifier(
             "metrics": metrics,
             "n_classes": int(n_classes),
             "leakage_warning": leakage,
+            "feature_defaults": typical_row(df_raw, feature_cols),
             "python_version": sys.version,
             "sklearn_version": sklearn.__version__,
         }
@@ -509,6 +511,7 @@ def train_regressor(
             "scaler": scaler,
             "metrics": metrics,
             "leakage_warning": leakage,
+            "feature_defaults": typical_row(df_raw, feature_cols),
             "python_version": sys.version,
             "sklearn_version": sklearn.__version__,
         }

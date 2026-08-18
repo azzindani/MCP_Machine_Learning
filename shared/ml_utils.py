@@ -66,6 +66,29 @@ def leakage_warning(df: pd.DataFrame, target_column: str, feature_cols: list[str
     )
 
 
+def typical_row(df_raw: pd.DataFrame, feature_cols: list[str]) -> dict:
+    """A representative value per feature, in the dataset's own vocabulary.
+
+    Recorded at training time so an embedded prediction panel opens on a
+    plausible example instead of a row of zeros. Categorical columns keep their
+    original labels — the panel offers those, not the encoded integers.
+    """
+    defaults: dict = {}
+    for column in feature_cols:
+        if column not in df_raw.columns:
+            continue
+        series = df_raw[column].dropna()
+        if series.empty:
+            continue
+        if pd.api.types.is_numeric_dtype(series):
+            defaults[column] = round(float(series.median()), 6)
+        else:
+            modes = series.mode()
+            if len(modes):
+                defaults[column] = str(modes.iloc[0])
+    return defaults
+
+
 def _auto_preprocess(df: pd.DataFrame, target_column: str) -> tuple[pd.DataFrame, dict, list[str]]:
     """Drop null targets, label-encode categoricals, fill numeric nulls.
 
