@@ -29,6 +29,7 @@ from ._medium_helpers import (
     append_receipt,
     f1_score,
     fail,
+    fit_final_estimator,
     get_cv_folds,
     get_max_models,
     get_output_dir,
@@ -216,14 +217,34 @@ def train_with_cv(
         "sklearn_version": sklearn.__version__,
     }
 
-    payload = {"model": None, "metadata": metadata}
+    # CV fits a throwaway estimator per fold and keeps only its predictions, so
+    # nothing survives the loop to persist -- this used to write {"model": None}
+    # and still report "Saved best model". The file loaded fine and every
+    # downstream use died on 'NoneType' object has no attribute 'predict'.
+    # Refit once on the full dataset, which is what the shipped model should be
+    # anyway now CV has estimated how well it generalises.
+    final_estimator = fit_final_estimator(model, x, y, task)
+    if final_estimator is None:
+        progress.append(
+            warn(
+                "No reusable model saved",
+                f"'{model}' has no plain estimator to persist; the CV metrics above are still valid.",
+            )
+        )
+    metadata["refit_on_full_data"] = final_estimator is not None
+
+    payload = {"model": final_estimator, "metadata": metadata}
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pkl", dir=models_dir) as tmp:
         dump_signed(payload, tmp)
         tmp_path = tmp.name
     apply_default_mode(tmp_path)
     shutil.move(tmp_path, model_path)
     atomic_write_json(manifest_path, metadata)
-    progress.append(ok("Saved best model", model_path.name))
+    progress.append(
+        ok("Saved model refit on all rows", model_path.name)
+        if final_estimator is not None
+        else warn("Saved metrics only", model_path.name)
+    )
 
     append_receipt(str(path), "train_with_cv", {"model": model, "task": task, "n_splits": n_splits}, "success", backup)
 
@@ -395,7 +416,21 @@ def compare_models(
             "python_version": sys.version,
             "sklearn_version": sklearn.__version__,
         }
-        payload = {"model": None, "metadata": metadata}
+        # Same defect as train_with_cv: each candidate was fitted only to score
+        # it, so the winner existed nowhere by the time this ran and {"model":
+        # None} was written under a name ending "_best". Refit the winner on the
+        # full dataset so the file contains the model its name promises.
+        final_estimator = fit_final_estimator(best, x, y, task)
+        if final_estimator is None:
+            progress.append(
+                warn(
+                    "No reusable model saved",
+                    f"'{best}' has no plain estimator to persist; the comparison metrics are still valid.",
+                )
+            )
+        metadata["refit_on_full_data"] = final_estimator is not None
+
+        payload = {"model": final_estimator, "metadata": metadata}
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pkl", dir=models_dir) as tmp:
             dump_signed(payload, tmp)
             tmp_path = tmp.name
@@ -403,7 +438,11 @@ def compare_models(
         shutil.move(tmp_path, mp)
         atomic_write_json(mp.with_suffix(".manifest.json"), metadata)
         best_model_path = str(mp)
-        progress.append(ok("Saved best model", mp.name))
+        progress.append(
+            ok("Saved best model refit on all rows", mp.name)
+            if final_estimator is not None
+            else warn("Saved metrics only", mp.name)
+        )
 
     append_receipt(str(path), "compare_models", {"task": task, "models": models}, "success", backup)
 
