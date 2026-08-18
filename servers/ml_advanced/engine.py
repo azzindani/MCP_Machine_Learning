@@ -7,6 +7,7 @@ import logging
 import shutil
 import sys
 from datetime import UTC, datetime
+from html import escape as html_escape
 from pathlib import Path
 
 import numpy as np
@@ -747,6 +748,19 @@ def generate_training_report(
     training_date = metadata.get("training_date", "")
 
     sections: list[dict] = []
+
+    # First, above the metrics it undermines. The report used to render accuracy,
+    # f1 and AUC all at 1.000 beside a spotless confusion matrix, with nothing
+    # anywhere on the page to say the target had leaked into the features.
+    leakage = metadata.get("leakage_warning", "")
+    if leakage:
+        sections.append(
+            {
+                "id": "leakage",
+                "heading": "Metrics are not trustworthy",
+                "html": f"<p>{html_escape(str(leakage))}</p>",
+            }
+        )
 
     overview_html = (
         f"<table><tbody>"

@@ -36,6 +36,7 @@ from ._basic_helpers import (
     datetime,
     f1_score,
     get_output_dir,
+    leakage_warning,
     logger,
     mean_squared_error,
     np,
@@ -48,6 +49,7 @@ from ._basic_helpers import (
     snapshot,
     sys,
     train_test_split,
+    warn,
     xgb,
 )
 
@@ -251,6 +253,10 @@ def train_classifier(
 
         progress.append(ok(f"Trained {model_class_name}", f"accuracy={acc:.3f}, f1={f1:.3f}"))
 
+        leakage = leakage_warning(df, target_column, feature_cols, acc)
+        if leakage:
+            progress.append(warn("Suspiciously perfect score", leakage))
+
         # --- save model ---
         ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
         import os as _os
@@ -277,6 +283,7 @@ def train_classifier(
             "scaler": scaler,
             "metrics": metrics,
             "n_classes": int(n_classes),
+            "leakage_warning": leakage,
             "python_version": sys.version,
             "sklearn_version": sklearn.__version__,
         }
@@ -307,6 +314,8 @@ def train_classifier(
             "backup": backup or "",
             "progress": progress,
         }
+        if leakage:
+            response["warning"] = leakage
         response["context"] = make_context(
             "train_classifier",
             f"Trained {model_class_name} on {pname(file_path)}: accuracy={metrics.get('accuracy', 0):.3f}",
@@ -472,6 +481,10 @@ def train_regressor(
         metrics = {"mse": round(mse, 4), "rmse": round(rmse, 4), "r2": round(r2, 4)}
         progress.append(ok(f"Trained {model_class_name}", f"r2={r2:.3f}, rmse={rmse:.2f}"))
 
+        leakage = leakage_warning(df, target_column, feature_cols, r2)
+        if leakage:
+            progress.append(warn("Suspiciously perfect score", leakage))
+
         ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
         import os as _os
 
@@ -495,6 +508,7 @@ def train_regressor(
             "poly": poly,
             "scaler": scaler,
             "metrics": metrics,
+            "leakage_warning": leakage,
             "python_version": sys.version,
             "sklearn_version": sklearn.__version__,
         }
@@ -525,6 +539,8 @@ def train_regressor(
             "backup": backup or "",
             "progress": progress,
         }
+        if leakage:
+            response["warning"] = leakage
         response["context"] = make_context(
             "train_regressor",
             f"Trained {model_class_name} on {pname(file_path)}: r2={metrics.get('r2', 0):.3f}, rmse={metrics.get('rmse', 0):.3f}",
