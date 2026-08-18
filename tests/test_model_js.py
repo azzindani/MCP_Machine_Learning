@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -58,10 +59,23 @@ def _js_predict(payload: dict, rows: list[list]) -> list:
         f"const rows = {json.dumps(rows)};\n"
         "console.log(JSON.stringify(rows.map(r => window.__mdlPredict(r))));\n"
     )
-    out = subprocess.run([NODE, "-e", program], capture_output=True, text=True, timeout=60)
+    return _run_node(program)
+
+
+def _run_node(program: str) -> list:
+    """Run `program` under node and parse its JSON output.
+
+    Written to a file rather than passed with -e: an embedded forest is far past
+    the Windows command-line length limit. Decoded as UTF-8 explicitly, since the
+    default codec there is cp1252 and would mangle any non-ASCII output.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        script = Path(tmp) / "run.js"
+        script.write_text(program, encoding="utf-8")
+        out = subprocess.run([NODE, str(script)], capture_output=True, timeout=120)
     if out.returncode != 0:
-        raise AssertionError(f"node failed: {out.stderr[:500]}")
-    return json.loads(out.stdout)
+        raise AssertionError(f"node failed: {out.stderr.decode('utf-8', 'replace')[:500]}")
+    return json.loads(out.stdout.decode("utf-8"))
 
 
 class TestWhatCanBeEmbedded:
