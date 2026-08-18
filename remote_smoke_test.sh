@@ -37,6 +37,14 @@ ok_json() { echo "$1" | grep -Eq '\\?"success\\?":[[:space:]]*true'; }
 fail_json() { echo "$1" | grep -Eq '\\?"success\\?":[[:space:]]*false'; }
 
 echo "Target: $DOMAIN"
+
+# Tools called without an explicit output_path now default into
+# MCP_OUTPUT_DIR, which on a real deployment is a directory the operator
+# actually looks at. Remember what was there so the run can leave it exactly
+# as it found it (see the cleanup at the very bottom).
+SHARED_DIR=$(docker exec "$CONTAINER" printenv MCP_OUTPUT_DIR 2>/dev/null || true)
+SHARED_BEFORE=$(mktemp)
+[ -n "$SHARED_DIR" ] && docker exec "$CONTAINER" sh -c "ls -1A '$SHARED_DIR' 2>/dev/null" | sort > "$SHARED_BEFORE"
 echo
 echo "== seed a real dataset into the container =="
 TMP_CSV=$(mktemp)
@@ -273,6 +281,18 @@ docker exec -u root "$CONTAINER" chown app:app /tmp/remote-smoke-test/tampered_m
 R=$(call basic "$SID_BASIC" 61 predict_single "{\"model_path\":\"/tmp/remote-smoke-test/tampered_model.pkl\",\"input_data\":\"{}\"}")
 fail_json "$R" || fail "tampered signed model_path should have been rejected, got: $R"
 echo "$R" | grep -Eiq 'integrity|signature' && pass "signed-then-tampered model file rejected as an integrity failure (not a crash)" || fail "expected an integrity/signature error message, got: $R"
+
+if [ -n "$SHARED_DIR" ]; then
+  echo
+  echo "== leave the shared directory as we found it =="
+  docker exec "$CONTAINER" sh -c "ls -1A '$SHARED_DIR' 2>/dev/null" | sort \
+    | comm -13 "$SHARED_BEFORE" - \
+    | while IFS= read -r leftover; do
+        [ -n "$leftover" ] && docker exec "$CONTAINER" rm -rf "$SHARED_DIR/$leftover"
+      done
+  pass "removed everything this run added to $SHARED_DIR"
+fi
+rm -f "$SHARED_BEFORE"
 
 echo
 echo "ALL 33 TOOLS + security regression PASSED against $DOMAIN"

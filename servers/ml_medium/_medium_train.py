@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 import sklearn
 
-from shared.file_utils import atomic_write_json
+from shared.file_utils import apply_default_mode, atomic_write_json
 from shared.handover import make_context, make_handover
 from shared.model_signing import dump_signed
 
@@ -220,6 +220,7 @@ def train_with_cv(
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pkl", dir=models_dir) as tmp:
         dump_signed(payload, tmp)
         tmp_path = tmp.name
+    apply_default_mode(tmp_path)
     shutil.move(tmp_path, model_path)
     atomic_write_json(manifest_path, metadata)
     progress.append(ok("Saved best model", model_path.name))
@@ -398,6 +399,7 @@ def compare_models(
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pkl", dir=models_dir) as tmp:
             dump_signed(payload, tmp)
             tmp_path = tmp.name
+        apply_default_mode(tmp_path)
         shutil.move(tmp_path, mp)
         atomic_write_json(mp.with_suffix(".manifest.json"), metadata)
         best_model_path = str(mp)

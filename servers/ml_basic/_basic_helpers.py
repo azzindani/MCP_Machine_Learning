@@ -37,7 +37,7 @@ from sklearn.preprocessing import (
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
-from shared.file_utils import atomic_write_json, get_output_dir, resolve_path
+from shared.file_utils import apply_default_mode, atomic_write_json, get_output_dir, resolve_path
 from shared.file_utils import read_csv as _read_csv
 from shared.ml_utils import _auto_preprocess
 from shared.model_signing import dump_signed, load_signed
@@ -117,6 +117,7 @@ def _save_model(model: Any, path: Path, metadata: dict) -> None:
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pkl", dir=path.parent) as tmp:
         dump_signed(payload, tmp)
         tmp_path = tmp.name
+    apply_default_mode(tmp_path)
     shutil.move(tmp_path, str(path))
     manifest_path = path.with_suffix(".manifest.json")
     atomic_write_json(manifest_path, metadata)
