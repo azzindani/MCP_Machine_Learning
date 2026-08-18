@@ -124,7 +124,8 @@ class TestTrainersReportLeakage:
         out = tmp_path / "report.html"
         report = generate_training_report(trained["model_path"], output_path=str(out), open_after=False)
         assert report["success"] is True
-        page = out.read_text()
+        # The report inlines plotly.js, so the default Windows codec cannot read it.
+        page = out.read_text(encoding="utf-8")
         assert "not trustworthy" in page.lower()
         assert page.index("not trustworthy") < page.index("Evaluation Metrics")
 
