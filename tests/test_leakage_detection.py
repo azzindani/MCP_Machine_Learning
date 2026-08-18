@@ -113,7 +113,7 @@ class TestTrainersReportLeakage:
         assert "'platform'" in metadata["leakage_warning"]
 
         manifest = Path(result["model_path"]).with_suffix(".manifest.json")
-        assert "'platform'" in json.loads(manifest.read_text())["leakage_warning"]
+        assert "'platform'" in json.loads(manifest.read_text(encoding="utf-8"))["leakage_warning"]
 
     def test_the_report_leads_with_the_caveat(self, leaky_csv: Path, tmp_path: Path):
         """The rendered page showed accuracy/f1/AUC of 1.000 beside a spotless
