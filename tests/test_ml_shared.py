@@ -1438,29 +1438,48 @@ from shared.file_utils import get_default_output_dir, get_output_dir  # noqa: E4
 
 
 class TestGetDefaultOutputDir:
-    """Tests for get_default_output_dir() — lines 109-115."""
+    """Tests for get_default_output_dir().
 
-    def test_get_default_output_dir_no_input_returns_downloads(self):
+    MCP_OUTPUT_DIR — which conftest's isolate_output_dir fixture sets for every
+    test — outranks both the input file's directory and ~/Downloads, so the
+    fallback cases below unset it explicitly.
+    """
+
+    def test_get_default_output_dir_no_input_returns_downloads(self, monkeypatch):
+        monkeypatch.delenv("MCP_OUTPUT_DIR", raising=False)
         result = get_default_output_dir(None)
         assert isinstance(result, Path)
         # Should be ~/Downloads on most systems
         assert result == Path.home() / "Downloads"
 
-    def test_get_default_output_dir_empty_string_returns_downloads(self):
+    def test_get_default_output_dir_empty_string_returns_downloads(self, monkeypatch):
+        monkeypatch.delenv("MCP_OUTPUT_DIR", raising=False)
         result = get_default_output_dir("")
         assert result == Path.home() / "Downloads"
 
-    def test_get_default_output_dir_existing_parent_returns_parent(self, tmp_path):
+    def test_get_default_output_dir_existing_parent_returns_parent(self, monkeypatch, tmp_path):
+        monkeypatch.delenv("MCP_OUTPUT_DIR", raising=False)
         csv_file = tmp_path / "data.csv"
         csv_file.write_text("a,b\n1,2\n")
         result = get_default_output_dir(str(csv_file))
         assert result == tmp_path
 
-    def test_get_default_output_dir_nonexistent_parent_returns_downloads(self, tmp_path):
+    def test_get_default_output_dir_nonexistent_parent_returns_downloads(self, monkeypatch, tmp_path):
         # Parent directory does not exist → falls back to ~/Downloads
+        monkeypatch.delenv("MCP_OUTPUT_DIR", raising=False)
         fake_path = str(tmp_path / "nonexistent_subdir" / "file.csv")
         result = get_default_output_dir(fake_path)
         assert result == Path.home() / "Downloads"
+
+    def test_env_output_dir_outranks_input_parent(self, monkeypatch, tmp_path):
+        # A remote deployment sets MCP_OUTPUT_DIR so generated files land
+        # somewhere the caller can reach — the input's own directory is not
+        # guaranteed to be that, so the env var wins.
+        csv_file = tmp_path / "elsewhere" / "data.csv"
+        csv_file.parent.mkdir()
+        csv_file.write_text("a,b\n1,2\n")
+        monkeypatch.setenv("MCP_OUTPUT_DIR", str(tmp_path / "shared"))
+        assert get_default_output_dir(str(csv_file)) == tmp_path / "shared"
 
 
 class TestGetOutputDir:
