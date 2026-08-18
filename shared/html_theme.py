@@ -22,6 +22,7 @@ from pathlib import Path
 
 import plotly.io as pio  # lazy-safe: imported once at module level
 
+from shared.chart_page import apply_chart_margins, chart_page_html, take_page_title
 from shared.file_utils import atomic_write_text
 from shared.html_layout import VIEWPORT_META, get_output_path  # noqa: F401
 
@@ -505,34 +506,6 @@ def _open_file(path: str | Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Standalone chart page CSS (save_chart output)
-# ---------------------------------------------------------------------------
-
-_STANDALONE_CSS = """
-*{box-sizing:border-box;margin:0;padding:0}
-html,body{height:100vh}
-html{scroll-behavior:smooth}
-body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);
-  min-height:100vh;padding:clamp(1rem,4vw,2.5rem);display:flex;
-  align-items:flex-start;justify-content:center}
-.page{width:100%;max-width:75rem}
-.chart-title{color:var(--accent);font-size:var(--font-2xl);font-weight:600;
-  margin-bottom:1.5rem;overflow-wrap:break-word;word-break:break-word;
-  padding-bottom:0.75rem;border-bottom:2px solid var(--border)}
-.chart-wrap{background:var(--surface);border:1px solid var(--border);
-  border-radius:var(--chart-radius);padding:var(--card-pad);overflow:hidden;
-  min-height:clamp(18rem,55vh,50rem)}
-.chart-wrap .js-plotly-plot,.chart-wrap .plotly-graph-div{width:100%!important;
-  min-height:inherit}
-::-webkit-scrollbar{width:0.375rem}
-::-webkit-scrollbar-track{background:var(--bg)}
-::-webkit-scrollbar-thumb{background:var(--border);border-radius:var(--radius-sm)}
-@media(max-width:30em){body{padding:0.75rem}.chart-title{font-size:var(--font-xl)}}
-@media print{body{background:#fff;color:#000;padding:0}.chart-wrap{border:none;padding:0}}
-"""
-
-
-# ---------------------------------------------------------------------------
 # save_chart — standalone Plotly figure → responsive HTML file
 # ---------------------------------------------------------------------------
 
@@ -556,6 +529,9 @@ def save_chart(
     Returns (absolute_path_str, filename).
     """
     apply_fig_theme(fig, theme)
+    apply_chart_margins(fig)
+    # Before to_html, so the title is not rendered into the fragment as well.
+    page_title = take_page_title(fig, stem_suffix)
 
     out = get_output_path(output_path, input_path, stem_suffix, "html")
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -572,23 +548,12 @@ def save_chart(
         },
     )
 
-    dev_js = device_mode_js() if theme == "device" else ""
-    vars_css = css_vars(theme)
-
-    html = f"""<!DOCTYPE html>
-<html lang="en"><head>
-<meta charset="utf-8">
-{VIEWPORT_META}
-<title>{stem_suffix.replace("_", " ").title()}</title>
-<style>
-{vars_css}
-{_STANDALONE_CSS}
-</style></head><body>
-<div class="page">
-  <div class="chart-wrap">{chart_html}</div>
-</div>
-{dev_js}
-</body></html>"""
+    html = chart_page_html(
+        chart_html,
+        page_title,
+        css_vars(theme),
+        device_mode_js() if theme == "device" else "",
+    )
 
     atomic_write_text(out, html)
     if open_after:
