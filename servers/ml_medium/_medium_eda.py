@@ -242,7 +242,7 @@ def _quality_score_html(score: float, alerts: list[dict], t: dict) -> str:
 def generate_eda_report(
     file_path: str,
     target_column: str = "",
-    theme: str = "dark",
+    theme: str = "device",
     output_path: str = "",
     open_after: bool = True,
     dry_run: bool = False,

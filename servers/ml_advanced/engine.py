@@ -710,7 +710,7 @@ def _panel_defaults(metadata: dict) -> dict:
 
 def generate_training_report(
     model_path: str,
-    theme: str = "dark",
+    theme: str = "device",
     output_path: str = "",
     open_after: bool = True,
     dry_run: bool = False,

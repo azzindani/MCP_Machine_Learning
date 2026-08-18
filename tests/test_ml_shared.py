@@ -1879,10 +1879,14 @@ class TestGetTheme:
         theme = get_theme("light")
         assert theme["bg_color"] == "#ffffff"
 
-    def test_get_theme_unknown_falls_back_to_dark(self):
-        theme = get_theme("unknown_theme")
-        # Falls back to dark
-        assert theme["bg_color"] == "#0d1117"
+    def test_get_theme_unknown_falls_back_to_the_default(self):
+        """An unrecognised name lands on "device", the default — a typo should
+        not silently pin a shared report to one fixed palette."""
+        assert get_theme("unknown_theme") == get_theme("device")
+
+    def test_default_theme_is_device(self):
+        """Reports get opened on someone else's machine; their setting wins."""
+        assert get_theme() == get_theme("device")
 
 
 # ===========================================================================
