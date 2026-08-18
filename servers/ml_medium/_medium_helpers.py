@@ -155,6 +155,36 @@ def _build_regressor(model: str, degree: int = 5, alpha: float = 0.01, n_estimat
     raise ValueError(f"Unknown regressor: {model!r}")
 
 
+def fit_final_estimator(model_str: str, x: np.ndarray, y: np.ndarray, task: str) -> object:
+    """Fit one estimator on the whole dataset and return it, ready to save.
+
+    Cross-validation fits a throwaway estimator per fold and keeps only its
+    predictions, so nothing survives the loop that could be persisted --
+    train_with_cv and compare_models were both writing {"model": None} into a
+    .pkl while reporting "Saved best model". Refitting on all the data is the
+    normal way to produce the shipped model once CV has estimated how well it
+    generalises.
+
+    Returns None for model types with no plain estimator to fit (xgb goes
+    through the Booster API), so callers must still handle that case rather
+    than assume a model came back.
+    """
+    builder = _build_classifier if task == "classification" else _build_regressor
+    estimator = builder(model_str)
+    if estimator is None:
+        return None
+    # The scaled builders return a ("name", scaler, estimator) tuple rather than
+    # an assembled object; wrap it so the saved model applies the same scaling
+    # at predict time that it was fitted with.
+    if isinstance(estimator, tuple):
+        from sklearn.pipeline import Pipeline
+
+        _, scaler, inner = estimator
+        estimator = Pipeline([("scaler", scaler), ("model", inner)])
+    estimator.fit(x, y)  # type: ignore[attr-defined]
+    return estimator
+
+
 def _fit_predict_classifier(model_str: str, x_train: np.ndarray, x_test: np.ndarray, y_train: np.ndarray) -> np.ndarray:
     """Fit classifier and return predictions on x_test."""
     if model_str == "xgb":
