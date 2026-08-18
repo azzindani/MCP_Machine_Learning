@@ -16,9 +16,7 @@ _NEAR_PERFECT_SCORE = 0.999
 _MAX_FEATURES_SCANNED = 60
 
 
-def find_determinant_features(
-    df: pd.DataFrame, target_column: str, feature_cols: list[str]
-) -> list[str]:
+def find_determinant_features(df: pd.DataFrame, target_column: str, feature_cols: list[str]) -> list[str]:
     """Return features whose value alone fixes the target — i.e. leaks it.
 
     Only low-cardinality columns are considered: a column holding one distinct
@@ -44,9 +42,7 @@ def find_determinant_features(
     return culprits
 
 
-def leakage_warning(
-    df: pd.DataFrame, target_column: str, feature_cols: list[str], score: float
-) -> str:
+def leakage_warning(df: pd.DataFrame, target_column: str, feature_cols: list[str], score: float) -> str:
     """Explain a near-perfect score, or '' when the score is ordinary.
 
     `score` is accuracy for classifiers and R² for regressors — both are 1.0 at
