@@ -6,6 +6,69 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
 
+# A model that scores perfectly has almost always been handed the answer. A real
+# run trained on campaign_type while campaign_platform stayed in the feature set;
+# the two are the same fact under different names, so accuracy, f1 and AUC all
+# came back at 1.000 with a clean confusion matrix and no caveat anywhere in the
+# result or the generated training report. Anyone reading that — a person or a
+# dispatching model — takes it as a great model.
+_NEAR_PERFECT_SCORE = 0.999
+_MAX_FEATURES_SCANNED = 60
+
+
+def find_determinant_features(
+    df: pd.DataFrame, target_column: str, feature_cols: list[str]
+) -> list[str]:
+    """Return features whose value alone fixes the target — i.e. leaks it.
+
+    Only low-cardinality columns are considered: a column holding one distinct
+    value per row (an id, a timestamp) partitions the target perfectly by
+    construction, which says nothing about leakage.
+    """
+    if target_column not in df.columns or df.empty:
+        return []
+    row_limit = max(2, len(df) // 2)
+    culprits: list[str] = []
+    for column in feature_cols[:_MAX_FEATURES_SCANNED]:
+        if column not in df.columns:
+            continue
+        distinct = df[column].nunique(dropna=False)
+        if distinct < 2 or distinct > row_limit:
+            continue
+        try:
+            worst = df.groupby(column, observed=True)[target_column].nunique(dropna=False).max()
+        except (TypeError, ValueError):
+            continue
+        if worst is not None and worst <= 1:
+            culprits.append(column)
+    return culprits
+
+
+def leakage_warning(
+    df: pd.DataFrame, target_column: str, feature_cols: list[str], score: float
+) -> str:
+    """Explain a near-perfect score, or '' when the score is ordinary.
+
+    `score` is accuracy for classifiers and R² for regressors — both are 1.0 at
+    perfection, so the same threshold reads correctly for either.
+    """
+    if score < _NEAR_PERFECT_SCORE:
+        return ""
+    culprits = find_determinant_features(df, target_column, feature_cols)
+    if culprits:
+        named = ", ".join(f"'{c}'" for c in culprits[:5])
+        more = f" (and {len(culprits) - 5} more)" if len(culprits) > 5 else ""
+        return (
+            f"Score of {score:.4f} is explained by leakage: {named}{more} "
+            f"determine '{target_column}' exactly, so the model is reading the answer "
+            "rather than predicting it. Drop those columns and retrain to get a real score."
+        )
+    return (
+        f"Score of {score:.4f} is near-perfect, which usually means the target leaked into "
+        "the features. No single column determines the target, so check for combinations, "
+        "duplicate rows shared across the train/test split, or a feature derived from the target."
+    )
+
 
 def _auto_preprocess(df: pd.DataFrame, target_column: str) -> tuple[pd.DataFrame, dict, list[str]]:
     """Drop null targets, label-encode categoricals, fill numeric nulls.
