@@ -861,20 +861,22 @@ def generate_cluster_report(
             }
         )
 
-        html = build_html_report(
+        # Resolved before the report is built: with output_path empty,
+        # build_html_report cannot know which directory plotly.min.js goes in
+        # and falls back to inlining the whole 4.85 MB library.
+        out = get_output_path(output_path, dp, "cluster_report", "html")
+        out.parent.mkdir(parents=True, exist_ok=True)
+
+        build_html_report(
             title=f"Cluster Report — {dp.name}",
             subtitle="",
             sections=sections,
             theme=theme,
             open_after=False,
-            output_path="",
+            output_path=str(out),
             sidebar_title="Cluster Report",
             sidebar_meta=f"{dp.name}<br>Clusters: {n_clusters} &middot; Samples: {len(df):,}",
         )
-
-        out = get_output_path(output_path, dp, "cluster_report", "html")
-        out.parent.mkdir(parents=True, exist_ok=True)
-        atomic_write_text(out, html)
         progress.append(ok("Saved cluster report", out.name))
 
         if open_after:

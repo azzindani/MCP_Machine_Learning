@@ -533,19 +533,21 @@ def generate_eda_report(
         )
 
     # ── Build and write report ─────────────────────────────────────────────
-    html = build_html_report(
+    # Resolved before the report is built: with output_path empty,
+    # build_html_report cannot know which directory plotly.min.js goes in and
+    # falls back to inlining the whole 4.85 MB library.
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    build_html_report(
         title=f"EDA Report — {path.name}",
         subtitle="",
         sections=sections,
         theme=theme,
         open_after=False,
-        output_path="",
+        output_path=str(out_path),
         sidebar_title="EDA Report",
         sidebar_meta=f"{path.name}<br>{len(df):,} rows &times; {len(df.columns)} cols",
     )
-
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_write_text(out_path, html)
     progress.append(ok("Saved HTML report", out_path.name))
 
     if open_after:

@@ -529,15 +529,35 @@ class TestPlotRocCurve:
         assert r["op"] == "plot_roc_curve"
         assert Path(out).exists()
 
-    def test_return_content_embeds_real_bytes(self, classification_simple, tmp_path):
+    def test_return_content_embeds_something_that_renders(self, classification_simple, tmp_path):
+        """Deliberately not the bytes on disk. The file is the interactive chart
+        and loads plotly.min.js from beside itself; a caller handed only the
+        bytes has no such neighbour, so the inline copy is a self-contained SVG.
+        """
         import base64
 
         mp = _train_basic_model(classification_simple, model="lr")
         out = tmp_path / "roc_content.html"
         r = plot_roc_curve(mp, classification_simple, output_path=str(out), open_after=False, return_content=True)
         assert r["success"] is True
-        assert base64.b64decode(r["content_base64"]) == out.read_bytes()
+        inline = base64.b64decode(r["content_base64"])
+        assert b"<svg" in inline
+        assert b'src="plotly.min.js"' not in inline
         assert r["content_mime_type"] == "text/html"
+
+    def test_the_inline_copy_is_small_enough_to_return(self, classification_simple, tmp_path):
+        """Inlining the library made this 6.21 MB of base64 in a single result."""
+        mp = _train_basic_model(classification_simple, model="lr")
+        out = tmp_path / "roc_size.html"
+        r = plot_roc_curve(mp, classification_simple, output_path=str(out), open_after=False, return_content=True)
+        assert len(r["content_base64"]) < 200_000
+
+    def test_the_file_on_disk_is_still_the_interactive_chart(self, classification_simple, tmp_path):
+        mp = _train_basic_model(classification_simple, model="lr")
+        out = tmp_path / "roc_disk.html"
+        plot_roc_curve(mp, classification_simple, output_path=str(out), open_after=False, return_content=True)
+        assert 'src="plotly.min.js"' in out.read_text(encoding="utf-8")
+        assert (out.parent / "plotly.min.js").exists()
 
     def test_no_return_content_by_default(self, classification_simple, tmp_path):
         mp = _train_basic_model(classification_simple, model="lr")
