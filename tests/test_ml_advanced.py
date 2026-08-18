@@ -133,6 +133,24 @@ class TestExportModel:
         assert r["op"] == "export_model"
         assert "manifest_path" in r
 
+    def test_saved_model_is_readable_by_others(self, classification_simple):
+        """A model written into a shared output dir has to be readable there.
+
+        _save_model writes through NamedTemporaryFile, which creates 0600 and
+        keeps that mode across the rename — so the file server serving that
+        directory, and every sibling service, were locked out of every model
+        the train/export tools produced.
+        """
+        from pathlib import Path
+
+        model_path = Path(_train_basic_model(classification_simple))
+        assert model_path.stat().st_mode & 0o044 == 0o044
+
+        exported = export_model(str(model_path))
+        assert exported["success"] is True
+        assert Path(exported["model_path"]).stat().st_mode & 0o044 == 0o044
+        assert Path(exported["manifest_path"]).stat().st_mode & 0o044 == 0o044
+
     def test_return_content_embeds_real_signed_bytes(self, classification_simple):
         import base64
         from pathlib import Path
