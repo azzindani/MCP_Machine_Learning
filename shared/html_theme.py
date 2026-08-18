@@ -22,9 +22,10 @@ from pathlib import Path
 
 import plotly.io as pio  # lazy-safe: imported once at module level
 
-from shared.chart_page import apply_chart_margins, chart_page_html, take_page_title
+from shared.chart_page import apply_axis_automargin, apply_chart_margins, chart_page_html, take_page_title
 from shared.file_utils import atomic_write_text
 from shared.html_layout import VIEWPORT_META, get_output_path  # noqa: F401
+from shared.plotly_bundle import include_plotlyjs_for, plotly_script_tag
 
 logger = logging.getLogger(__name__)
 
@@ -536,15 +537,17 @@ def save_chart(
     out = get_output_path(output_path, input_path, stem_suffix, "html")
     out.parent.mkdir(parents=True, exist_ok=True)
 
+    # Sidecar mode: the page references plotly.min.js written beside it, so a
+    # chart file is a few KB rather than the 4.85 MB the inline bundle cost --
+    # which also put 6.21 MB of base64 in the result when return_content was set.
     chart_html = pio.to_html(
         fig,  # type: ignore[arg-type]
         full_html=False,
-        include_plotlyjs=True,
+        include_plotlyjs=include_plotlyjs_for(out.parent),
         config={
             "responsive": True,
             "displayModeBar": True,
             "scrollZoom": True,
-            "plotGlPixelRatio": 0,
         },
     )
 
@@ -782,7 +785,13 @@ def build_html_report(
 
     sb_title = sidebar_title or title
     sb_meta_html = f'<p class="meta">{sidebar_meta}</p>' if sidebar_meta else ""
-    plotly_js = get_plotlyjs_script() if needs_plotly(sections_html) else ""
+    # Resolved before the page is assembled: the <head> has to reference
+    # plotly.min.js in the directory the report is actually written to.
+    out = Path(output_path).resolve() if output_path else None
+    if needs_plotly(sections_html):
+        plotly_js = plotly_script_tag(out.parent) if out is not None else get_plotlyjs_script()
+    else:
+        plotly_js = ""
     extra = extra_body or ""
 
     html = f"""<!DOCTYPE html>
@@ -827,8 +836,7 @@ def build_html_report(
 {extra}
 </body></html>"""
 
-    if output_path:
-        out = Path(output_path).resolve()
+    if out is not None:
         out.parent.mkdir(parents=True, exist_ok=True)
         atomic_write_text(out, html)
         if open_after:
@@ -898,6 +906,11 @@ def plotly_div(fig: object, height: int = 450, theme: str = "device") -> str:
     theme  : used to set matching background colors.
     """
     apply_fig_theme(fig, theme)
+    # Same axis treatment single charts get. Without it a report's subplot
+    # y-axis rendered "20" as "0" -- the labels were sheared off at the left
+    # edge and every gridline read zero. The figure keeps its own margin and
+    # height, which a subplot grid needs.
+    apply_axis_automargin(fig)
 
     # Cap rendered height to 80 vh via inline CSS so tall charts scroll
     # instead of forcing the viewport to grow.
@@ -909,7 +922,6 @@ def plotly_div(fig: object, height: int = 450, theme: str = "device") -> str:
             "responsive": True,
             "displayModeBar": True,
             "scrollZoom": True,
-            "plotGlPixelRatio": 0,
         },
     )
     return f'<div class="chart-container" style="height:min({height}px,80vh);overflow:hidden auto">' + inner + "</div>"

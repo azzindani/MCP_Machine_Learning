@@ -481,9 +481,11 @@ class TestGenerateEdaReport:
         assert r["op"] == "generate_eda_report"
         assert Path(out).exists()
 
-    def test_return_content_embeds_real_bytes(self, classification_simple, tmp_path):
-        import base64
-
+    def test_return_content_embeds_the_report(self, classification_simple, tmp_path):
+        """A multi-section report has no self-contained SVG form, so the bytes
+        come back as they are -- but they are now the ~30 KB sidecar page rather
+        than a 6 MB page with the whole library inlined, and the caller is told
+        it needs plotly.min.js from the same directory."""
         out = tmp_path / "eda_content.html"
         r = generate_eda_report(
             classification_simple,
@@ -493,8 +495,20 @@ class TestGenerateEdaReport:
             return_content=True,
         )
         assert r["success"] is True
-        assert base64.b64decode(r["content_base64"]) == out.read_bytes()
+        assert len(r["content_base64"]) < 500_000
+        assert "plotly.min.js" in r["content_note"]
         assert r["content_mime_type"] == "text/html"
+
+    def test_the_report_on_disk_references_the_sidecar(self, classification_simple, tmp_path):
+        out = tmp_path / "eda_disk.html"
+        generate_eda_report(
+            classification_simple,
+            target_column="churned",
+            output_path=str(out),
+            open_after=False,
+        )
+        assert 'src="plotly.min.js"' in out.read_text(encoding="utf-8")
+        assert (out.parent / "plotly.min.js").exists()
 
     def test_no_return_content_by_default(self, classification_simple, tmp_path):
         out = str(tmp_path / "eda_default.html")
