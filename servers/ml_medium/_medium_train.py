@@ -33,6 +33,7 @@ from ._medium_helpers import (
     get_cv_folds,
     get_max_models,
     get_output_dir,
+    leakage_warning,
     mean_squared_error,
     ok,
     r2_score,
@@ -248,6 +249,15 @@ def train_with_cv(
 
     append_receipt(str(path), "train_with_cv", {"model": model, "task": task, "n_splits": n_splits}, "success", backup)
 
+    # The single-split trainers have always explained a near-perfect score.
+    # Cross-validation did not, so a leaked target came back as a flawless model
+    # on every fold with nothing to say the number was meaningless.
+    # accuracy_mean and r2_mean are both 1.0 at perfection.
+    cv_score = mean_metrics.get("accuracy_mean", mean_metrics.get("r2_mean", 0.0))
+    leakage = leakage_warning(df, target_column, [c for c in df.columns if c != target_column], float(cv_score))
+    if leakage:
+        progress.append(warn("Suspiciously perfect score", leakage))
+
     resp = {
         "success": True,
         "op": "train_with_cv",
@@ -261,6 +271,8 @@ def train_with_cv(
         "progress": progress,
         "token_estimate": 0,
     }
+    if leakage:
+        resp["warning"] = leakage
     mean_key = list(mean_metrics.keys())[0] if mean_metrics else "score"
     resp["context"] = make_context(
         "train_with_cv",
@@ -449,6 +461,17 @@ def compare_models(
     score_keys = [k for k in (results[0].keys() if results else []) if k not in ("model", "rank", "error")]
     best_score_key = score_keys[0] if score_keys else "score"
     best_score_val = results[0].get(best_score_key, 0) if results else 0
+    # A leaked target makes every model in the comparison look perfect, which
+    # is more misleading here than anywhere else: the table invites you to pick
+    # a winner from scores that are all meaningless. Read accuracy/r2 by name
+    # rather than taking the first score key -- rmse is also a score, and it is
+    # not 1.0 at perfection.
+    top = results[0] if results else {}
+    best_fit = float(top.get("accuracy", top.get("r2", 0.0)) or 0.0)
+    leakage = leakage_warning(df, target_column, [c for c in df.columns if c != target_column], best_fit)
+    if leakage:
+        progress.append(warn("Suspiciously perfect scores", leakage))
+
     resp = {
         "success": True,
         "op": "compare_models",
@@ -460,6 +483,8 @@ def compare_models(
         "progress": progress,
         "token_estimate": 0,
     }
+    if leakage:
+        resp["warning"] = leakage
     resp["context"] = make_context(
         "compare_models",
         f"Compared {len(models)} models on {path.name}: best={best} ({best_score_key}={best_score_val:.3f})",

@@ -22,6 +22,7 @@ from shared.file_utils import atomic_write_json, atomic_write_text, embed_conten
 from shared.file_utils import read_csv as _read_csv
 from shared.handover import make_context, make_handover
 from shared.html_layout import get_output_path as _get_output_path
+from shared.ml_utils import leakage_warning
 from shared.model_js import ModelNotEmbeddable, prediction_panel
 from shared.model_js import build_payload as build_model_payload
 from shared.platform_utils import get_cv_folds, get_n_iter, is_constrained_mode
@@ -169,6 +170,16 @@ def tune_hyperparameters(
     searcher.fit(x, y)
     progress.append(ok("Search complete", f"best_score={searcher.best_score_:.4f}"))
 
+    # train_classifier/train_regressor have always explained a near-perfect
+    # score; tuning did not, so the same leaked target came back as a flawless
+    # model with nothing to suggest the number was meaningless. best_score_ is
+    # f1_weighted or r2, both 1.0 at perfection, which is what the helper wants.
+    leakage = leakage_warning(
+        df, target_column, [c for c in df.columns if c != target_column], float(searcher.best_score_)
+    )
+    if leakage:
+        progress.append(warn("Suspiciously perfect score", leakage))
+
     results_df = pd.DataFrame(searcher.cv_results_)
     results_df = results_df.sort_values("mean_test_score", ascending=False).head(20)
     top_results = results_df[["mean_test_score", "std_test_score", "params"]].to_dict("records")
@@ -224,6 +235,8 @@ def tune_hyperparameters(
         "progress": progress,
         "token_estimate": 0,
     }
+    if leakage:
+        resp["warning"] = leakage
     resp["context"] = make_context(
         "tune_hyperparameters",
         f"Tuned {model} with {search} on {path.name}: best_score={float(searcher.best_score_):.4f}",
