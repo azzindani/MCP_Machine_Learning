@@ -55,6 +55,19 @@ from ._basic_helpers import (
 )
 
 
+def _wrong_trainer_hint(model: str, sibling_allowed: set[str], sibling_tool: str) -> str:
+    """Say so when the rejected name is valid on the other trainer.
+
+    'lr' is logistic regression and is valid here; the regressor wants 'lir' for
+    linear regression. A caller who has just trained a classifier with 'lr'
+    reaches for 'lr' again and is told only that it is unknown, which reads as
+    "that algorithm is unsupported" rather than "you want the near-twin name".
+    """
+    if model in sibling_allowed:
+        return f"'{model}' is a {sibling_tool}() model. Pick one listed above, or call {sibling_tool}()."
+    return ""
+
+
 # ---------------------------------------------------------------------------
 # 5. train_classifier
 # ---------------------------------------------------------------------------
@@ -83,8 +96,9 @@ def train_classifier(
         model = model.strip().lower()
         if model not in ALLOWED_CLASSIFIERS:
             return _error(
-                f"Unknown algorithm: '{model}'. Allowed: {', '.join(sorted(ALLOWED_CLASSIFIERS))}",
-                "Use one of: lr svm rf dtc knn nb xgb",
+                f"Unknown model: '{model}'. Allowed: {', '.join(sorted(ALLOWED_CLASSIFIERS))}",
+                _wrong_trainer_hint(model, ALLOWED_REGRESSORS, "train_regressor")
+                or "Use one of: lr svm rf dtc knn nb xgb",
             )
 
         if path.stat().st_size == 0:
@@ -368,8 +382,9 @@ def train_regressor(
         model = model.strip().lower()
         if model not in ALLOWED_REGRESSORS:
             return _error(
-                f"Unknown algorithm: '{model}'. Allowed: {', '.join(sorted(ALLOWED_REGRESSORS))}",
-                "Use one of: lir pr lar rr dtr rfr xgb",
+                f"Unknown model: '{model}'. Allowed: {', '.join(sorted(ALLOWED_REGRESSORS))}",
+                _wrong_trainer_hint(model, ALLOWED_CLASSIFIERS, "train_classifier")
+                or "Use one of: lir pr lar rr dtr rfr xgb",
             )
 
         if path.stat().st_size == 0:
