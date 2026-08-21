@@ -85,7 +85,7 @@ def tune_hyperparameters(
     allowed = ALLOWED_CLASSIFIERS if task == "classification" else ALLOWED_REGRESSORS
     if model not in allowed:
         return _error(
-            f"Unknown algorithm: '{model}'. Allowed: {', '.join(sorted(allowed))}",
+            f"Unknown model: '{model}'. Allowed: {', '.join(sorted(allowed))}",
             f"Use one of: {' '.join(sorted(allowed))}",
         )
 

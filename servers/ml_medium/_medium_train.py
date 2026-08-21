@@ -75,7 +75,7 @@ def train_with_cv(
     allowed = ALLOWED_CLASSIFIERS if task == "classification" else ALLOWED_REGRESSORS
     if model not in allowed:
         return _error(
-            f"Unknown algorithm: '{model}'. Allowed: {', '.join(sorted(allowed))}",
+            f"Unknown model: '{model}'. Allowed: {', '.join(sorted(allowed))}",
             f"Use one of: {' '.join(sorted(allowed))}",
         )
 
@@ -303,7 +303,7 @@ def compare_models(
     invalid = [m for m in models if m not in allowed]
     if invalid:
         return _error(
-            f"Unknown algorithms: {', '.join(invalid)}. Allowed: {', '.join(sorted(allowed))}",
+            f"Unknown models: {', '.join(invalid)}. Allowed: {', '.join(sorted(allowed))}",
             f"Use valid model strings: {' '.join(sorted(allowed))}",
         )
 
