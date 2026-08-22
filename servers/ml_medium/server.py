@@ -143,6 +143,7 @@ def run_clustering(
     reduce_dims: str = "",
     n_components: int = 2,
     save_labels: bool = False,
+    output_path: str = "",
     dry_run: bool = False,
 ) -> dict:
     """Cluster dataset. algorithm: kmeans meanshift dbscan."""
@@ -156,6 +157,7 @@ def run_clustering(
         reduce_dims,
         n_components,
         save_labels,
+        output_path,
         dry_run,
     )
 
@@ -231,10 +233,13 @@ def anomaly_detection(
     method: str = "isolation_forest",
     contamination: float = 0.05,
     save_labels: bool = False,
+    output_path: str = "",
     dry_run: bool = False,
 ) -> dict:
     """Detect anomalies. method: isolation_forest lof."""
-    return engine.anomaly_detection(file_path, feature_columns, method, contamination, save_labels, dry_run)
+    return engine.anomaly_detection(
+        file_path, feature_columns, method, contamination, save_labels, output_path, dry_run
+    )
 
 
 @mcp.tool(

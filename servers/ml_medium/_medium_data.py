@@ -420,6 +420,7 @@ def anomaly_detection(
     method: str = "isolation_forest",
     contamination: float = 0.05,
     save_labels: bool = False,
+    output_path: str = "",
     dry_run: bool = False,
 ) -> dict:
     """Detect anomalies. method: isolation_forest lof. Adds anomaly_score column if save_labels=True."""
@@ -487,16 +488,22 @@ def anomaly_detection(
     # Top anomaly indices
     top_anomaly_idx = np.argsort(scores)[: min(10, n_anomalies)].tolist()
 
+    # See run_clustering: save_labels rewrites the caller's dataset in place,
+    # and output_path gives the labelled frame somewhere else to land. The
+    # source is then untouched, so there is nothing to snapshot, and naming a
+    # destination is itself a request to write.
     backup = ""
-    if save_labels:
-        try:
-            backup = snapshot(str(path))
-        except Exception as exc:
-            progress.append(warn("Snapshot failed", str(exc)))
+    out = resolve_path(output_path) if output_path else path
+    if save_labels or output_path:
+        if out == path:
+            try:
+                backup = snapshot(str(path))
+            except Exception as exc:
+                progress.append(warn("Snapshot failed", str(exc)))
         df["anomaly_score"] = scores
         df["is_anomaly"] = anomaly_mask.astype(int)
-        df.to_csv(path, index=False)
-        progress.append(ok("Saved anomaly labels", path.name))
+        df.to_csv(out, index=False)
+        progress.append(ok("Saved anomaly labels", out.name))
 
     append_receipt(
         str(path), "anomaly_detection", {"method": method, "contamination": contamination}, "success", backup
@@ -510,6 +517,7 @@ def anomaly_detection(
         "n_anomalies": n_anomalies,
         "anomaly_pct": anomaly_pct,
         "top_anomaly_indices": top_anomaly_idx,
+        "output_path": str(out) if (save_labels or output_path) else "",
         "backup": backup,
         "progress": progress,
         "token_estimate": 0,
