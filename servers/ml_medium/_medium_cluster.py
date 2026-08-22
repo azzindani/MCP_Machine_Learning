@@ -37,6 +37,7 @@ def run_clustering(
     reduce_dims: str = "",
     n_components: int = 2,
     save_labels: bool = False,
+    output_path: str = "",
     dry_run: bool = False,
 ) -> dict:
     """Cluster dataset. algorithm: kmeans meanshift dbscan."""
@@ -168,15 +169,21 @@ def run_clustering(
         except Exception:
             pass
 
+    # save_labels rewrites the caller's dataset in place, which was the only way
+    # to keep the labels. output_path gives them somewhere else to land: the
+    # source is then never touched, so there is nothing to snapshot. Naming a
+    # destination is itself a request to write, so it works without save_labels.
     backup = ""
-    if save_labels:
-        try:
-            backup = snapshot(str(path))
-        except Exception as exc:
-            progress.append(warn("Snapshot failed", str(exc)))
+    out = resolve_path(output_path) if output_path else path
+    if save_labels or output_path:
+        if out == path:
+            try:
+                backup = snapshot(str(path))
+            except Exception as exc:
+                progress.append(warn("Snapshot failed", str(exc)))
         df["cluster_label"] = labels
-        df.to_csv(path, index=False)
-        progress.append(ok("Saved labels", "cluster_label column added"))
+        df.to_csv(out, index=False)
+        progress.append(ok("Saved labels", f"cluster_label column added to {out.name}"))
 
     append_receipt(
         str(path), "run_clustering", {"algorithm": algorithm, "feature_columns": feature_columns}, "success", backup
@@ -189,6 +196,7 @@ def run_clustering(
         "feature_columns": feature_columns,
         "label_counts": label_counts,
         "silhouette_score": silhouette,
+        "output_path": str(out) if (save_labels or output_path) else "",
         "backup": backup,
         "progress": progress,
         "token_estimate": 0,
