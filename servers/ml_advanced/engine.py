@@ -84,10 +84,17 @@ def tune_hyperparameters(
         return _error(f"Unknown task: '{task}'.", "Use 'classification' or 'regression'.")
 
     allowed = ALLOWED_CLASSIFIERS if task == "classification" else ALLOWED_REGRESSORS
+    # `allowed` is the whole model registry, but tuning needs a built-in grid,
+    # and xgb is refused outright below. So the list the caller was told to
+    # choose from advertised models that can never work here: 'nb' and 'xgb' for
+    # classification, 'lir', 'pr' and 'xgb' for regression. A sweep picked 'lir'
+    # off that list and got "No param grid available for model 'lir'" with a
+    # hint offering only to write a grid by hand. Name the ones that do work.
+    tunable = sorted(m for m in allowed if DEFAULT_PARAMS.get(m) and m != "xgb")
     if model not in allowed:
         return _error(
-            f"Unknown model: '{model}'. Allowed: {', '.join(sorted(allowed))}",
-            f"Use one of: {' '.join(sorted(allowed))}",
+            f"Unknown model: '{model}'. Allowed for {task}: {', '.join(sorted(allowed))}",
+            f"These have a built-in grid: {', '.join(tunable)}. Others need param_grid.",
         )
 
     if search not in ("grid", "random"):
@@ -103,14 +110,15 @@ def tune_hyperparameters(
 
     if not pg:
         return _error(
-            f"No param grid available for model '{model}'.",
-            "Provide a custom param_grid JSON string.",
+            f"No built-in param grid for '{model}'.",
+            f"These have one: {', '.join(tunable)}. Or pass param_grid as a JSON string, "
+            'e.g. {"alpha": [0.01, 0.1, 1.0]}.',
         )
 
     if model == "xgb":
         return _error(
             "XGBoost tuning is not supported via GridSearch in this tier.",
-            "Use 'rf', 'svm', 'lr', 'knn', 'dtc', 'rfr', 'dtr', 'lar', or 'rr' for tuning.",
+            f"Use one of these for {task}: {', '.join(tunable)}.",
         )
 
     if path.stat().st_size == 0:
