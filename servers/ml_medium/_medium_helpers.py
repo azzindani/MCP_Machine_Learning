@@ -242,6 +242,24 @@ def _fit_predict_regressor(
 
 MAX_OPS = 50
 
+# Quality scores deduct per alert, and alerts are raised per column, so the
+# penalty grows with the width of the frame. The real ad dataset raises four
+# extreme_skewness and three multicollinearity alerts -- 56 points on their own
+# -- and scored 5.6, sitting alongside a frame of eight constant columns and
+# 100% duplicates on 0.0. Almost the whole scale went unused and the two scorers
+# in this server disagreed with each other and with the sibling report in
+# MCP_Data_Analyst (41 for the same file).
+#
+# Capping the alert term is what the missingness and duplicate terms already
+# did, and it means no single axis can flatten the score on its own. The caps
+# sum to 100 in generate_eda_report, which carries all three terms;
+# check_data_quality has no separate missingness term, so its floor is 20.
+# Ordering is what matters and it holds: 92 clean, 77 one constant column,
+# ~29.5 the real ad dataset, below that a frame that is bad on every axis.
+ALERT_DEDUCTION_CAP = 70.0
+MISSINGNESS_DEDUCTION_CAP = 20.0
+DUPLICATE_DEDUCTION_CAP = 10.0
+
 _OP_KEY_ALIASES: dict[str, str] = {"operation": "op", "column_name": "column", "col": "column"}
 _OP_NAME_ALIASES: dict[str, str] = {"impute_missing": "fill_nulls", "fillna": "fill_nulls"}
 _FILL_KEY_ALIASES: dict[str, str] = {"method": "strategy"}
@@ -524,6 +542,9 @@ __all__ = [
     "SCALE_METHODS",
     "MODELS_DIR",
     "MAX_OPS",
+    "ALERT_DEDUCTION_CAP",
+    "MISSINGNESS_DEDUCTION_CAP",
+    "DUPLICATE_DEDUCTION_CAP",
     # helpers
     "_error",
     "_check_memory",

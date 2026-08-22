@@ -8,6 +8,9 @@ from shared.file_utils import atomic_write_text, embed_content
 from shared.handover import make_context, make_handover
 
 from ._medium_helpers import (
+    ALERT_DEDUCTION_CAP,
+    DUPLICATE_DEDUCTION_CAP,
+    MISSINGNESS_DEDUCTION_CAP,
     _error,
     _read_csv,
     append_receipt,
@@ -18,14 +21,29 @@ from ._medium_helpers import (
 
 
 def _compute_quality_score(df: pd.DataFrame, alerts: list[dict]) -> float:
-    """Score 0–100. Start at 100, deduct for each alert by severity."""
+    """Score 0–100. Start at 100, deduct per alert severity and per structure.
+
+    The alert term used to be the one term with no ceiling, while missingness
+    and duplicates were both capped. Alerts are raised per column, so the count
+    grows with the width of the frame: the real ad dataset raises four
+    extreme_skewness alerts and three multicollinearity alerts, which alone cost
+    56 points, and it scored 5.6 -- a dataset that trains a classifier without
+    complaint, sitting next to a frame of eight constant columns and 100%
+    duplicates on 0.0. Almost the whole scale went unused, and the sibling
+    report in MCP_Data_Analyst scored the same file 41.
+
+    Capping the alert term restores the resolution and matches what the other
+    two terms already did. The three caps sum to exactly 100, so 0 stays
+    reachable, but only by a frame that is bad on every axis at once.
+    """
     severity_weights = {"high": 15, "medium": 8, "low": 3}
-    deductions = sum(severity_weights.get(a.get("severity", "low"), 3) for a in alerts)
+    alert_penalty = sum(severity_weights.get(a.get("severity", "low"), 3) for a in alerts)
+    deductions = min(alert_penalty, ALERT_DEDUCTION_CAP)
     # Additional structural deductions
     miss_pct = df.isnull().sum().sum() / max(len(df) * len(df.columns), 1) * 100
     dup_pct = df.duplicated().sum() / max(len(df), 1) * 100
-    deductions += min(miss_pct * 0.5, 20)  # up to 20 pts for missingness
-    deductions += min(dup_pct * 0.3, 10)  # up to 10 pts for duplicates
+    deductions += min(miss_pct * 0.5, MISSINGNESS_DEDUCTION_CAP)
+    deductions += min(dup_pct * 0.3, DUPLICATE_DEDUCTION_CAP)
     return round(max(0.0, min(100.0, 100.0 - deductions)), 1)
 
 
