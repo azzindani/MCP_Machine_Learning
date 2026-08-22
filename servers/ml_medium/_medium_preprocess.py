@@ -45,7 +45,19 @@ def run_preprocessing(
 
     valid, ops, err_msg = _validate_ops(ops)
     if not valid:
-        return _error(err_msg, "Check the op array. See run_preprocessing docstring for valid ops.")
+        # The old hint sent the caller to "the run_preprocessing docstring",
+        # which is the 80-character tool description -- "Apply preprocessing ops
+        # to dataset. Snapshot before write." It has never listed an op, so the
+        # one place the hint pointed was the one place the answer was not. The
+        # error above already names the valid ops; a hint has to add something
+        # the error does not, so it gives the shape and names the tool whose
+        # recommendations quote the op to use for each problem it finds.
+        return _error(
+            err_msg,
+            "Each op is a dict like {'op': 'drop_duplicates'} or "
+            "{'op': 'fill_nulls', 'column': 'link_clicks', 'strategy': 'median'}. "
+            "check_data_quality names the op to use for each issue it reports.",
+        )
 
     progress.append(info("Validated ops", f"{len(ops)} ops"))
 
