@@ -12,6 +12,7 @@ from shared.file_utils import embed_content
 from shared.handover import make_context, make_handover
 
 from ._medium_helpers import (
+    ALERT_DEDUCTION_CAP,
     _error,
     _read_csv,
     _save_chart,
@@ -934,6 +935,9 @@ def check_data_quality(file_path: str) -> dict:
     n_rows, n_cols = len(df), len(df.columns)
     alerts = []
     score = 100.0
+    # Alert penalties accumulate separately so they can be capped once, the way
+    # the duplicate term below already is. See ALERT_DEDUCTION_CAP.
+    alert_penalty = 0.0
 
     # Compute stats in bulk (vectorized — single pass each)
     nunique_all = df.nunique(dropna=True)
@@ -953,7 +957,7 @@ def check_data_quality(file_path: str) -> dict:
                     "recommendation": f"Drop column '{col}' — it contains no information.",
                 }
             )
-            score -= 15
+            alert_penalty += 15
 
     # 2. High missing
     null_summary = []
@@ -972,7 +976,7 @@ def check_data_quality(file_path: str) -> dict:
                     "recommendation": f"Use run_preprocessing fill_nulls or drop column '{col}'.",
                 }
             )
-            score -= 15
+            alert_penalty += 15
 
     # 3. Duplicate rows
     dup_count = int(df.duplicated().sum())
@@ -1003,7 +1007,7 @@ def check_data_quality(file_path: str) -> dict:
                         "recommendation": f"Consider log_transform or separate zero/nonzero modeling for '{col}'.",
                     }
                 )
-                score -= 8
+                alert_penalty += 8
 
     # 5. High cardinality (use pre-computed nunique)
     for col in cat_cols:
@@ -1019,7 +1023,7 @@ def check_data_quality(file_path: str) -> dict:
                     "recommendation": f"Consider drop_column or target-encoding for '{col}'.",
                 }
             )
-            score -= 8
+            alert_penalty += 8
 
     # 6. Extreme skewness (vectorized)
     if num_cols:
@@ -1037,7 +1041,7 @@ def check_data_quality(file_path: str) -> dict:
                             "recommendation": f"Apply log_transform to column '{col}' before training.",
                         }
                     )
-                    score -= 8
+                    alert_penalty += 8
         except Exception:
             pass
 
@@ -1068,12 +1072,12 @@ def check_data_quality(file_path: str) -> dict:
                                 "recommendation": f"Drop one of '{c1}' or '{c2}' to reduce multicollinearity.",
                             }
                         )
-                        score -= 8
+                        alert_penalty += 8
         except Exception:
             pass
 
     # Cap score
-    score = max(0.0, min(100.0, score))
+    score = max(0.0, min(100.0, score - min(alert_penalty, ALERT_DEDUCTION_CAP)))
 
     # Summarize null cols with high missing
     high_missing_cols = [c["column"] for c in alerts if c.get("type") == "high_missing"]
