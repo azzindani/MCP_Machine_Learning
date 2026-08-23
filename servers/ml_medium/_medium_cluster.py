@@ -87,9 +87,20 @@ def run_clustering(
     numeric_df = numeric_df.replace([np.inf, -np.inf], np.nan)
     null_counts = numeric_df.isna().sum()
     filled_cols = [c for c in numeric_df.columns if null_counts[c] > 0]
+    imputed_values = int(null_counts.sum())
     if filled_cols:
         numeric_df = numeric_df.fillna(numeric_df.median())
-        progress.append(warn(f"Median-filled {len(filled_cols)} column(s) with nulls/inf", ", ".join(filled_cols)))
+        # Count the values, not the columns. "Median-filled 1 column(s)" was
+        # true of 546 imputed rows in a 16,834-row dataset, and how much of the
+        # input was invented is exactly what decides whether the result is worth
+        # trusting. The number goes in the response body too, not only the
+        # progress log, so a caller can act on it.
+        progress.append(
+            warn(
+                f"Median-filled {imputed_values:,} value(s) across {len(filled_cols)} column(s)",
+                ", ".join(filled_cols),
+            )
+        )
 
     x = numeric_df.values
 
@@ -194,6 +205,8 @@ def run_clustering(
         "feature_columns": feature_columns,
         "label_counts": label_counts,
         "silhouette_score": silhouette,
+        # How much of the clustering input was invented rather than measured.
+        "imputed_values": imputed_values,
         "output_path": str(out) if (save_labels or output_path) else "",
         "backup": backup,
         "progress": progress,

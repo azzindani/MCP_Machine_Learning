@@ -63,9 +63,12 @@ def tune_hyperparameters(
     cv: int = 5,
     n_iter: int = 10,
     dry_run: bool = False,
+    output_path: str = "",
 ) -> dict:
     """Tune hyperparameters via grid or random search. search: grid random."""
-    return engine.tune_hyperparameters(file_path, target_column, model, task, search, param_grid, cv, n_iter, dry_run)
+    return engine.tune_hyperparameters(
+        file_path, target_column, model, task, search, param_grid, cv, n_iter, dry_run, output_path
+    )
 
 
 @mcp.tool(

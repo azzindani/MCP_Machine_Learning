@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from shared.handover import make_context, make_handover
+from shared.model_output import resolve_model_path
 
 from ._basic_helpers import (
     ALLOWED_CLASSIFIERS,
@@ -80,6 +81,7 @@ def train_classifier(
     class_weight: str = "",
     return_train_score: bool = False,
     dry_run: bool = False,
+    output_path: str = "",
 ) -> dict:
     """Train classifier on CSV. model: lr svm rf dtc knn nb xgb."""
     progress: list[dict] = []
@@ -274,13 +276,16 @@ def train_classifier(
 
         # --- save model ---
         ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
-        import os as _os
-
-        _override = _os.environ.get("MCP_OUTPUT_DIR")
-        models_dir = Path(_override) if _override else path.parent / ".mcp_models"
+        # The default name carries a wall-clock timestamp, so an identical retry
+        # writes a *second* full model rather than replacing the first -- a
+        # 53.8 MB duplicate per retry of a call that timed out, with no argument
+        # to point anywhere else. Four sibling tools (split_dataset,
+        # run_clustering, batch_predict, export_model) already take an output
+        # path; the two that write the largest artifacts took none.
+        model_path = resolve_model_path(output_path, path, f"{path.stem}_{model}_{ts}.pkl")
+        models_dir = model_path.parent
         models_dir.mkdir(parents=True, exist_ok=True)
-        model_filename = f"{path.stem}_{model}_{ts}.pkl"
-        model_path = models_dir / model_filename
+        model_filename = model_path.name
 
         # snapshot if overwriting
         if model_path.exists():
@@ -367,6 +372,7 @@ def train_regressor(
     test_size: float = 0.2,
     random_state: int = 42,
     dry_run: bool = False,
+    output_path: str = "",
 ) -> dict:
     """Train regressor on CSV. model: lir pr lar rr dtr rfr xgb."""
     progress: list[dict] = []
@@ -503,12 +509,9 @@ def train_regressor(
             progress.append(warn("Suspiciously perfect score", leakage))
 
         ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
-        import os as _os
-
-        _override = _os.environ.get("MCP_OUTPUT_DIR")
-        models_dir = Path(_override) if _override else path.parent / ".mcp_models"
+        model_path = resolve_model_path(output_path, path, f"{path.stem}_{model}_{ts}.pkl")
+        models_dir = model_path.parent
         models_dir.mkdir(parents=True, exist_ok=True)
-        model_path = models_dir / f"{path.stem}_{model}_{ts}.pkl"
 
         if model_path.exists():
             backup = snapshot(str(model_path))
