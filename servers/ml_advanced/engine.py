@@ -343,6 +343,18 @@ def export_model(
         "python_version": metadata.get("python_version", sys.version),
         "sklearn_version": metadata.get("sklearn_version", sklearn.__version__),
         "xgboost_version": xgb.__version__,
+        # The file is not a plain pickle and pickle.load() refuses it with
+        # KeyError: 170. Every model this server writes is HMAC-signed, because
+        # unpickling a caller-supplied path is a remote-code-execution vector;
+        # the signature is a 32-byte SHA-256 prefix ahead of the pickle bytes.
+        # Anyone handed this file needs to know that, and the manifest is the
+        # thing that travels beside it.
+        "file_format": "hmac-signed-pickle",
+        "signature_bytes": 32,
+        "how_to_load": (
+            "This server loads it directly. Elsewhere, skip the first 32 bytes: "
+            "pickle.loads(open(path, 'rb').read()[32:])"
+        ),
     }
     atomic_write_json(manifest_dst, manifest_data)
     progress.append(ok("Exported model", dst_path.name))
@@ -353,6 +365,11 @@ def export_model(
         "op": "export_model",
         "model_path": str(dst_path),
         "manifest_path": str(manifest_dst),
+        "file_format": "hmac-signed-pickle",
+        "how_to_load": (
+            "Loadable by this server as-is. Elsewhere the 32-byte signature "
+            "prefix must be skipped: pickle.loads(open(path, 'rb').read()[32:])"
+        ),
         "backup": backup,
         "progress": progress,
         "token_estimate": 0,

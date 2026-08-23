@@ -126,9 +126,11 @@ def run_clustering(
         if len(x_scaled) > 50_000:
             from sklearn.cluster import MiniBatchKMeans
 
-            clf = MiniBatchKMeans(n_clusters=n_clusters, max_iter=100, random_state=42, batch_size=1024)
+            clf = MiniBatchKMeans(n_clusters=n_clusters, max_iter=100, random_state=42, batch_size=1024, n_init=10)
         else:
-            clf = KMeans(n_clusters=n_clusters, max_iter=100, random_state=42)
+            # Same ten restarts find_optimal_clusters uses, so the k it
+            # recommended and the clustering produced here agree.
+            clf = KMeans(n_clusters=n_clusters, max_iter=100, random_state=42, n_init=10)
         labels = clf.fit_predict(x_scaled)
         inertia = float(clf.inertia_)
         n_found = n_clusters

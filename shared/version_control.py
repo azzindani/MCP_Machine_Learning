@@ -131,6 +131,21 @@ def restore_version(file_path: str, timestamp: str = "") -> dict:
     }
 
 
+def size_kb(n_bytes: int) -> float:
+    """Size in KB, rounded so a file that exists never reports as 0.0.
+
+    round(n / 1024, 1) sends everything under 51 bytes to 0.0, and a sweep
+    checking snapshots read two real 34-byte backups as "size_kb: 0.0" -- which
+    is what an empty file looks like, and this number is what someone decides a
+    restore on. Small files keep enough decimals to stay non-zero; only a
+    genuinely empty file returns 0.0.
+    """
+    if n_bytes <= 0:
+        return 0.0
+    kb = n_bytes / 1024
+    return round(kb, 1) if kb >= 0.1 else round(kb, 3)
+
+
 def list_snapshots(file_path: str) -> list[dict]:
     """List available snapshots for file. Returns [{timestamp, path, size_kb}].
 
@@ -155,7 +170,7 @@ def list_snapshots(file_path: str) -> list[dict]:
             {
                 "timestamp": ts,
                 "path": str(bak),
-                "size_kb": round(bak.stat().st_size / 1024, 1),
+                "size_kb": size_kb(bak.stat().st_size),
             }
         )
 

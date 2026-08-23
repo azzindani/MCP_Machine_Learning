@@ -83,7 +83,7 @@ def export_model(
     dry_run: bool = False,
     return_content: bool = False,
 ) -> dict:
-    """Export trained model with metadata manifest. format: pickle."""
+    """Export model + manifest. Pickle carries a 32-byte signature prefix."""
     return engine.export_model(model_path, output_dir, format, dry_run, return_content)
 
 
