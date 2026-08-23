@@ -3,10 +3,22 @@
 Every tool that writes to disk calls snapshot() before writing.
 Backups are stored in .mcp_versions/ next to the source file.
 
-Naming: {stem}_{timestamp}.bak  where timestamp uses microsecond precision
-plus a counter suffix for collision safety. Format is compatible with
-MCP_Data_Analyst snapshots so both servers' backups coexist in the same
+Naming: {stem}_{timestamp}{ext}.bak  where timestamp uses microsecond precision
+plus a counter suffix for collision safety. Format matches MCP_File_System and
+MCP_Data_Analyst so all three servers' backups coexist in the same
 .mcp_versions/ directory and are cross-restorable.
+
+The extension used to be dropped, and that made one file's history another
+file's history: `report.csv` and `report.docx` in one directory both
+snapshotted to `report_{ts}.bak`, and `list_snapshots` found them with
+`glob(f"{stem}_*.bak")`. Against the live endpoints, restoring a CSV with no
+timestamp returned the newest snapshot under that stem -- the Word document --
+and reported success. The same glob also let `Ad_Data_test.csv`'s snapshots
+answer a query about `Ad_Data.csv`.
+
+Reading stays more forgiving than writing so snapshots taken before this change
+are not stranded, but an extension-less legacy name is only offered when nothing
+else in the directory shares the stem -- exactly where it cannot be ambiguous.
 """
 
 from __future__ import annotations
@@ -17,6 +29,20 @@ import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
 
+# A snapshot name is the stem, an underscore, then a UTC timestamp that always
+# begins with a four-digit year. Globbing `{stem}_*` alone lets a snapshot of
+# `Ad_Data_test.csv` answer a query about `Ad_Data.csv`.
+_TS_GLOB = "[0-9][0-9][0-9][0-9]-*"
+
+
+def _legacy_is_unambiguous(path: Path) -> bool:
+    """True when no other file beside this one shares its stem."""
+    try:
+        siblings = list(path.parent.iterdir())
+    except OSError:
+        return False
+    return not any(p.is_file() and p.stem == path.stem and p.suffix != path.suffix for p in siblings)
+
 
 def snapshot(file_path: str) -> str:
     """Snapshot file to .mcp_versions/ atomically. Returns backup path string.
@@ -26,7 +52,7 @@ def snapshot(file_path: str) -> str:
     be coarser than microseconds). Atomic via temp file + shutil.move so a
     mid-copy crash cannot leave a partial .bak file.
 
-    Backup filename format: {stem}_{ts}.bak  (compatible with DA format).
+    Backup filename format: {stem}_{ts}{ext}.bak  (matches DA and File_System).
 
     Raises:
         FileNotFoundError: source file does not exist
@@ -45,10 +71,12 @@ def snapshot(file_path: str) -> str:
 
     # Microsecond precision; counter suffix handles same-microsecond edge case
     ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%S-%fZ")
-    backup = versions_dir / f"{source.stem}_{ts}.bak"
+    # The extension is part of the name: without it this file's history is
+    # indistinguishable from that of any namesake with a different extension.
+    backup = versions_dir / f"{source.stem}_{ts}{source.suffix}.bak"
     counter = 1
     while backup.exists():
-        backup = versions_dir / f"{source.stem}_{ts}_{counter}.bak"
+        backup = versions_dir / f"{source.stem}_{ts}_{counter}{source.suffix}.bak"
         counter += 1
 
     # Atomic write: copy to temp then rename so crashes leave no partial .bak
@@ -150,8 +178,10 @@ def list_snapshots(file_path: str) -> list[dict]:
     """List available snapshots for file. Returns [{timestamp, path, size_kb}].
 
     Returns [] when no snapshots exist. Never raises.
-    Handles both new format ({stem}_{ts}.bak) and legacy ({stem}_{ts}.csv.bak)
-    so existing snapshots are not lost after upgrading.
+    Matches this file's own `{stem}_{ts}{ext}.bak` snapshots, and the older
+    extension-less `{stem}_{ts}.bak` name only where nothing else in the
+    directory shares the stem, so an upgrade strands nothing and a namesake
+    cannot be mistaken for a version of this file.
     """
     source = Path(file_path).resolve()
     versions_dir = source.parent / ".mcp_versions"
@@ -160,8 +190,11 @@ def list_snapshots(file_path: str) -> list[dict]:
         return []
 
     stem = source.stem
+    found = set(versions_dir.glob(f"{stem}_{_TS_GLOB}{source.suffix}.bak"))
+    if _legacy_is_unambiguous(source):
+        found |= set(versions_dir.glob(f"{stem}_{_TS_GLOB}.bak"))
     results = []
-    for bak in sorted(versions_dir.glob(f"{stem}_*.bak"), reverse=True):
+    for bak in sorted(found, reverse=True):
         # Slice off "stem_" prefix to isolate timestamp
         ts_raw = bak.stem[len(stem) + 1 :]
         # Strip embedded extension for backward compat with old .csv.bak format
