@@ -490,6 +490,12 @@ def apply_fig_theme(fig: object, theme: str) -> None:
 def _open_file(path: str | Path) -> None:
     """Open file in default browser/app. Best-effort, never raises."""
     p = Path(path).resolve()
+    # A test run must never launch a browser. Under Windows the shell handler
+    # reached the COM layer on a CI runner and killed the interpreter mid-suite
+    # with an access violation -- which no `except` here can catch, so the
+    # suite died with no failing test named.
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return
     try:
         import webbrowser
 
@@ -497,7 +503,10 @@ def _open_file(path: str | Path) -> None:
     except Exception:
         try:
             if sys.platform == "win32":
-                os.startfile(str(p))  # type: ignore[attr-defined]
+                # A child process rather than in-process os.startfile(): the
+                # shell handler it invokes can fault, and a fault there must
+                # cost the child, not this server.
+                subprocess.Popen(["cmd", "/c", "start", "", str(p)], shell=False)
             elif sys.platform == "darwin":
                 subprocess.Popen(["open", str(p)])
             else:

@@ -1897,40 +1897,51 @@ from shared.html_theme import _open_file  # noqa: E402
 
 
 class TestOpenFile:
-    """Tests for _open_file() — best-effort browser open."""
+    """Tests for _open_file() — best-effort browser open.
 
-    def test_open_file_with_webbrowser_mock(self, tmp_path):
+    _open_file() now returns immediately when PYTEST_CURRENT_TEST is set: a
+    test run must never launch a browser, and on the Windows runner the shell
+    handler reached the COM layer and killed the interpreter mid-suite with an
+    access violation no `except` could catch. These tests are about what the
+    function does when it *is* allowed to open something, so each one clears
+    that variable first. test_a_test_run_does_not_launch_a_browser.py covers
+    the guard itself.
+    """
+
+    # The delenv has to happen in the test body, not an autouse fixture:
+    # pytest re-sets PYTEST_CURRENT_TEST for each phase, so a value cleared
+    # during setup is back by the time the call phase runs.
+
+    def test_open_file_with_webbrowser_mock(self, tmp_path, monkeypatch):
         """Normal path: webbrowser.open called with file:// URL."""
+        monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
         f = tmp_path / "test.html"
         f.write_text("<html></html>")
         with patch("webbrowser.open") as mock_wb:
             _open_file(str(f))
         mock_wb.assert_called_once()
 
-    def test_open_file_webbrowser_fails_falls_through(self, tmp_path):
+    def test_open_file_webbrowser_fails_falls_through(self, tmp_path, monkeypatch):
         """webbrowser.open raises → platform fallback runs (mocked)."""
+        monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
         f = tmp_path / "test.html"
         f.write_text("<html></html>")
-        import sys
 
+        # subprocess.Popen on every platform now, Windows included: the
+        # in-process os.startfile() it used to call there is exactly what could
+        # take the interpreter down.
         with patch("webbrowser.open", side_effect=Exception("no browser")):
-            if sys.platform == "win32":
-                with patch("os.startfile", create=True):
-                    _open_file(str(f))
-            elif sys.platform == "darwin":
-                with patch("subprocess.Popen"):
-                    _open_file(str(f))
-            else:
-                with patch("subprocess.Popen"):
-                    _open_file(str(f))
+            with patch("subprocess.Popen") as mock_popen:
+                _open_file(str(f))
+        mock_popen.assert_called_once()
 
-    def test_open_file_never_raises(self, tmp_path):
+    def test_open_file_never_raises(self, tmp_path, monkeypatch):
         """Any exception must be silently swallowed."""
+        monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
         with patch("webbrowser.open", side_effect=RuntimeError("blocked")):
-            with patch("os.startfile", side_effect=RuntimeError("blocked"), create=True):
-                with patch("subprocess.Popen", side_effect=RuntimeError("blocked")):
-                    # Should not raise
-                    _open_file(str(tmp_path / "nope.html"))
+            with patch("subprocess.Popen", side_effect=RuntimeError("blocked")):
+                # Should not raise
+                _open_file(str(tmp_path / "nope.html"))
 
 
 # ===========================================================================
