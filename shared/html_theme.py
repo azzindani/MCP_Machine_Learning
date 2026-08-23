@@ -556,6 +556,7 @@ def save_chart(
         page_title,
         css_vars(theme),
         device_mode_js() if theme == "device" else "",
+        chart_height=getattr(fig.layout, "height", None),
     )
 
     atomic_write_text(out, html)
