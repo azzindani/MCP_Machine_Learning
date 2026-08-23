@@ -41,6 +41,7 @@ from ._medium_helpers import (
     snapshot,
     sys,
     train_test_split,
+    typical_row,
     warn,
 )
 
@@ -118,6 +119,9 @@ def train_with_cv(
         resp["token_estimate"] = len(str(resp)) // 4
         return resp
 
+    # Keep the pre-encoding frame: typical_row() below has to offer the panel
+    # the dataset's own labels ("Google Ads"), not the integers encoding made.
+    df_raw = df
     df, encoding_map, _ = _auto_preprocess(df, target_column)
     x = df.drop(columns=[target_column]).values
     y = df[target_column].values
@@ -214,6 +218,7 @@ def train_with_cv(
         "encoding_map": encoding_map,
         "cv_splits": n_splits,
         "cv_mean_metrics": mean_metrics,
+        "feature_defaults": typical_row(df_raw, list(df.drop(columns=[target_column]).columns)),
         "python_version": sys.version,
         "sklearn_version": sklearn.__version__,
     }
@@ -358,6 +363,9 @@ def compare_models(
         resp["token_estimate"] = len(str(resp)) // 4
         return resp
 
+    # Keep the pre-encoding frame: typical_row() below has to offer the panel
+    # the dataset's own labels ("Google Ads"), not the integers encoding made.
+    df_raw = df
     df, encoding_map, _ = _auto_preprocess(df, target_column)
     x = df.drop(columns=[target_column]).values
     y = df[target_column].values
@@ -425,6 +433,7 @@ def compare_models(
             "target_column": target_column,
             "encoding_map": encoding_map,
             "metrics": metrics_best,
+            "feature_defaults": typical_row(df_raw, list(df.drop(columns=[target_column]).columns)),
             "python_version": sys.version,
             "sklearn_version": sklearn.__version__,
         }
