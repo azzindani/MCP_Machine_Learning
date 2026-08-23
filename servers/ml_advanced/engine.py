@@ -22,7 +22,7 @@ from shared.file_utils import atomic_write_json, atomic_write_text, embed_conten
 from shared.file_utils import read_csv as _read_csv
 from shared.handover import make_context, make_handover
 from shared.html_layout import get_output_path as _get_output_path
-from shared.ml_utils import leakage_warning
+from shared.ml_utils import leakage_warning, typical_row
 from shared.model_js import ModelNotEmbeddable, prediction_panel
 from shared.model_js import build_payload as build_model_payload
 from shared.platform_utils import get_cv_folds, get_n_iter, is_constrained_mode
@@ -160,6 +160,9 @@ def tune_hyperparameters(
         resp["token_estimate"] = len(str(resp)) // 4
         return resp
 
+    # Keep the pre-encoding frame: typical_row() below has to offer the panel
+    # the dataset's own labels ("Google Ads"), not the integers encoding made.
+    df_raw = df
     df, encoding_map, _ = _auto_preprocess(df, target_column)
     x = df.drop(columns=[target_column]).values
     y = df[target_column].values
@@ -219,6 +222,7 @@ def tune_hyperparameters(
         "best_score": float(searcher.best_score_),
         "search_type": search,
         "metrics": {"best_score": float(searcher.best_score_)},
+        "feature_defaults": typical_row(df_raw, list(df.drop(columns=[target_column]).columns)),
         "python_version": sys.version,
         "sklearn_version": sklearn.__version__,
     }

@@ -37,7 +37,7 @@ from shared.file_utils import get_output_dir, resolve_path
 from shared.file_utils import read_csv as _read_csv
 from shared.html_layout import get_output_path
 from shared.html_theme import _open_file, save_chart
-from shared.ml_utils import _auto_preprocess, leakage_warning
+from shared.ml_utils import _auto_preprocess, leakage_warning, typical_row
 from shared.platform_utils import get_cv_folds, get_max_models
 from shared.progress import fail, info, ok, warn
 from shared.receipt import append_receipt, read_receipt_log
@@ -485,6 +485,7 @@ def _apply_op(df: pd.DataFrame, op: dict) -> tuple[pd.DataFrame, dict]:
 
 __all__ = [
     "leakage_warning",
+    "typical_row",
     # re-exports from shared
     "get_output_dir",
     "get_output_path",
