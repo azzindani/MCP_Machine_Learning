@@ -18,7 +18,7 @@ from shared.progress import info, ok
 from shared.progress import name as pname
 from shared.receipt import append_receipt
 from shared.version_control import restore_version as _restore_version
-from shared.version_control import snapshot
+from shared.version_control import size_kb, snapshot
 
 from ._basic_helpers import (
     Path,
@@ -343,7 +343,7 @@ def list_models(directory: str = "") -> dict:
         entry: dict = {
             "path": str(pkl),
             "name": pkl.name,
-            "size_kb": round(pkl.stat().st_size / 1024, 1),
+            "size_kb": size_kb(pkl.stat().st_size),
             "modified": pkl.stat().st_mtime,
         }
         if manifest.exists():

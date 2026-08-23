@@ -6,6 +6,7 @@ import pandas as pd
 
 from shared.file_utils import atomic_write_text, embed_content
 from shared.handover import make_context, make_handover
+from shared.version_control import size_kb
 
 from ._medium_helpers import (
     ALERT_DEDUCTION_CAP,
@@ -571,7 +572,7 @@ def generate_eda_report(
     if open_after:
         _open_file(out_path)
 
-    file_size_kb = out_path.stat().st_size // 1024
+    file_size_kb = size_kb(out_path.stat().st_size)
     append_receipt(str(path), "generate_eda_report", {"theme": theme, "target_column": target_column}, "success", "")
 
     resp = {

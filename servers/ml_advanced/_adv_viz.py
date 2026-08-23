@@ -13,6 +13,7 @@ from shared.file_utils import read_csv as _read_csv
 from shared.handover import make_context, make_handover
 from shared.html_theme import apply_fig_theme, calc_chart_height, get_theme, plotly_template
 from shared.model_signing import load_signed
+from shared.platform_utils import get_fit_n_jobs, get_learning_curve_row_cap
 from shared.progress import info, ok, warn
 
 from ._adv_helpers import _save_chart, get_output_path, resolve_path
@@ -329,6 +330,7 @@ def plot_learning_curve(
             le = LabelEncoder()
             df[col] = le.fit_transform(df[col].astype(str))
         X = df.drop(columns=[target_column]).select_dtypes(include="number").fillna(0)
+        n_source_rows = len(X)
 
         # Build estimator
         CLASSIFIERS = {
@@ -360,8 +362,22 @@ def plot_learning_curve(
         scoring = "accuracy" if task == "classification" else "r2"
         train_sizes = np.linspace(0.1, 1.0, 10)
 
+        # Ten sizes against `cv` folds is fifty fits of the estimator. On the
+        # full 16,834-row reference dataset that ran past the MCP request
+        # timeout and returned nothing at all -- and this is the only call in
+        # the repo that asked for every core, in a 1 GiB container where each
+        # worker holds its own copy of the data. Sample down and say so; the
+        # curve's shape is the answer, and it is drawn from fractions of the
+        # training set regardless.
+        row_cap = get_learning_curve_row_cap()
+        sampled = len(X) > row_cap
+        if sampled:
+            idx = np.random.RandomState(42).choice(len(X), row_cap, replace=False)
+            X, y = X.iloc[idx], y.iloc[idx]
+            progress.append(warn("Sampled for speed", f"{row_cap} of {n_source_rows} rows, seed 42"))
+
         train_sizes_abs, train_scores, val_scores = learning_curve(  # type: ignore[misc]
-            estimator, X, y, cv=cv, scoring=scoring, train_sizes=train_sizes, n_jobs=-1
+            estimator, X, y, cv=cv, scoring=scoring, train_sizes=train_sizes, n_jobs=get_fit_n_jobs()
         )
         progress.append(ok("Computed learning curves", f"{len(train_sizes_abs)} points"))
 
@@ -415,6 +431,12 @@ def plot_learning_curve(
             "final_train_score": round(float(train_mean[-1]), 4),
             "final_val_score": round(float(val_mean[-1]), 4),
             "scoring": scoring,
+            # A score computed on a sample is not the score on the file, and
+            # the caller cannot tell from the chart. Say it in the payload, not
+            # only in the progress log.
+            "rows_used": int(len(X)),
+            "rows_in_file": int(n_source_rows),
+            "sampled": bool(sampled),
             "progress": progress,
             "token_estimate": 0,
         }
@@ -423,6 +445,11 @@ def plot_learning_curve(
             f"Plotted learning curve for {model} ({task}) on {dp.name}: val={round(float(val_mean[-1]), 3)}",
             [{"type": "report", "path": out_abs, "role": "learning_curve_chart"}],
         )
+        if sampled:
+            resp["hint"] = (
+                f"Scores are from a {len(X)}-row sample of {n_source_rows} (seed 42). "
+                "Fifty estimator fits on the whole file runs past the request timeout."
+            )
         resp["handover"] = make_handover(
             workflow_step="REPORT",
             suggested_next=["tune_hyperparameters", "generate_training_report", "compare_models"],

@@ -53,3 +53,27 @@ def get_sklearn_working_memory_mb() -> int:
 def get_silhouette_sample_cap() -> int:
     """Rows to sample before scoring — silhouette is O(n^2) in the sample."""
     return 2_000 if is_constrained_mode() else 10_000
+
+
+def get_learning_curve_row_cap() -> int:
+    """Rows to sample before drawing a learning curve.
+
+    learning_curve() fits the estimator train_sizes x cv times -- ten sizes
+    against five folds is fifty fits. On the full 16,834-row reference dataset
+    with a 50-tree forest that exceeded the MCP request timeout outright
+    (`MCP error -32001`), and it is the shape of the curve that carries the
+    answer, not the last thousand rows.
+    """
+    return 2_000 if is_constrained_mode() else 5_000
+
+
+def get_fit_n_jobs() -> int:
+    """Worker processes for a parallel sklearn fit.
+
+    n_jobs=-1 takes every core, and each worker holds its own copy of the data
+    and the model. These servers run in a 1 GiB container with four CPUs, where
+    that is the same mistake as sklearn's 1024 MB working_memory default -- see
+    get_sklearn_working_memory_mb, which was written after an OOM kill took all
+    three ML sub-servers down mid-sweep.
+    """
+    return 1 if is_constrained_mode() else 2

@@ -12,6 +12,7 @@ from shared.handover import make_context, make_handover
 from shared.platform_utils import get_max_columns, get_max_results, get_max_rows
 from shared.progress import name as pname
 from shared.progress import ok
+from shared.version_control import size_kb
 
 from ._basic_helpers import _confusion_dict, _error
 from ._basic_predict import (
@@ -86,7 +87,7 @@ def inspect_dataset(file_path: str) -> dict:
             "file": pname(file_path),
             "row_count": len(df),
             "column_count": len(all_columns),
-            "file_size_kb": round(path.stat().st_size / 1024, 1),
+            "file_size_kb": size_kb(path.stat().st_size),
             "columns": col_info,
             "target_candidates": target_candidates[: get_max_results()],
             "truncated": truncated,
