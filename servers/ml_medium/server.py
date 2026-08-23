@@ -14,12 +14,16 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 try:
+    from shared.arg_alias import missing_list, pick_list
     from shared.deploy_auth import build_oauth_bridge, build_token_verifier
+    from shared.progress import info
 
     from . import engine
 except ImportError:
     from servers.ml_medium import engine
+    from shared.arg_alias import missing_list, pick_list
     from shared.deploy_auth import build_oauth_bridge, build_token_verifier
+    from shared.progress import info
 
 _VERSION = "0.1.1"  # keep in sync with pyproject.toml [project].version
 
@@ -74,13 +78,20 @@ def run_preprocessing(
 )
 def detect_outliers(
     file_path: str,
-    columns: list[str],
+    columns: list[str] = [],
     method: str = "iqr",
     th1: float = 0.25,
     th3: float = 0.75,
+    feature_columns: list[str] = [],
 ) -> dict:
-    """Detect outliers in numeric columns. method: iqr std."""
-    return engine.detect_outliers(file_path, columns, method, th1, th3)
+    """Detect outliers in columns. feature_columns= also accepted. iqr or std."""
+    chosen, note = pick_list("detect_outliers", "columns", columns, feature_columns)
+    if not chosen:
+        return missing_list("detect_outliers", "columns", "feature_columns")
+    result = engine.detect_outliers(file_path, chosen, method, th1, th3)
+    if note:
+        result.setdefault("progress", []).append(info(note))
+    return result
 
 
 @mcp.tool(
