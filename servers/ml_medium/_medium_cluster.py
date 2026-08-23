@@ -19,6 +19,7 @@ from ._medium_helpers import (
     _error,
     _read_csv,
     append_receipt,
+    bounded_silhouette,
     ok,
     read_receipt_log,
     resolve_path,
@@ -148,24 +149,19 @@ def run_clustering(
     label_counts = {str(int(u)): int(c) for u, c in zip(unique, counts)}
     progress.append(ok(f"Clustered with {algorithm}", f"{n_found} clusters"))
 
-    # Silhouette score (needs at least 2 clusters and not all noise)
-    # Subsample for large datasets — silhouette_score is O(n²)
+    # Silhouette score (needs at least 2 clusters and not all noise).
+    # The sample cap was here already; the other half of the cost was not.
+    # sklearn's `working_memory` defaults to 1024 MB -- the whole container --
+    # and this call peaked at 962 MB of a 1 GiB cap, got OOM-killed, and took
+    # all three ML sub-servers with it. bounded_silhouette caps both.
     silhouette = None
     if n_found >= 2 and len(set(labels)) >= 2:
         try:
-            from sklearn.metrics import silhouette_score
-
             non_noise = labels != -1
             x_sil = x_scaled[non_noise]
             l_sil = labels[non_noise]
             if len(x_sil) > n_found:
-                sil_cap = min(len(x_sil), 10_000)
-                if len(x_sil) > sil_cap:
-                    rng = np.random.RandomState(42)
-                    idx = rng.choice(len(x_sil), sil_cap, replace=False)
-                    x_sil = x_sil[idx]
-                    l_sil = l_sil[idx]
-                silhouette = round(float(silhouette_score(x_sil, l_sil)), 4)
+                silhouette = bounded_silhouette(x_sil, l_sil)
         except Exception:
             pass
 

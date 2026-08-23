@@ -130,3 +130,36 @@ def _auto_preprocess(df: pd.DataFrame, target_column: str) -> tuple[pd.DataFrame
         df[num_cols] = df[num_cols].fillna(medians)
 
     return df, encoding_map, encoded_cols
+
+
+def bounded_silhouette(x, labels, cap: int | None = None, random_state: int = 42) -> float | None:
+    """silhouette_score with both of its costs bounded, or None if not scoreable.
+
+    Two separate budgets, and only one of them was set. The sample cap keeps the
+    O(n^2) comparison count down; sklearn's `working_memory` caps the chunk it
+    allocates while doing it, and that one defaults to 1024 MB -- the entire
+    memory limit of the container. A single run_clustering call on the 16,834-row
+    fixture peaked at 962 MB of a 1 GiB cap and the kernel killed the process,
+    which took ml_basic, ml_medium and ml_advanced down together. Same score at
+    64 MB, a quarter of the memory.
+    """
+    import numpy as np
+    import sklearn
+    from sklearn.metrics import silhouette_score
+
+    from shared.platform_utils import get_silhouette_sample_cap, get_sklearn_working_memory_mb
+
+    labels = np.asarray(labels)
+    if len(set(labels.tolist())) < 2:
+        return None
+
+    sample_cap = cap or get_silhouette_sample_cap()
+    if len(x) > sample_cap:
+        rng = np.random.RandomState(random_state)
+        idx = rng.choice(len(x), sample_cap, replace=False)
+        x, labels = x[idx], labels[idx]
+        if len(set(labels.tolist())) < 2:
+            return None
+
+    with sklearn.config_context(working_memory=get_sklearn_working_memory_mb()):
+        return round(float(silhouette_score(x, labels)), 4)
