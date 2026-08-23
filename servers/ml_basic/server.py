@@ -179,8 +179,8 @@ def restore_version(file_path: str, timestamp: str = "") -> dict:
 
 
 @mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False})
-def predict_single(model_path: str, input_data: str) -> dict:
-    """Predict on one JSON record. No CSV file needed."""
+def predict_single(model_path: str, input_data: str | dict) -> dict:
+    """Predict on one record: a JSON string or an object. No CSV needed."""
     return engine.predict_single(model_path, input_data)
 
 

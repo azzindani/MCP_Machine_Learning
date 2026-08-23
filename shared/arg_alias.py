@@ -52,3 +52,31 @@ def missing_list(op: str, field: str, alias: str) -> dict:
         "progress": [],
         "token_estimate": 20,
     }
+
+
+def pick(op: str, field: str, primary: str, alias: str) -> tuple[str, str]:
+    """Resolve a string argument given under either spelling.
+
+    Same contract as pick_list, for the scalar case: evaluate_model names its
+    CSV `test_file_path` while get_predictions and batch_predict both call it
+    `file_path`, so a caller chaining train -> evaluate writes the majority
+    spelling and pydantic refuses before the server can say which it wanted.
+    """
+    chosen = (primary or "").strip() or (alias or "").strip()
+    if not chosen:
+        return "", ""
+    if not (primary or "").strip():
+        return chosen, f"Read {field} from the alias spelling; {field}= is the documented one"
+    return chosen, ""
+
+
+def missing(op: str, field: str, alias: str) -> dict:
+    """The error dict for a string argument given under neither spelling."""
+    return {
+        "success": False,
+        "op": op,
+        "error": f"{op} needs a {field}",
+        "hint": f"Pass {field}=. The spelling {alias}= is also accepted.",
+        "progress": [],
+        "token_estimate": 20,
+    }

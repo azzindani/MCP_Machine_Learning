@@ -14,14 +14,14 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 try:
-    from shared.arg_alias import missing_list, pick_list
+    from shared.arg_alias import missing, missing_list, pick, pick_list
     from shared.deploy_auth import build_oauth_bridge, build_token_verifier
     from shared.progress import info
 
     from . import engine
 except ImportError:
     from servers.ml_medium import engine
-    from shared.arg_alias import missing_list, pick_list
+    from shared.arg_alias import missing, missing_list, pick, pick_list
     from shared.deploy_auth import build_oauth_bridge, build_token_verifier
     from shared.progress import info
 
@@ -276,11 +276,24 @@ def check_data_quality(file_path: str) -> dict:
 )
 def evaluate_model(
     model_path: str,
-    test_file_path: str,
-    target_column: str,
+    test_file_path: str = "",
+    target_column: str = "",
+    file_path: str = "",
 ) -> dict:
-    """Score saved model on labeled test CSV. Returns metrics dict."""
-    return engine.evaluate_model(model_path, test_file_path, target_column)
+    """Score model on a labeled CSV. test_file_path= or file_path=."""
+    # get_predictions and batch_predict both name this `file_path`, so a caller
+    # chaining train -> evaluate writes that and pydantic refuses the call
+    # before this server can say which name it wanted. test_file_path keeps its
+    # original position so a positional caller still binds it correctly.
+    chosen, note = pick("evaluate_model", "test_file_path", test_file_path, file_path)
+    if not chosen:
+        return missing("evaluate_model", "test_file_path", "file_path")
+    if not target_column.strip():
+        return missing("evaluate_model", "target_column", "target_column")
+    result = engine.evaluate_model(model_path, chosen, target_column)
+    if note:
+        result.setdefault("progress", []).append(info(note))
+    return result
 
 
 @mcp.tool(
