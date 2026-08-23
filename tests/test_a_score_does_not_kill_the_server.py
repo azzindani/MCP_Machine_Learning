@@ -28,8 +28,8 @@ a container sized for a tool.
 
 from __future__ import annotations
 
-import resource
 import shutil
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -40,6 +40,16 @@ from servers.ml_medium.engine import find_optimal_clusters, run_clustering
 from shared.ml_utils import bounded_silhouette
 from shared.platform_utils import get_silhouette_sample_cap, get_sklearn_working_memory_mb
 
+# `resource` is POSIX-only. The budget and helper tests below are pure Python
+# and matter on every platform, so only the two that actually weigh the process
+# are skipped on Windows -- importing at module scope took the whole file down.
+try:
+    import resource
+except ImportError:  # pragma: no cover - Windows
+    resource = None  # type: ignore[assignment]
+
+needs_rusage = pytest.mark.skipif(resource is None, reason="resource is POSIX-only")
+
 FIXTURES = Path(__file__).parent / "fixtures"
 # The container these run in is capped at 1 GiB and holds ~300 MB before a tool
 # is called, so a single call has to stay well under half of it.
@@ -47,7 +57,16 @@ PEAK_CEILING_MB = 450
 
 
 def peak_rss_mb() -> float:
-    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+    """Peak RSS in MB, in the unit the running kernel reports it.
+
+    ru_maxrss is kilobytes on Linux and bytes on macOS and the BSDs. Dividing
+    by 1024 unconditionally read a healthy 331 MB macOS run as "339408 MB" and
+    failed CI on a server that was never in trouble.
+    """
+    assert resource is not None
+    peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    divisor = 1024 * 1024 if sys.platform == "darwin" else 1024
+    return peak / divisor
 
 
 @pytest.fixture()
@@ -112,6 +131,7 @@ class TestTheHelperBoundsWhatItAllocates:
 
 
 class TestTheToolsStayInsideTheContainer:
+    @needs_rusage
     def test_run_clustering_peaks_well_below_the_cap(self, clustering_csv: str):
         r = run_clustering(
             clustering_csv,
@@ -131,6 +151,7 @@ class TestTheToolsStayInsideTheContainer:
         )
         assert isinstance(r["silhouette_score"], float), r["silhouette_score"]
 
+    @needs_rusage
     def test_find_optimal_clusters_scores_every_k_within_the_cap(self, clustering_csv: str):
         """Seven silhouette calls in a loop, not one."""
         r = find_optimal_clusters(clustering_csv, feature_columns=["spends", "impressions", "clicks"], max_k=8)
@@ -153,3 +174,47 @@ class TestNoSiteCallsSilhouetteDirectly:
             if "silhouette_score(" in text and "bounded_silhouette" not in text:
                 offenders.append(str(py.relative_to(root)))
         assert not offenders, offenders
+
+
+class TestNothingImportsAPosixOnlyModuleAtModuleScope:
+    """CI runs ubuntu, macos and windows. A POSIX-only import at the top of a
+    test file is not one skipped test -- it is a collection error that takes
+    the whole file down, which is how the first version of this file failed
+    Windows while passing locally.
+    """
+
+    POSIX_ONLY = ("resource", "fcntl", "pwd", "grp", "termios", "posix")
+
+    def module_scope_imports(self, path: Path) -> set[str]:
+        import ast
+
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        names: set[str] = set()
+        for node in tree.body:  # module scope only -- a guarded import is nested
+            if isinstance(node, ast.Import):
+                names.update(a.name.split(".")[0] for a in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                names.add(node.module.split(".")[0])
+        return names
+
+    def test_no_test_module_does(self):
+        offenders = []
+        for py in sorted(Path(__file__).parent.glob("test_*.py")):
+            hits = self.module_scope_imports(py) & set(self.POSIX_ONLY)
+            if hits:
+                offenders.append(f"{py.name}: {sorted(hits)}")
+        assert not offenders, offenders
+
+    def test_no_shipped_module_does_either(self):
+        root = Path(__file__).parent.parent
+        offenders = []
+        for py in list((root / "servers").rglob("*.py")) + list((root / "shared").rglob("*.py")):
+            hits = self.module_scope_imports(py) & set(self.POSIX_ONLY)
+            if hits:
+                offenders.append(f"{py.relative_to(root)}: {sorted(hits)}")
+        assert not offenders, offenders
+
+    def test_this_file_still_measures_memory_somewhere(self):
+        """The guard must not be satisfied by deleting the measurement."""
+        text = Path(__file__).read_text(encoding="utf-8")
+        assert "getrusage" in text and "needs_rusage" in text
