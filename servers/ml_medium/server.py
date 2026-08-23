@@ -110,9 +110,10 @@ def train_with_cv(
     n_splits: int = 5,
     random_state: int = 42,
     dry_run: bool = False,
+    output_path: str = "",
 ) -> dict:
     """Train with K-fold CV. Returns per-fold and mean scores."""
-    return engine.train_with_cv(file_path, target_column, model, task, n_splits, random_state, dry_run)
+    return engine.train_with_cv(file_path, target_column, model, task, n_splits, random_state, dry_run, output_path)
 
 
 @mcp.tool(
@@ -131,9 +132,10 @@ def compare_models(
     test_size: float = 0.2,
     random_state: int = 42,
     dry_run: bool = False,
+    output_path: str = "",
 ) -> dict:
     """Train multiple models, return sorted comparison table."""
-    return engine.compare_models(file_path, target_column, task, models, test_size, random_state, dry_run)
+    return engine.compare_models(file_path, target_column, task, models, test_size, random_state, dry_run, output_path)
 
 
 @mcp.tool(

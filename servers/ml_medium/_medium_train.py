@@ -12,6 +12,7 @@ import sklearn
 
 from shared.file_utils import apply_default_mode, atomic_write_json
 from shared.handover import make_context, make_handover
+from shared.model_output import resolve_model_path
 from shared.model_signing import dump_signed
 
 from ._medium_helpers import (
@@ -59,6 +60,7 @@ def train_with_cv(
     n_splits: int = 5,
     random_state: int = 42,
     dry_run: bool = False,
+    output_path: str = "",
 ) -> dict:
     """Train with K-fold cross-validation. Returns per-fold and mean scores."""
     progress: list[dict] = []
@@ -187,10 +189,11 @@ def train_with_cv(
     ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
     import os as _os
 
-    _override = _os.environ.get("MCP_OUTPUT_DIR")
-    models_dir = Path(_override) if _override else path.parent / ".mcp_models"
+    # A wall-clock name means an identical retry writes a second 7 MB model
+    # instead of replacing the first. See shared/model_output.py.
+    model_path = resolve_model_path(output_path, path, f"{path.stem}_{model}_cv_{ts}.pkl")
+    models_dir = model_path.parent
     models_dir.mkdir(parents=True, exist_ok=True)
-    model_path = models_dir / f"{path.stem}_{model}_cv_{ts}.pkl"
     manifest_path = model_path.with_suffix(".manifest.json")
 
     backup = ""
@@ -301,6 +304,7 @@ def compare_models(
     test_size: float = 0.2,
     random_state: int = 42,
     dry_run: bool = False,
+    output_path: str = "",
 ) -> dict:
     """Train multiple models, return sorted comparison table."""
     progress: list[dict] = []
@@ -412,10 +416,9 @@ def compare_models(
         ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
         import os as _os
 
-        _override = _os.environ.get("MCP_OUTPUT_DIR")
-        models_dir = Path(_override) if _override else path.parent / ".mcp_models"
+        mp = resolve_model_path(output_path, path, f"{path.stem}_{best}_best_{ts}.pkl")
+        models_dir = mp.parent
         models_dir.mkdir(parents=True, exist_ok=True)
-        mp = models_dir / f"{path.stem}_{best}_best_{ts}.pkl"
 
         if mp.exists():
             try:

@@ -25,7 +25,14 @@ from shared.html_layout import get_output_path as _get_output_path
 from shared.ml_utils import leakage_warning, typical_row
 from shared.model_js import ModelNotEmbeddable, prediction_panel
 from shared.model_js import build_payload as build_model_payload
-from shared.platform_utils import get_cv_folds, get_n_iter, is_constrained_mode
+from shared.model_output import resolve_model_path
+from shared.platform_utils import (
+    get_cv_folds,
+    get_max_columns,
+    get_max_feature_importance,
+    get_n_iter,
+    is_constrained_mode,
+)
 from shared.progress import info, ok, warn
 from shared.progress import name as pname
 from shared.receipt import append_receipt
@@ -68,6 +75,7 @@ def tune_hyperparameters(
     cv: int = 5,
     n_iter: int = 10,
     dry_run: bool = False,
+    output_path: str = "",
 ) -> dict:
     """Tune hyperparameters via grid or random search. search: grid random."""
     progress: list[dict] = []
@@ -198,10 +206,12 @@ def tune_hyperparameters(
     ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
     import os as _os
 
-    _override = _os.environ.get("MCP_OUTPUT_DIR")
-    models_dir = Path(_override) if _override else path.parent / ".mcp_models"
+    # The most expensive call on the fleet, so the likeliest to time out and be
+    # retried -- and every retry used to leave another model. See
+    # shared/model_output.py.
+    mp = resolve_model_path(output_path, path, f"{path.stem}_{model}_tuned_{ts}.pkl")
+    models_dir = mp.parent
     models_dir.mkdir(parents=True, exist_ok=True)
-    mp = models_dir / f"{path.stem}_{model}_tuned_{ts}.pkl"
 
     backup = ""
     if mp.exists():
@@ -418,17 +428,32 @@ def read_model_report(model_path: str) -> dict:
     metrics = metadata.get("metrics", {})
     feature_columns = metadata.get("feature_columns", [])
 
+    # Sorting by importance and showing the top few is the right thing to do.
+    # Doing it without saying so is not: the fixture model has 15 features, ten
+    # were listed, and their importances sum to 0.9456 -- which reads as 5.4%
+    # of unexplained noise in the model rather than as five features nobody was
+    # told about.
+    shown = get_max_feature_importance()
     feature_importance: list[dict] = []
+    fi_total = 0
     if model_obj is not None and hasattr(model_obj, "feature_importances_"):
         importances = model_obj.feature_importances_
-        fi_pairs = sorted(zip(feature_columns, importances.tolist()), key=lambda x: x[1], reverse=True)[:10]
-        feature_importance = [{"feature": f, "importance": round(i, 4)} for f, i in fi_pairs]
+        ranked = sorted(zip(feature_columns, importances.tolist()), key=lambda x: x[1], reverse=True)
+        fi_total = len(ranked)
+        feature_importance = [{"feature": f, "importance": round(i, 4)} for f, i in ranked[:shown]]
 
     confusion = metrics.get("confusion_matrix", {})
 
+    # No producer in this repo writes metadata["classification_report"], so on
+    # every real model this was "" -- a field that says "this model has no
+    # classification report" when what is true is that nothing ever fills it.
+    # It survived because the only test covering it hand-built the metadata
+    # with the key already present. Carried only when something is there.
     clf_report = metadata.get("classification_report", "")
     if clf_report and len(clf_report) > 500:
         clf_report = clf_report[:500]
+
+    max_cols = get_max_columns()
 
     manifest_path = path.with_suffix(".manifest.json")
     manifest_data: dict = {}
@@ -446,16 +471,36 @@ def read_model_report(model_path: str) -> dict:
         "task": task,
         "trained_on": metadata.get("trained_on", ""),
         "training_date": metadata.get("training_date", ""),
-        "feature_columns": feature_columns[:20],
+        "feature_columns": feature_columns[:max_cols],
+        "feature_columns_total": len(feature_columns),
         "target_column": metadata.get("target_column", ""),
         "metrics": metrics,
         "confusion_matrix": confusion,
         "feature_importance": feature_importance,
-        "classification_report": clf_report,
+        "feature_importance_total": fi_total,
+        "feature_importance_truncated": fi_total > len(feature_importance),
         "manifest": manifest_data,
         "progress": progress,
         "token_estimate": 0,
     }
+    if fi_total > len(feature_importance):
+        listed = sum(d["importance"] for d in feature_importance)
+        resp["feature_importance_note"] = (
+            f"Top {len(feature_importance)} of {fi_total} features by importance; "
+            f"they account for {listed:.4f} of 1.0, and the rest is spread over the "
+            f"{fi_total - len(feature_importance)} not listed."
+        )
+    if clf_report:
+        resp["classification_report"] = clf_report
+    if not confusion:
+        # An empty dict under success: true is indistinguishable from a matrix
+        # that happens to be empty. Every model tune_hyperparameters saves reads
+        # back this way -- it records best_score and nothing else.
+        resp["confusion_matrix_note"] = (
+            "This model carries no confusion matrix: only train_classifier() records one. "
+            "Retrain with train_classifier(), or use evaluate_model() to score this model "
+            "against a held-out file."
+        )
     resp["context"] = make_context(
         "read_model_report",
         f"Read report for {path.name}: {task}, {model_type}, metrics={list(metrics.keys())}",
@@ -678,9 +723,20 @@ def apply_dimensionality_reduction(
     feat_df = df[feature_columns].replace([np.inf, -np.inf], np.nan)
     null_counts = feat_df.isna().sum()
     filled_cols = [c for c in feat_df.columns if null_counts[c] > 0]
+    imputed_values = int(null_counts.sum())
     if filled_cols:
         feat_df = feat_df.fillna(feat_df.median())
-        progress.append(warn(f"Median-filled {len(filled_cols)} column(s) with nulls/inf", ", ".join(filled_cols)))
+        # Count the values, not the columns. "Median-filled 1 column(s)" was
+        # true of 546 imputed rows in a 16,834-row dataset, and how much of the
+        # input was invented is exactly what decides whether the result is worth
+        # trusting. The number goes in the response body too, not only the
+        # progress log, so a caller can act on it.
+        progress.append(
+            warn(
+                f"Median-filled {imputed_values:,} value(s) across {len(filled_cols)} column(s)",
+                ", ".join(filled_cols),
+            )
+        )
 
     x = feat_df.values
     scaler = StandardScaler()
@@ -711,6 +767,8 @@ def apply_dimensionality_reduction(
         "op": "apply_dimensionality_reduction",
         "method": method,
         "n_components": n_components,
+        # How much of the input was invented rather than measured.
+        "imputed_values": imputed_values,
         "feature_columns": feature_columns,
         "output_path": str(out_path),
         "output_name": out_path.name,

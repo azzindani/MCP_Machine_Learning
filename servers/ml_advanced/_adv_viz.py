@@ -915,6 +915,16 @@ def generate_cluster_report(
             "output_path": str(out),
             "output_name": out.name,
             "n_clusters": n_clusters,
+            # This tool reports on labels that already exist; it does not
+            # cluster. Round 11 read `n_clusters: 4` off a run whose
+            # label_column was a raw categorical and spent a phase concluding
+            # the tool silently grouped by the label instead of clustering the
+            # features -- which is what it is for, but nothing in the response
+            # said where the groups came from.
+            "label_column": label_column,
+            "labels_source": (
+                f"distinct values of '{label_column}', read as-is; run_clustering(save_labels=True) writes that column"
+            ),
             "n_samples": len(df),
             "sections_generated": len(sections),
             "progress": progress,

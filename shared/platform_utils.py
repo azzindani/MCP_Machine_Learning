@@ -26,6 +26,16 @@ def get_max_columns() -> int:
     return 20 if is_constrained_mode() else 50
 
 
+def get_max_feature_importance() -> int:
+    """Features to list, ranked by importance, in a model report.
+
+    read_model_report cut this at a hardcoded 10 and said nothing, so a
+    15-feature model came back with importances summing to 0.9456 and no way
+    to tell that from a model with 5.4% of unexplained noise in it.
+    """
+    return 5 if is_constrained_mode() else 10
+
+
 def get_cv_folds() -> int:
     return 3 if is_constrained_mode() else 5
 
