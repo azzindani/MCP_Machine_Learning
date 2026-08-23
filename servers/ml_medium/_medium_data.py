@@ -859,6 +859,18 @@ def batch_predict(
         df.to_csv(out, index=False)
         progress.append(ok("Saved predictions", out.name))
 
+        # filter_rows, run_preprocessing and run_clustering on this server all
+        # log; batch_predict did not, so the one tool that can overwrite an
+        # existing file with model output -- and takes a snapshot before doing
+        # it -- left nothing in the log that read_receipt reads.
+        append_receipt(
+            str(out),
+            "batch_predict",
+            {"model_path": model_path, "file_path": file_path},
+            f"wrote {len(preds):,} prediction(s)",
+            backup,
+        )
+
         # Distribution summary
         if task == "classification":
             dist = {str(k): int(v) for k, v in pd.Series(preds).value_counts().sort_index().items()}
