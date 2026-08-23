@@ -17,6 +17,7 @@ from ._medium_helpers import (
     _read_csv,
     _save_chart,
     append_receipt,
+    bounded_silhouette,
     get_output_dir,
     info,
     ok,
@@ -304,7 +305,6 @@ def find_optimal_clusters(
     from plotly.subplots import make_subplots
     from sklearn.cluster import KMeans as _KMeans
     from sklearn.cluster import MiniBatchKMeans as _MBKMeans
-    from sklearn.metrics import silhouette_score
 
     from shared.html_theme import calc_chart_height, get_theme, plotly_template
 
@@ -356,7 +356,7 @@ def find_optimal_clusters(
             km = _KMeans(n_clusters=k, random_state=42, max_iter=100)
         labels = km.fit_predict(x_scaled)
         inertias.append(float(km.inertia_))
-        silhouettes.append(float(silhouette_score(x_scaled[sil_idx], labels[sil_idx])))
+        silhouettes.append(float(bounded_silhouette(x_scaled[sil_idx], labels[sil_idx]) or 0.0))
         progress.append(info(f"k={k}", f"inertia={km.inertia_:.1f} sil={silhouettes[-1]:.3f}"))
 
     best_k = k_range[int(np.argmax(silhouettes))]
