@@ -923,7 +923,7 @@ def batch_predict(
 def check_data_quality(file_path: str) -> dict:
     """Return JSON data quality summary with score 0-100. No HTML."""
     from shared.file_utils import resolve_path
-    from shared.progress import ok
+    from shared.progress import fail, ok
 
     progress = []
     try:
@@ -952,6 +952,28 @@ def check_data_quality(file_path: str) -> dict:
     progress.append(ok(f"Loaded {path.name}", f"{len(df):,} rows × {len(df.columns)} cols"))
 
     n_rows, n_cols = len(df), len(df.columns)
+
+    # The guard above catches a zero-*byte* file. A header row and no data rows
+    # is the far more common shape -- a filter that matched nothing, an export
+    # with no results -- and it sailed straight through to be scored. Every
+    # column then tripped the constant-column check, so a header-only CSV came
+    # back as 30.0/100 with one HIGH "drop this column" alert per column: an
+    # empty file diagnosed as a badly built one.
+    if n_rows == 0:
+        return {
+            "success": False,
+            "op": "check_data_quality",
+            "error": f"{path.name} has {n_cols} column(s) and no data rows.",
+            "hint": (
+                "There is nothing to score. Check the export or filter that produced this "
+                "file — inspect_dataset() will confirm the row count."
+            ),
+            "columns": n_cols,
+            "rows": 0,
+            "progress": progress + [fail("Nothing to score", "0 data rows")],
+            "token_estimate": 40,
+        }
+
     alerts = []
     score = 100.0
     # Alert penalties accumulate separately so they can be capped once, the way
@@ -965,8 +987,29 @@ def check_data_quality(file_path: str) -> dict:
     cat_cols = df.select_dtypes(include=["object", "string"]).columns.tolist()
 
     # 1. Constant columns
+    #
+    # The test is `<= 1` and the message said "1". A column of nothing but nulls
+    # has 0 unique values, not 1, and was reported as constant with a count it
+    # does not have -- and told to be dropped for containing no information,
+    # when what it contains is missing data. The two need different advice, so
+    # they are two alerts now, and each reports the number it actually found.
     for col in nunique_all.index:
-        if nunique_all[col] <= 1:
+        n_unique = int(nunique_all[col])
+        if n_unique == 0:
+            alerts.append(
+                {
+                    "type": "all_null_column",
+                    "severity": "high",
+                    "column": col,
+                    "message": f"Column '{col}' has no values at all — every row is null.",
+                    "recommendation": (
+                        f"Drop column '{col}', or find out why it was never populated. "
+                        "This is missing data, not a constant."
+                    ),
+                }
+            )
+            alert_penalty += 15
+        elif n_unique == 1:
             alerts.append(
                 {
                     "type": "constant_column",
