@@ -89,9 +89,32 @@ def run_preprocessing(
         progress.append(warn("Snapshot failed", str(exc)))
 
     ops_summary: list[dict] = []
-    for op in ops:
-        df, summary = _apply_op(df, op)
+    for i, op in enumerate(ops):
+        # A handler that raises used to take the whole tool with it: the four
+        # ops missing a `column` guard raised KeyError('column') past the return
+        # contract, so the caller got a traceback instead of a dict. The guard
+        # in _validate_ops closes those four; this closes the fifteenth op
+        # nobody has written yet.
+        try:
+            df, summary = _apply_op(df, op)
+        except Exception as exc:
+            progress.append(warn(f"Op {i} ({op.get('op', '?')}) failed", str(exc)))
+            return _error(
+                f"Op {i} ({op.get('op', '?')}) failed: {exc}",
+                f"Nothing was written. Fix that op and retry; {path.name} is unchanged.",
+            )
         ops_summary.append(summary)
+        # A summary carrying `error` is an op that did not do what it was asked.
+        # It was still counted in `applied`, still announced as "Applied
+        # drop_column", and still left the run reporting success -- so asking to
+        # drop a column that does not exist wrote a full output file and called
+        # it preprocessed.
+        if summary.get("error"):
+            progress.append(warn(f"Op {i} ({op.get('op', '?')}) did nothing", str(summary["error"])))
+            return _error(
+                f"Op {i} ({op.get('op', '?')}): {summary['error']}",
+                f"Available columns: {', '.join(map(str, df.columns))}. Nothing was written.",
+            )
         progress.append(ok(f"Applied {op['op']}", str(summary.get("filled", summary.get("removed", "")))))
 
     if output_path:
