@@ -11,7 +11,7 @@ from shared.file_utils import resolve_path
 from shared.handover import make_context, make_handover
 from shared.platform_utils import get_max_columns, get_max_results, get_max_rows
 from shared.progress import name as pname
-from shared.progress import ok
+from shared.progress import ok, warn
 from shared.version_control import size_kb
 
 from ._basic_helpers import _confusion_dict, _error
@@ -138,8 +138,40 @@ def read_column_profile(file_path: str, column_name: str) -> dict:
         progress.append(ok(f"Loaded {pname(file_path)}", f"{len(df):,} rows"))
         series = df[column_name]
         null_count = int(series.isnull().sum())
-        null_pct = round(null_count / len(df) * 100, 2) if len(df) else 0.0
+        observed = int(series.notna().sum())
+        # 0.0 is a real percentage and reads as a healthy column. With nothing
+        # observed there is no percentage to report, so report none.
+        null_pct = round(null_count / len(df) * 100, 2) if len(df) else None
         dtype_str = str(series.dtype)
+
+        if observed == 0:
+            # The boolean test below asks whether the observed values are a
+            # subset of {0, 1, True, False}. The empty set is a subset of
+            # everything, so a column holding nothing passed it -- and a plainly
+            # numeric column came back kind="boolean" with a balance_ratio
+            # computed from two zeroes, under success: true. Emptiness is not a
+            # type, and it is not something to infer a type from.
+            reason = f"all {null_count} rows are null" if null_count else "the file has no data rows"
+            profile = {
+                "dtype": dtype_str,
+                "kind": "empty",
+                "count": 0,
+                "null_count": null_count,
+                "null_pct": null_pct,
+                "note": f"'{column_name}' has no observed values ({reason}); nothing was inferred.",
+            }
+            progress.append(warn(f"'{column_name}' is empty", "no type or statistics inferred"))
+            response = {
+                "success": True,
+                "op": "read_column_profile",
+                "file": pname(file_path),
+                "column": column_name,
+                "profile": profile,
+                "hint": ("Load a file with data rows, or use inspect_dataset() to see which columns hold values."),
+                "progress": progress,
+            }
+            response["token_estimate"] = len(str(response)) // 4
+            return response
 
         if series.dtype == bool or (series.nunique() <= 2 and set(series.dropna().unique()) <= {0, 1, True, False}):
             true_count = int(series.sum())
