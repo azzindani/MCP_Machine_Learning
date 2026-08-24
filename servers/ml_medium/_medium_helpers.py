@@ -268,6 +268,14 @@ DUPLICATE_DEDUCTION_CAP = 10.0
 # told which side of that line the answer came from.
 MIN_ROWS_FOR_ANOMALY_CONFIDENCE = 20
 
+# The smallest sample this server will make a claim about a column's
+# *distribution* from. scipy's skewness sets it: it is undefined below three
+# values, so extreme_skewness has always been silent there. zero_inflated asks
+# the same kind of question -- does this column hold more zeros than its shape
+# would predict -- and so answers at the same n. Below it, "100% zeros" is a
+# fact about the row count wearing a percentage.
+MIN_ROWS_FOR_DISTRIBUTION = 3
+
 _OP_KEY_ALIASES: dict[str, str] = {"operation": "op", "column_name": "column", "col": "column"}
 _OP_NAME_ALIASES: dict[str, str] = {"impute_missing": "fill_nulls", "fillna": "fill_nulls"}
 _FILL_KEY_ALIASES: dict[str, str] = {"method": "strategy"}
