@@ -15,8 +15,12 @@ jobs:
       matrix:
         os: [ubuntu-22.04, macos-latest, windows-latest]
 
+    # No MCP_CONSTRAINED_MODE here: this is the normal-limits run. It used to
+    # set it, which meant every job in this workflow -- including the one below
+    # actually named "Constrained mode (ubuntu)" -- tested the same branch, and
+    # the unconstrained half of every get_max_* helper was never exercised in
+    # CI. The second job's name was what made it read as coverage of both.
     env:
-      MCP_CONSTRAINED_MODE: "1"
       PYTHONPATH: "."
 
     steps:
