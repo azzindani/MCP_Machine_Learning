@@ -2743,17 +2743,28 @@ class TestCompareModelsHelperPaths:
 
 class TestApplyOpExceptionPaths:
     def test_convert_dtype_exception_caught(self, tmp_path):
-        """Lines 348-350 in _medium_helpers: exception in convert_dtype."""
+        """An op that could not do its job does not report success.
+
+        This test used to assert the opposite, with the comment "preprocessing
+        returns success even with per-op error" -- the defect written down as
+        intent. _apply_op catches the dtype exception and puts the reason in its
+        summary dict; run_preprocessing then counted the op in `applied`, logged
+        "Applied convert_dtype", wrote the output file and returned success,
+        with the only trace of the failure buried in ops[0]["error"]. The
+        exception path is still covered; what it asserts is now that the caller
+        is told.
+        """
         import pandas as pd
 
         csv = tmp_path / "test_convert.csv"
         pd.DataFrame({"label": ["cat", "dog", "bird"]}).to_csv(csv, index=False)
-        # Trying to convert a string column to an invalid dtype triggers exception
         r = run_preprocessing(
             str(csv),
             [{"op": "convert_dtype", "column": "label", "to": "invalid_dtype_xyz"}],
         )
-        assert r["success"] is True  # preprocessing returns success even with per-op error
+        assert r["success"] is False
+        assert "convert_dtype" in r["error"]
+        assert not (tmp_path / "test_convert_preprocessed.csv").exists()
 
     def test_error_with_backup_key_in_helper(self, tmp_path):
         """Line 99 in _medium_helpers: backup present in _error call."""

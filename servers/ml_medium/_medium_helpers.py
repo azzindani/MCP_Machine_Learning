@@ -291,6 +291,29 @@ def _normalize_op(op: dict) -> dict:
     return normalized
 
 
+# Every op whose handler reads op["column"] without a default. The check used
+# to be a hand-written set naming five of them, so the four added later --
+# add_date_parts, bin_numeric, clip_column, log_transform -- reached the handler
+# with no column and raised a bare KeyError('column') straight out of the tool,
+# past the return-value contract entirely. Derived from the handlers rather than
+# re-typed, and asserted against them by a test that calls every allowed op with
+# no arguments at all.
+OPS_REQUIRING_COLUMN: frozenset[str] = frozenset(
+    {
+        "add_date_parts",
+        "bin_numeric",
+        "clip_column",
+        "convert_dtype",
+        "drop_column",
+        "drop_outliers",
+        "fill_nulls",
+        "label_encode",
+        "log_transform",
+        "onehot_encode",
+    }
+)
+
+
 def _validate_ops(ops: list[dict]) -> tuple[bool, list[dict], str]:
     """Validate and normalize preprocessing ops. Returns (ok, normalized_ops, error_msg)."""
     if not isinstance(ops, list):
@@ -306,9 +329,9 @@ def _validate_ops(ops: list[dict]) -> tuple[bool, list[dict], str]:
         op_name = op.get("op", "")
         if op_name not in ALLOWED_OPS:
             return False, ops, f"Unknown op: '{op_name}'. Allowed: {', '.join(sorted(ALLOWED_OPS))}"
+        if op_name in OPS_REQUIRING_COLUMN and "column" not in op:
+            return False, ops, f"Op #{i} ('{op_name}') missing required field: 'column'"
         if op_name == "fill_nulls":
-            if "column" not in op:
-                return False, ops, f"Op '{op_name}' missing required field: 'column'"
             strategy = op.get("strategy", "median")
             if strategy not in FILL_STRATEGIES:
                 return (
@@ -322,9 +345,6 @@ def _validate_ops(ops: list[dict]) -> tuple[bool, list[dict], str]:
             method = op.get("method", "standard")
             if method not in SCALE_METHODS:
                 return False, ops, f"Method '{method}' not valid for scale. Allowed: standard minmax"
-        elif op_name in {"label_encode", "onehot_encode", "drop_column", "drop_outliers", "convert_dtype"}:
-            if "column" not in op:
-                return False, ops, f"Op '{op_name}' missing required field: 'column'"
         elif op_name == "rename_column":
             for field in ("from", "to"):
                 if field not in op:
