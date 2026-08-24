@@ -10,9 +10,11 @@ import pandas as pd
 
 from shared.file_utils import embed_content
 from shared.handover import make_context, make_handover
+from shared.small_sample import rounded
 
 from ._medium_helpers import (
     ALERT_DEDUCTION_CAP,
+    MIN_ROWS_FOR_ANOMALY_CONFIDENCE,
     _error,
     _read_csv,
     _save_chart,
@@ -459,8 +461,26 @@ def anomaly_detection(
     if missing:
         return _error(f"Columns not found: {', '.join(missing)}", "Use inspect_dataset() for column names.")
 
-    x = df[feature_columns].select_dtypes(include="number").fillna(0).values
-    progress.append(ok(f"Loaded {path.name}", f"{len(df):,} rows, {len(feature_columns)} features"))
+    numeric = df[feature_columns].select_dtypes(include="number")
+    if numeric.shape[1] == 0:
+        return _error(
+            f"None of {feature_columns} is numeric.",
+            "Anomaly detection needs numeric features. Use inspect_dataset() to see column types.",
+        )
+    x = numeric.fillna(0).values
+    progress.append(ok(f"Loaded {path.name}", f"{len(df):,} rows, {numeric.shape[1]} numeric features"))
+
+    # An anomaly is a point unlike the others. With one row there are no
+    # others: IsolationForest fits on the single row it then scores, the score
+    # saturates at the trivially-isolated floor, and the "not an anomaly"
+    # verdict is a statement about the model's only training example. The
+    # answer was 0 anomalies before the file was opened.
+    n_samples = int(x.shape[0])
+    if n_samples < 2:
+        return _error(
+            f"{path.name} has {n_samples} usable row(s); anomaly detection needs at least 2.",
+            "A single row cannot be unusual relative to anything. Use check_data_quality() to inspect it instead.",
+        )
 
     if dry_run:
         resp: dict = {
@@ -493,6 +513,19 @@ def anomaly_detection(
     anomaly_pct = round(n_anomalies / len(df) * 100, 2)
     progress.append(ok("Detected anomalies", f"{n_anomalies} ({anomaly_pct}%) anomalous rows"))
 
+    # LOF compares each point to its 20 nearest neighbours by default, and an
+    # isolation tree over a handful of points separates all of them in one or
+    # two splits. Both still return a verdict; neither has much to base it on.
+    thin_sample = n_samples < MIN_ROWS_FOR_ANOMALY_CONFIDENCE
+    if thin_sample:
+        progress.append(
+            warn(
+                "Small sample",
+                f"{n_samples} rows is below the {MIN_ROWS_FOR_ANOMALY_CONFIDENCE} "
+                f"{method} needs before its notion of 'unusual' means much",
+            )
+        )
+
     # Top anomaly indices
     top_anomaly_idx = np.argsort(scores)[: min(10, n_anomalies)].tolist()
 
@@ -522,6 +555,7 @@ def anomaly_detection(
         "op": "anomaly_detection",
         "method": method,
         "contamination": contamination,
+        "rows_scored": n_samples,
         "n_anomalies": n_anomalies,
         "anomaly_pct": anomaly_pct,
         "top_anomaly_indices": top_anomaly_idx,
@@ -530,6 +564,12 @@ def anomaly_detection(
         "progress": progress,
         "token_estimate": 0,
     }
+    if thin_sample:
+        resp["low_confidence"] = True
+        resp["hint"] = (
+            f"Scored over {n_samples} rows. {method} compares each point against the rest of the sample, "
+            f"and below about {MIN_ROWS_FOR_ANOMALY_CONFIDENCE} rows there is little rest to compare with."
+        )
     resp["context"] = make_context(
         "anomaly_detection",
         f"Detected {n_anomalies} anomaly rows ({anomaly_pct}%) in {path.name} using {method}",
@@ -814,6 +854,17 @@ def batch_predict(
                 "token_estimate": 30,
             }
         df = _read_csv(str(dp))
+        # The guard above catches a zero-*byte* file. A header row and no data
+        # rows parses fine, and then preds.min() raises on an empty array --
+        # out of numpy, in numpy's words.
+        if len(df) == 0:
+            return {
+                "success": False,
+                "op": "batch_predict",
+                "error": f"{dp.name} has {len(df.columns)} column(s) and no data rows.",
+                "hint": "There is nothing to predict on. Check the export or filter that produced this file.",
+                "token_estimate": 40,
+            }
         progress.append(ok("Loaded data", f"{len(df):,} rows"))
 
         for col, mapping in encoding_map.items():
@@ -876,10 +927,16 @@ def batch_predict(
             dist = {str(k): int(v) for k, v in pd.Series(preds).value_counts().sort_index().items()}
         else:
             dist = {
-                "min": round(float(preds.min()), 4),
-                "max": round(float(preds.max()), 4),
-                "mean": round(float(preds.mean()), 4),
+                "n": int(len(preds)),
+                "min": rounded(preds.min()),
+                "max": rounded(preds.max()),
+                "mean": rounded(preds.mean()),
             }
+            # One prediction gives min == max == mean: three names for the same
+            # number, under a key that says "distribution". The value is real;
+            # the spread it appears to describe is not.
+            if len(preds) == 1:
+                dist["note"] = "a single prediction -- min, max and mean are all the one value, not a spread"
 
         resp = {
             "success": True,
@@ -1009,7 +1066,13 @@ def check_data_quality(file_path: str) -> dict:
                 }
             )
             alert_penalty += 15
-        elif n_unique == 1:
+        elif n_unique == 1 and n_rows > 1:
+            # `and n_rows > 1` because with a single row every column has
+            # exactly one unique value, by arithmetic rather than by any
+            # property of the data. Without it a one-row CSV scored 30/100 with
+            # one HIGH "drop this column — it contains no information" per
+            # column: the row-count fix above caught the header-only file and
+            # left this, one row further along.
             alerts.append(
                 {
                     "type": "constant_column",
@@ -1141,6 +1204,18 @@ def check_data_quality(file_path: str) -> dict:
     # Cap score
     score = max(0.0, min(100.0, score - min(alert_penalty, ALERT_DEDUCTION_CAP)))
 
+    # Several checks cannot say anything at one row, and the ones that stay
+    # silent are as worth naming as the ones that fire -- a caller reading a
+    # clean score should know which questions were never asked.
+    checks_skipped: list[str] = []
+    if n_rows == 1:
+        checks_skipped = [
+            "constant_column: every column of a single row has exactly one unique value",
+            "duplicate_rows: one row cannot duplicate another",
+            "extreme_skewness: skewness is undefined below 3 values",
+            "multicollinearity: correlation is undefined below 2 rows",
+        ]
+
     # Summarize null cols with high missing
     high_missing_cols = [c["column"] for c in alerts if c.get("type") == "high_missing"]
     constant_cols = [c["column"] for c in alerts if c.get("type") == "constant_column"]
@@ -1152,6 +1227,7 @@ def check_data_quality(file_path: str) -> dict:
         "row_count": n_rows,
         "column_count": n_cols,
         "quality_score": round(score, 1),
+        "checks_skipped": checks_skipped,
         "alerts_count": len(alerts),
         "alerts_high": sum(1 for a in alerts if a.get("severity") == "high"),
         "alerts_medium": sum(1 for a in alerts if a.get("severity") == "medium"),
