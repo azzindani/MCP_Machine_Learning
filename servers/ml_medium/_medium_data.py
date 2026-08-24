@@ -15,6 +15,7 @@ from shared.small_sample import rounded
 from ._medium_helpers import (
     ALERT_DEDUCTION_CAP,
     MIN_ROWS_FOR_ANOMALY_CONFIDENCE,
+    MIN_ROWS_FOR_DISTRIBUTION,
     _error,
     _read_csv,
     _save_chart,
@@ -867,12 +868,33 @@ def batch_predict(
             }
         progress.append(ok("Loaded data", f"{len(df):,} rows"))
 
+        # Encode a copy, not the caller's frame. The label encoding exists only
+        # to build X, it was applied to `df` in place, and `df` is what gets
+        # written out below -- so the predictions CSV came back carrying the
+        # training-time integers under the original column headers. A row that
+        # went in as `campaign_platform: "Google Ads", device: "Desktop"` was
+        # saved as `1` and `0` beneath those same names, reported as success.
+        # The file misrepresents itself, and only reading it back shows it.
+        encoded = df.copy()
+        unmapped: dict[str, int] = {}
         for col, mapping in encoding_map.items():
-            if col in df.columns:
-                df[col] = df[col].astype(str).map(mapping).fillna(-1).astype(int)
+            if col in encoded.columns:
+                mapped = encoded[col].astype(str).map(mapping)
+                # `fillna(-1)` makes a category the model never saw into a real
+                # category as far as the model is concerned. That is the only
+                # thing to do with it here, but it is worth saying out loud
+                # rather than letting it ride under success:true.
+                missing = int(mapped.isna().sum())
+                if missing:
+                    unmapped[col] = missing
+                encoded[col] = mapped.fillna(-1).astype(int)
 
-        available = [c for c in feature_columns if c in df.columns]
-        X = df[available].fillna(0).values.astype(float)
+        if unmapped:
+            detail = ", ".join(f"{c}: {n} row(s)" for c, n in unmapped.items())
+            progress.append(warn("Unseen categories encoded as -1", detail))
+
+        available = [c for c in feature_columns if c in encoded.columns]
+        X = encoded[available].fillna(0).values.astype(float)
         if scaler is not None:
             X = scaler.transform(X)
         if poly is not None:
@@ -944,6 +966,7 @@ def batch_predict(
             "output_path": str(out),
             "row_count": len(preds),
             "task": task,
+            "unmapped_categories": unmapped,
             "prediction_distribution": dist,
             "backup": backup,
             "progress": progress,
@@ -1118,7 +1141,17 @@ def check_data_quality(file_path: str) -> dict:
         score -= min(10, dup_pct * 0.3)
 
     # 4. Zero-inflated numeric (vectorized)
-    if num_cols and n_rows > 0:
+    #
+    # Zero-inflation is a claim about a distribution: this column holds more
+    # zeros than its shape would predict. A proportion over one row cannot make
+    # that claim -- any lone zero is 100% of its column -- and the alert docked
+    # 8 points per column for it, so a one-row file lost 24 points to three
+    # numbers that were 0 in the source row. Not "guaranteed" the way the
+    # constant-column check above is, which is why the first pass at this axis
+    # left it alone; but this tool already refuses its other distributional
+    # check (extreme_skewness) below three values, and a sibling that answers
+    # the same kind of question should answer it at the same n.
+    if num_cols and n_rows >= MIN_ROWS_FOR_DISTRIBUTION:
         zero_pcts = (df[num_cols] == 0).sum() / n_rows * 100
         for col in num_cols:
             zp = float(zero_pcts[col])
@@ -1209,12 +1242,16 @@ def check_data_quality(file_path: str) -> dict:
     # clean score should know which questions were never asked.
     checks_skipped: list[str] = []
     if n_rows == 1:
-        checks_skipped = [
-            "constant_column: every column of a single row has exactly one unique value",
-            "duplicate_rows: one row cannot duplicate another",
-            "extreme_skewness: skewness is undefined below 3 values",
-            "multicollinearity: correlation is undefined below 2 rows",
-        ]
+        checks_skipped.append("constant_column: every column of a single row has exactly one unique value")
+        checks_skipped.append("duplicate_rows: one row cannot duplicate another")
+    if n_rows < 2:
+        checks_skipped.append("multicollinearity: correlation is undefined below 2 rows")
+    if n_rows < MIN_ROWS_FOR_DISTRIBUTION:
+        checks_skipped.append(f"extreme_skewness: skewness is undefined below {MIN_ROWS_FOR_DISTRIBUTION} values")
+        checks_skipped.append(
+            f"zero_inflated: a share of zeros over fewer than {MIN_ROWS_FOR_DISTRIBUTION} rows "
+            "describes the row count, not the distribution"
+        )
 
     # Summarize null cols with high missing
     high_missing_cols = [c["column"] for c in alerts if c.get("type") == "high_missing"]
@@ -1228,6 +1265,16 @@ def check_data_quality(file_path: str) -> dict:
         "column_count": n_cols,
         "quality_score": round(score, 1),
         "checks_skipped": checks_skipped,
+        # A score of 100 out of a reduced set of checks is not the same claim as
+        # 100 out of all of them, and nothing else in the response says which
+        # one this is. Same reasoning as every other fix in this round: do not
+        # let a number stand for a conclusion the data could not support.
+        "score_note": (
+            f"{len(checks_skipped)} check(s) could not run at {n_rows} row(s) — see checks_skipped. "
+            "This score covers the remainder only."
+            if checks_skipped
+            else ""
+        ),
         "alerts_count": len(alerts),
         "alerts_high": sum(1 for a in alerts if a.get("severity") == "high"),
         "alerts_medium": sum(1 for a in alerts if a.get("severity") == "medium"),
