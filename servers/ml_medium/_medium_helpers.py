@@ -260,6 +260,14 @@ ALERT_DEDUCTION_CAP = 70.0
 MISSINGNESS_DEDUCTION_CAP = 20.0
 DUPLICATE_DEDUCTION_CAP = 10.0
 
+# Below this, an anomaly detector still returns a verdict but has little to
+# base it on: LocalOutlierFactor compares each point to its 20 nearest
+# neighbours by default, and an isolation tree over a handful of points
+# separates all of them in a split or two, so every point looks equally
+# isolated. Not a refusal -- 19 rows is real data -- but the caller should be
+# told which side of that line the answer came from.
+MIN_ROWS_FOR_ANOMALY_CONFIDENCE = 20
+
 _OP_KEY_ALIASES: dict[str, str] = {"operation": "op", "column_name": "column", "col": "column"}
 _OP_NAME_ALIASES: dict[str, str] = {"impute_missing": "fill_nulls", "fillna": "fill_nulls"}
 _FILL_KEY_ALIASES: dict[str, str] = {"method": "strategy"}

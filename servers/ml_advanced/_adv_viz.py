@@ -15,6 +15,7 @@ from shared.html_theme import apply_fig_theme, calc_chart_height, get_theme, plo
 from shared.model_signing import load_signed
 from shared.platform_utils import get_fit_n_jobs, get_learning_curve_row_cap
 from shared.progress import info, ok, warn
+from shared.small_sample import rounded
 
 from ._adv_helpers import _save_chart, get_output_path, resolve_path
 
@@ -592,9 +593,23 @@ def plot_predictions_vs_actual(
         except Exception:
             y_pred = model.predict(X)
 
+        n_points = int(len(y_true))
         mse = float(mean_squared_error(y_true, y_pred))
         rmse = float(np.sqrt(mse))
-        r2 = float(r2_score(y_true, y_pred))
+        # R-squared compares the model's error against the variance of the
+        # actuals, and one point has none -- sklearn returns NaN and says so in
+        # a warning nobody sees. `f"R2={nan:.3f}"` then wrote "R2=nan" into the
+        # chart title, and RMSE, which is just the single absolute residual
+        # here, was left standing as the quality score.
+        r2 = rounded(r2_score(y_true, y_pred)) if n_points >= 2 else None
+        scoreless = r2 is None
+        if scoreless:
+            progress.append(
+                warn(
+                    "No R-squared",
+                    f"{n_points} point(s): R-squared needs 2+ actuals to have a variance to explain",
+                )
+            )
 
         # Subsample for scatter readability (>10K markers are unreadable)
         scat_cap = min(len(y_true), 10_000)
@@ -633,7 +648,11 @@ def plot_predictions_vs_actual(
         )
 
         fig.update_layout(
-            title=f"Predictions vs Actual — R²={r2:.3f}",
+            title=(
+                f"Predictions vs Actual — {n_points} point(s), R² undefined"
+                if scoreless
+                else f"Predictions vs Actual — R²={r2:.3f}"
+            ),
             xaxis_title="Actual",
             yaxis_title="Predicted",
             template=tmpl,
@@ -649,14 +668,23 @@ def plot_predictions_vs_actual(
             "op": "plot_predictions_vs_actual",
             "output_path": out_abs,
             "output_name": out_name,
-            "metrics": {"mse": round(mse, 4), "rmse": round(rmse, 4), "r2": round(r2, 4)},
-            "n_points": len(y_true),
+            "metrics": {"mse": rounded(mse), "rmse": rounded(rmse), "r2": r2},
+            "n_points": n_points,
             "progress": progress,
             "token_estimate": 0,
         }
+        if scoreless:
+            resp["hint"] = (
+                f"R-squared is undefined over {n_points} point(s), and RMSE here is the single absolute "
+                "residual rather than a measure of fit. Score the model on a held-out set with more rows."
+            )
         resp["context"] = make_context(
             "plot_predictions_vs_actual",
-            f"Plotted predictions vs actual for {mp.name}: R²={round(r2, 3)}, RMSE={round(rmse, 3)}",
+            (
+                f"Plotted predictions vs actual for {mp.name}: {n_points} point(s), R² undefined, RMSE={round(rmse, 3)}"
+                if scoreless
+                else f"Plotted predictions vs actual for {mp.name}: R²={round(r2, 3)}, RMSE={round(rmse, 3)}"
+            ),
             [{"type": "report", "path": out_abs, "role": "pred_vs_actual_chart"}],
         )
         resp["handover"] = make_handover(

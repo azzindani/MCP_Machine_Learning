@@ -8,6 +8,7 @@ import pandas as pd
 
 from shared.file_utils import embed_content
 from shared.handover import make_context, make_handover
+from shared.small_sample import MIN_N_IQR, min_n_for_zscore, rounded
 
 from ._medium_helpers import (
     _apply_op,
@@ -172,49 +173,95 @@ def detect_outliers(
         )
 
     results: list[dict] = []
+    undetermined: list[str] = []
+    # Both minimums are properties of the arithmetic rather than of the data --
+    # see shared/small_sample.py. Below them the bounds land outside every value
+    # in the sample, so "0 outliers" was settled before the file was read.
+    min_n = MIN_N_IQR if method == "iqr" else min_n_for_zscore(3.0)
     for col in columns:
         import pandas as _pd
 
         series = _pd.to_numeric(df[col], errors="coerce").dropna()
+        n = int(len(series))
+        if n < min_n:
+            reason = (
+                f"undetermined at n={n}: the 1.5*IQR fence cannot fall inside a sample smaller than {min_n}"
+                if method == "iqr"
+                else (
+                    f"undetermined at n={n}: the largest z-score attainable by any of n points is "
+                    f"(n-1)/sqrt(n), which first exceeds 3 at n={min_n}"
+                )
+            )
+            results.append(
+                {
+                    "column": col,
+                    "method": method,
+                    "n": n,
+                    "lower_bound": None,
+                    "upper_bound": None,
+                    "outlier_count": None,
+                    "sample_outliers": [],
+                    "status": reason,
+                }
+            )
+            undetermined.append(col)
+            progress.append(warn(f"Cannot scan {col}", reason))
+            continue
+
         if method == "iqr":
             q1 = series.quantile(th1)
             q3 = series.quantile(th3)
             iqr_val = q3 - q1
             lower = float(q1 - 1.5 * iqr_val)
             upper = float(q3 + 1.5 * iqr_val)
+            zero_spread = float(iqr_val) == 0.0
         else:  # std
             mean, std = series.mean(), series.std()
             lower = float(mean - 3 * std)
             upper = float(mean + 3 * std)
+            zero_spread = float(std) == 0.0
 
         mask = (series < lower) | (series > upper)
         outlier_vals = series[mask].head(5).tolist()
-        results.append(
-            {
-                "column": col,
-                "method": method,
-                "lower_bound": lower,
-                "upper_bound": upper,
-                "outlier_count": int(mask.sum()),
-                "sample_outliers": outlier_vals,
-            }
-        )
+        entry: dict = {
+            "column": col,
+            "method": method,
+            "n": n,
+            "lower_bound": rounded(lower, 6),
+            "upper_bound": rounded(upper, 6),
+            "outlier_count": int(mask.sum()),
+            "sample_outliers": outlier_vals,
+        }
+        if zero_spread:
+            # Enough rows, no spread: zero is a real answer here, and the bounds
+            # still sit on the data rather than around it.
+            entry["status"] = "zero spread: every value is identical, so the bounds have no width"
+        results.append(entry)
         progress.append(ok(f"Analyzed {col}", f"{int(mask.sum())} outliers"))
 
-    total_outliers = sum(r["outlier_count"] for r in results)
+    total_outliers = sum(r["outlier_count"] or 0 for r in results)
     resp: dict = {
         "success": True,
         "op": "detect_outliers",
         "method": method,
         "columns_checked": len(columns),
+        "columns_undetermined": undetermined,
         "results": results,
         "progress": progress,
         "token_estimate": 0,
     }
-    resp["context"] = make_context(
-        "detect_outliers",
-        f"Detected {total_outliers} outlier(s) across {len(columns)} column(s) in {path.name} using {method}",
+    if undetermined:
+        resp["hint"] = (
+            f"{len(undetermined)} of {len(columns)} column(s) had too few rows for {method} to flag anything, "
+            "so a count of 0 there is not a finding. Each carries the n it had."
+        )
+    summary = (
+        f"Detected {total_outliers} outlier(s) across {len(columns) - len(undetermined)} scannable "
+        f"column(s) in {path.name} using {method}; {len(undetermined)} undetermined"
+        if undetermined
+        else f"Detected {total_outliers} outlier(s) across {len(columns)} column(s) in {path.name} using {method}"
     )
+    resp["context"] = make_context("detect_outliers", summary)
     resp["handover"] = make_handover(
         "INSPECT",
         ["run_preprocessing", "train_classifier", "train_regressor"],
