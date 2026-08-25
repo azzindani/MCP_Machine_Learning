@@ -481,11 +481,12 @@ class TestGenerateEdaReport:
         assert r["op"] == "generate_eda_report"
         assert Path(out).exists()
 
-    def test_return_content_embeds_the_report(self, classification_simple, tmp_path):
-        """A multi-section report has no self-contained SVG form, so the bytes
-        come back as they are -- but they are now the ~30 KB sidecar page rather
-        than a 6 MB page with the whole library inlined, and the caller is told
-        it needs plotly.min.js from the same directory."""
+    def test_return_content_sends_a_drawing_not_the_whole_report(self, classification_simple, tmp_path):
+        """The file carries its own 4.85 MB of Plotly so it renders anywhere,
+        which is far past what any client can take inline. The response gets a
+        few-KB SVG of one figure instead, and says that is what it is."""
+        import base64
+
         out = tmp_path / "eda_content.html"
         r = generate_eda_report(
             classification_simple,
@@ -495,11 +496,17 @@ class TestGenerateEdaReport:
             return_content=True,
         )
         assert r["success"] is True
-        assert len(r["content_base64"]) < 500_000
-        assert "plotly.min.js" in r["content_note"]
-        assert r["content_mime_type"] == "text/html"
+        assert len(r["content_base64"]) < 200_000
+        html = base64.b64decode(r["content_base64"]).decode("utf-8")
+        assert "<svg" in html
+        assert "<script" not in html, "a drawing, not a page that has to run"
+        note = r["content_note"]
+        assert "public_url" in note or "output_path" in note
+        assert out.stat().st_size > 4_000_000, "the file itself is the whole report"
 
-    def test_the_report_on_disk_references_the_sidecar(self, classification_simple, tmp_path):
+    def test_the_report_on_disk_carries_its_own_library(self, classification_simple, tmp_path):
+        """It used to reference a plotly.min.js sidecar, so the report was a
+        blank page anywhere the sidecar was not."""
         out = tmp_path / "eda_disk.html"
         generate_eda_report(
             classification_simple,
@@ -507,8 +514,9 @@ class TestGenerateEdaReport:
             output_path=str(out),
             open_after=False,
         )
-        assert 'src="plotly.min.js"' in out.read_text(encoding="utf-8")
-        assert (out.parent / "plotly.min.js").exists()
+        assert 'src="plotly.min.js"' not in out.read_text(encoding="utf-8")
+        assert not (out.parent / "plotly.min.js").exists()
+        assert out.stat().st_size > 4_000_000
 
     def test_no_return_content_by_default(self, classification_simple, tmp_path):
         out = str(tmp_path / "eda_default.html")
@@ -684,7 +692,7 @@ class TestFilterRows:
     def test_snapshot_created(self, classification_simple, tmp_path):
         out = str(tmp_path / "filter_snap.csv")
         # write a dummy file so snapshot triggers
-        Path(out).write_text("col\n1\n")
+        Path(out).write_text("col\n1\n", encoding="utf-8")
         r = filter_rows(classification_simple, "churned", "eq", "0", output_path=out)
         assert r["success"] is True
         assert r.get("backup", "") != ""
@@ -774,7 +782,7 @@ class TestMergeDatasets:
         out = str(tmp_path / "ms_snap.csv")
         pd.DataFrame({"id": [1], "a": [1]}).to_csv(f1, index=False)
         pd.DataFrame({"id": [1], "b": [2]}).to_csv(f2, index=False)
-        Path(out).write_text("id,a,b\n1,1,2\n")  # pre-create to trigger snapshot
+        Path(out).write_text("id,a,b\n1,1,2\n", encoding="utf-8")  # pre-create to trigger snapshot
         r = merge_datasets(f1, f2, on="id", output_path=out)
         assert r["success"] is True
         assert "backup" in r
@@ -1075,7 +1083,7 @@ class TestBatchPredict:
     def test_snapshot_created(self, classification_simple, tmp_path):
         tr = train_classifier(classification_simple, "churned", "rf")
         out = str(tmp_path / "batch_snap.csv")
-        Path(out).write_text("dummy")  # pre-create so snapshot triggers
+        Path(out).write_text("dummy", encoding="utf-8")  # pre-create so snapshot triggers
         r = batch_predict(tr["model_path"], classification_simple, output_path=out)
         assert r["success"] is True
         assert "backup" in r
@@ -1692,7 +1700,7 @@ class TestFilterRowsOperators:
     def test_snapshot_on_existing_output(self, tmp_path):
         src, out = self._csv(tmp_path)
         # Pre-create the output file so snapshot triggers
-        out.write_text("score\n1\n")
+        out.write_text("score\n1\n", encoding="utf-8")
         r = filter_rows(str(src), "score", "gt", "70", output_path=str(out))
         assert r["success"] is True
         # backup should be non-empty path since file existed
@@ -1843,7 +1851,7 @@ class TestMergeDatasetsFull:
     def test_snapshot_on_existing_output(self, tmp_path):
         f1, f2 = self._make_csvs(tmp_path, "_sn")
         out = tmp_path / "sn_out.csv"
-        out.write_text("id,val_a,val_b\n1,10,100\n")  # pre-create to trigger snapshot
+        out.write_text("id,val_a,val_b\n1,10,100\n", encoding="utf-8")  # pre-create to trigger snapshot
         r = merge_datasets(f1, f2, on="id", output_path=str(out))
         assert r["success"] is True
         assert r.get("backup", "") != ""
@@ -2072,7 +2080,7 @@ class TestBatchPredictCoverage:
         tr = train_classifier(str(classification_simple), "churned", "rf")
         assert tr["success"] is True
         out = tmp_path / "existing_preds.csv"
-        out.write_text("old,data\n1,2\n")
+        out.write_text("old,data\n1,2\n", encoding="utf-8")
         r = batch_predict(tr["model_path"], str(classification_simple), output_path=str(out))
         assert r["success"] is True
         # backup should be non-empty since we snapshotted
@@ -2114,7 +2122,7 @@ class TestCheckDataQualityCoverage:
     # Lines 814-815: ValueError from resolve_path (wrong extension)
     def test_resolve_path_bad_extension(self, tmp_path):
         bad_path = tmp_path / "data.txt"
-        bad_path.write_text("a,b\n1,2\n")
+        bad_path.write_text("a,b\n1,2\n", encoding="utf-8")
         r = check_data_quality(str(bad_path))
         assert r["success"] is False
         assert "token_estimate" in r
@@ -2335,7 +2343,7 @@ class TestRunClusteringExtended:
 
     def test_non_csv_extension(self, tmp_path):
         bad = str(tmp_path / "data.parquet")
-        Path(bad).write_text("dummy")
+        Path(bad).write_text("dummy", encoding="utf-8")
         r = run_clustering(bad, ["x", "y"], "kmeans")
         assert r["success"] is False
 
@@ -2424,7 +2432,7 @@ class TestDetectOutliersExtended:
 class TestRunPreprocessingErrorPaths:
     def test_invalid_csv_extension(self, tmp_path):
         bad = tmp_path / "data.json"
-        bad.write_text("{}")
+        bad.write_text("{}", encoding="utf-8")
         r = run_preprocessing(str(bad), [])
         assert r["success"] is False
 
@@ -2504,7 +2512,7 @@ class TestTrainWithCVExtended:
 
     def test_non_csv_extension(self, tmp_path):
         bad = tmp_path / "data.parquet"
-        bad.write_text("dummy")
+        bad.write_text("dummy", encoding="utf-8")
         r = train_with_cv(str(bad), "target", "rf", "classification")
         assert r["success"] is False
 
@@ -2588,7 +2596,7 @@ class TestRunClusteringCoverage:
 
     def test_non_csv_extension_rejected(self, tmp_path):
         bad = tmp_path / "data.parquet"
-        bad.write_text("dummy")
+        bad.write_text("dummy", encoding="utf-8")
         r = run_clustering(str(bad), ["x"], "kmeans")
         assert r["success"] is False
 
@@ -2682,10 +2690,10 @@ class TestAppendReceiptCorruptedJson:
         from shared.receipt import append_receipt, read_receipt_log
 
         csv_path = str(tmp_path / "data.csv")
-        Path(csv_path).write_text("a\n1\n")
+        Path(csv_path).write_text("a\n1\n", encoding="utf-8")
 
         receipt_path = tmp_path / "data.csv.mcp_receipt.json"
-        receipt_path.write_text("{invalid json}")
+        receipt_path.write_text("{invalid json}", encoding="utf-8")
 
         append_receipt(csv_path, "tool_x", {}, "ok")
 
@@ -2816,7 +2824,7 @@ class TestCompareModelsCoverage:
     def test_non_csv_rejected(self, tmp_path):
         """Line 266: non-CSV extension in compare_models."""
         bad = tmp_path / "data.parquet"
-        bad.write_text("dummy")
+        bad.write_text("dummy", encoding="utf-8")
         r = compare_models(str(bad), "target", "classification", ["rf"])
         assert r["success"] is False
 
@@ -2847,7 +2855,7 @@ class TestFilterRowsCoverage:
     def test_non_csv_extension_rejected(self, tmp_path):
         """Line 56: non-CSV in filter_rows."""
         bad = tmp_path / "data.txt"
-        bad.write_text("dummy")
+        bad.write_text("dummy", encoding="utf-8")
         r = filter_rows(str(bad), "col", "eq", 1)
         assert r["success"] is False
 
@@ -2885,7 +2893,7 @@ class TestDetectOutliersCoverage:
     def test_non_csv_rejected(self, tmp_path):
         """Lines 119-120: non-csv in detect_outliers."""
         bad = tmp_path / "data.txt"
-        bad.write_text("dummy")
+        bad.write_text("dummy", encoding="utf-8")
         r = detect_outliers(str(bad), ["age"])
         assert r["success"] is False
 
@@ -3023,7 +3031,7 @@ class TestFilterRowsMorePaths:
         csv_path = tmp_path / "data.csv"
         pd.DataFrame({"col": [1, 2, 3]}).to_csv(csv_path, index=False)
         out_path = tmp_path / "filtered.csv"
-        out_path.write_text("existing content")
+        out_path.write_text("existing content", encoding="utf-8")
         with patch("servers.ml_medium._medium_data.snapshot", side_effect=Exception("snap fail")):
             r = filter_rows(str(csv_path), "col", "eq", "1", output_path=str(out_path))
         assert r["success"] is True
@@ -3056,7 +3064,7 @@ class TestMergeDatasetsMorePaths:
         pd.DataFrame({"id": [1, 2], "v": [10, 20]}).to_csv(csv1, index=False)
         pd.DataFrame({"id": [1, 2], "w": [30, 40]}).to_csv(csv2, index=False)
         out = tmp_path / "merged.csv"
-        out.write_text("existing")
+        out.write_text("existing", encoding="utf-8")
         with patch("servers.ml_medium._medium_data.snapshot", side_effect=Exception("snap fail")):
             r = merge_datasets(str(csv1), str(csv2), on="id", output_path=str(out))
         assert r["success"] is True
@@ -3192,7 +3200,7 @@ class TestEvaluateModelXGBPaths:
                 },
                 fh,
             )
-        mp.with_suffix(".manifest.json").write_text("{}")
+        mp.with_suffix(".manifest.json").write_text("{}", encoding="utf-8")
         r = evaluate_model(str(mp), str(classification_simple), "churned")
         assert r["success"] is True
         assert "auc_roc" not in r["metrics"]
@@ -3246,7 +3254,7 @@ class TestBatchPredictMorePaths:
         """Lines 761-762: snapshot failure during output write is ignored."""
         mp = train_classifier(str(classification_simple), "churned", "rf")["model_path"]
         out = tmp_path / "preds.csv"
-        out.write_text("old")
+        out.write_text("old", encoding="utf-8")
         with patch("servers.ml_medium._medium_data.snapshot", side_effect=Exception("snap")):
             r = batch_predict(mp, str(classification_simple), output_path=str(out))
         assert r["success"] is True
@@ -3266,7 +3274,7 @@ class TestEDAReportAlertPaths:
     def test_non_csv_extension(self, tmp_path):
         """Line 273: non-CSV extension returns error."""
         p = tmp_path / "data.txt"
-        p.write_text("hello")
+        p.write_text("hello", encoding="utf-8")
         r = generate_eda_report(str(p))
         assert r["success"] is False
 

@@ -547,8 +547,11 @@ def save_chart(
     out.parent.mkdir(parents=True, exist_ok=True)
 
     # Sidecar mode: the page references plotly.min.js written beside it, so a
-    # chart file is a few KB rather than the 4.85 MB the inline bundle cost --
-    # which also put 6.21 MB of base64 in the result when return_content was set.
+    # The page carries its own Plotly, so it renders wherever it is opened. The
+    # sidecar that kept it at a few KB made every chart that travelled without
+    # its directory a blank box; the 6.21 MB of base64 that inlining used to put
+    # in a return_content result is handled in file_utils instead, by swapping
+    # an SVG drawing into the response and leaving the file alone.
     chart_html = pio.to_html(
         fig,  # type: ignore[arg-type]
         full_html=False,
@@ -795,8 +798,8 @@ def build_html_report(
 
     sb_title = sidebar_title or title
     sb_meta_html = f'<p class="meta">{sidebar_meta}</p>' if sidebar_meta else ""
-    # Resolved before the page is assembled: the <head> has to reference
-    # plotly.min.js in the directory the report is actually written to.
+    # Resolved before the page is assembled, because the <head> is built
+    # around it.
     out = Path(output_path).resolve() if output_path else None
     if needs_plotly(sections_html):
         plotly_js = plotly_script_tag(out.parent) if out is not None else get_plotlyjs_script()
