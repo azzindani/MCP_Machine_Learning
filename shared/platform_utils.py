@@ -65,6 +65,30 @@ def get_silhouette_sample_cap() -> int:
     return 2_000 if is_constrained_mode() else 10_000
 
 
+def get_dbscan_row_cap() -> int:
+    """Rows above which DBSCAN is refused rather than attempted.
+
+    DBSCAN materialises every point's eps-neighbourhood at once, so its memory
+    is O(n x average neighbourhood size) -- and on data with many near-identical
+    rows the neighbourhood itself grows with n, which makes the whole thing
+    superquadratic. Measured on the 16,834-row reference dataset with three
+    unscaled ad-metric columns:
+
+        n= 2,000     39 MB        n= 8,000    325 MB
+        n= 4,000    161 MB        n=16,834  ~4,100 MB
+
+    against a 1 GiB container already holding ~200 MB of interpreter, pandas
+    and sklearn. The full dataset did not degrade -- it OOM-killed the process,
+    and every tool on the server went down with it while the caller saw only a
+    closed socket. 8,000 is the largest size measured to fit.
+
+    This is a proxy: the real cost depends on how tightly the points cluster,
+    not only on how many there are. It is deliberately a refusal rather than a
+    silent sample, because sampling changes which points come back as noise.
+    """
+    return 3_000 if is_constrained_mode() else 8_000
+
+
 def get_learning_curve_row_cap() -> int:
     """Rows to sample before drawing a learning curve.
 

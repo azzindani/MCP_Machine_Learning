@@ -330,7 +330,31 @@ def find_optimal_clusters(
     if missing:
         return _error(f"Columns not found: {', '.join(missing)}", "Use inspect_dataset() for column names.")
 
-    x = df[feature_columns].select_dtypes(include="number").dropna().values
+    # select_dtypes silently drops whatever is not numeric, and the guard below
+    # counts rows, not columns -- so a call naming only categorical columns
+    # sailed past it into StandardScaler and raised "Found array with 0
+    # feature(s)" out of the tool, naming neither the columns nor what to send
+    # instead. A mixed call was quieter and worse: the categoricals were
+    # dropped, the clustering ran on what was left, and nothing in the response
+    # said which columns had actually been used.
+    numeric_df = df[feature_columns].select_dtypes(include="number")
+    numeric_cols = list(numeric_df.columns)
+    dropped = [c for c in feature_columns if c not in numeric_cols]
+    if not numeric_cols:
+        return _error(
+            f"None of {', '.join(feature_columns)} is numeric, so there is nothing to cluster on.",
+            "K-means needs numeric features. Encode the categoricals first -- run_preprocessing with "
+            "{'op': 'label_encode', 'column': ..., 'new_column': ...} -- then pass the encoded columns.",
+        )
+    if dropped:
+        progress.append(
+            warn(
+                "Non-numeric feature columns skipped",
+                f"clustering on {', '.join(numeric_cols)}; ignored {', '.join(dropped)}",
+            )
+        )
+
+    x = numeric_df.dropna().values
     if x.shape[0] < 4:
         return _error("Need at least 4 rows for cluster analysis.", "Provide a larger dataset.")
 
@@ -397,6 +421,11 @@ def find_optimal_clusters(
         "success": True,
         "op": "find_optimal_clusters",
         "best_k": best_k,
+        # Which columns the numbers above are actually about. Without this a
+        # caller who named three features and got a clustering of two had no
+        # way to tell from the response.
+        "features_used": numeric_cols,
+        "features_skipped": dropped,
         "k_range": k_range,
         "inertias": [round(v, 2) for v in inertias],
         "silhouette_scores": [round(v, 4) for v in silhouettes],

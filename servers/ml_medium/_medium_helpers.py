@@ -280,6 +280,88 @@ _OP_KEY_ALIASES: dict[str, str] = {"operation": "op", "column_name": "column", "
 _OP_NAME_ALIASES: dict[str, str] = {"impute_missing": "fill_nulls", "fillna": "fill_nulls"}
 _FILL_KEY_ALIASES: dict[str, str] = {"method": "strategy"}
 
+# Every field each op's handler actually reads. Until this existed, run_preprocessing
+# validated op names and a couple of enumerated values and nothing else, so any
+# other key was dropped in silence -- the same hole the Data_Analyst repo closed
+# for apply_patch in round 11 and that was never ported here. Round 14 measured
+# what it costs, and every one of these reported success:
+#
+#     clip_column  column=n min=0 max=100   -> nothing clipped, 900 still 900
+#     label_encode column=cat new_column=e  -> no column e; cat overwritten
+#     log_transform column=n base=log5      -> natural log, silently
+#     log_transform column=n method=log10   -> natural log, silently
+#     drop_outliers column=n threshold=5    -> threshold ignored, 1.5*IQR used
+#
+# Four of the five are a caller using the spelling its sibling tool in the
+# Data_Analyst repo documents -- clip_values takes min/max, log_transform takes
+# method, cast_column takes dtype. The two servers are used in the same session
+# by the same model, so those are the spellings to expect, not to punish.
+OP_FIELDS: dict[str, frozenset[str]] = {
+    "add_date_parts": frozenset({"column", "parts"}),
+    "bin_numeric": frozenset({"bins", "column", "labels", "new_column"}),
+    "clip_column": frozenset({"column", "lower", "upper"}),
+    "convert_dtype": frozenset({"column", "to"}),
+    "drop_column": frozenset({"column"}),
+    "drop_duplicates": frozenset({"subset"}),
+    "drop_null_rows": frozenset({"column"}),
+    # threshold: read now (IQR multiplier, or sigma count for method=std)
+    # instead of the hardcoded 1.5 and 3.
+    "drop_outliers": frozenset({"column", "method", "threshold"}),
+    "fill_nulls": frozenset({"column", "strategy"}),
+    # new_column: advertised by the sibling tool and never read here, so the
+    # codes were written over the categorical they encode.
+    "label_encode": frozenset({"column", "new_column"}),
+    "log_transform": frozenset({"base", "column", "new_column"}),
+    "onehot_encode": frozenset({"column"}),
+    "rename_column": frozenset({"from", "to"}),
+    "scale": frozenset({"columns", "method"}),
+}
+
+# Spellings a caller writes that mean exactly one thing here. Aliased rather
+# than renamed: the documented spelling keeps working unchanged.
+OP_FIELD_ALIASES: dict[str, dict[str, str]] = {
+    "clip_column": {"min": "lower", "max": "upper"},
+    "convert_dtype": {"dtype": "to"},
+    "log_transform": {"method": "base"},
+    "rename_column": {"old_name": "from", "new_name": "to", "old": "from", "new": "to"},
+    "scale": {"column": "columns"},
+}
+
+# `natural`, `log` and `log1p` all mean the log1p branch; the other two are
+# themselves. An unlisted base used to fall through a bare `else` to natural log
+# and report the base it had been given, so the response named a transform that
+# had not been applied.
+LOG_BASES: frozenset[str] = frozenset({"natural", "log", "log1p", "log2", "log10"})
+# Same bare-else shape: anything that was not "iqr" was treated as std.
+OUTLIER_METHODS: frozenset[str] = frozenset({"iqr", "std"})
+DTYPE_TARGETS: frozenset[str] = frozenset({"datetime", "numeric", "str", "string", "int", "float", "bool"})
+
+_UNIVERSAL_OP_FIELDS: frozenset[str] = frozenset({"op"})
+
+
+def known_op_fields(op_name: str) -> list[str]:
+    """Every field this op reads, plus its accepted aliases."""
+    return sorted(_UNIVERSAL_OP_FIELDS | OP_FIELDS.get(op_name, frozenset()) | set(OP_FIELD_ALIASES.get(op_name, {})))
+
+
+def _did_you_mean(unknown: str, known: list[str]) -> str:
+    """The closest accepted name, when one is obviously close."""
+    import difflib
+
+    for k in known:
+        if k in unknown or unknown in k:
+            return k
+    close = difflib.get_close_matches(unknown, known, n=1, cutoff=0.75)
+    return close[0] if close else ""
+
+
+def _apply_op_aliases(op: dict) -> dict:
+    """Fill a canonical field from the spelling the caller used."""
+    for given, canonical in OP_FIELD_ALIASES.get(op.get("op", ""), {}).items():
+        if canonical not in op and given in op:
+            op[canonical] = op.pop(given)
+    return op
+
 
 def _normalize_op(op: dict) -> dict:
     """Return a copy of op with aliased keys/values normalized to canonical form."""
@@ -288,7 +370,7 @@ def _normalize_op(op: dict) -> dict:
         normalized["op"] = _OP_NAME_ALIASES.get(normalized["op"], normalized["op"])
     if normalized.get("op") == "fill_nulls":
         normalized = {_FILL_KEY_ALIASES.get(k, k): v for k, v in normalized.items()}
-    return normalized
+    return _apply_op_aliases(normalized)
 
 
 # Every op whose handler reads op["column"] without a default. The check used
@@ -331,6 +413,49 @@ def _validate_ops(ops: list[dict]) -> tuple[bool, list[dict], str]:
             return False, ops, f"Unknown op: '{op_name}'. Allowed: {', '.join(sorted(ALLOWED_OPS))}"
         if op_name in OPS_REQUIRING_COLUMN and "column" not in op:
             return False, ops, f"Op #{i} ('{op_name}') missing required field: 'column'"
+
+        # Names before values: a field the op does not read is dropped, and the
+        # dropped field is often the one that decides what gets written. Checked
+        # before the enumerated values so a typo is reported as itself rather
+        # than as a complaint about some other field being absent.
+        known = known_op_fields(op_name)
+        unknown = sorted(k for k in op if k not in known)
+        if unknown:
+            suggestion = _did_you_mean(unknown[0], known)
+            lead = f"did you mean {suggestion}? " if suggestion else ""
+            return (
+                False,
+                ops,
+                f"Op #{i} ('{op_name}'): unknown field(s) {', '.join(unknown)} -- "
+                f"{lead}{op_name} accepts: {', '.join(known)}",
+            )
+
+        if op_name == "log_transform":
+            base = op.get("base", "natural")
+            if base not in LOG_BASES:
+                return (
+                    False,
+                    ops,
+                    f"Op #{i} (log_transform): invalid base '{base}'. Allowed: {', '.join(sorted(LOG_BASES))}",
+                )
+        elif op_name == "drop_outliers":
+            method = op.get("method", "iqr")
+            if method not in OUTLIER_METHODS:
+                return (
+                    False,
+                    ops,
+                    f"Op #{i} (drop_outliers): invalid method '{method}'. "
+                    f"Allowed: {', '.join(sorted(OUTLIER_METHODS))}",
+                )
+        elif op_name == "convert_dtype":
+            target = op.get("to", "")
+            if target not in DTYPE_TARGETS:
+                return (
+                    False,
+                    ops,
+                    f"Op #{i} (convert_dtype): invalid target '{target}'. Allowed: {', '.join(sorted(DTYPE_TARGETS))}",
+                )
+
         if op_name == "fill_nulls":
             strategy = op.get("strategy", "median")
             if strategy not in FILL_STRATEGIES:
@@ -342,6 +467,12 @@ def _validate_ops(ops: list[dict]) -> tuple[bool, list[dict], str]:
         elif op_name == "scale":
             if "columns" not in op:
                 return False, ops, f"Op '{op_name}' missing required field: 'columns'"
+            # One column named as a bare string reached StandardScaler as a
+            # 1-D Series and raised out of the tool.
+            if isinstance(op["columns"], str):
+                op["columns"] = [op["columns"]]
+            if not isinstance(op["columns"], list) or not op["columns"]:
+                return False, ops, f"Op #{i} (scale): 'columns' must be a non-empty list of column names"
             method = op.get("method", "standard")
             if method not in SCALE_METHODS:
                 return False, ops, f"Method '{method}' not valid for scale. Allowed: standard minmax"
@@ -382,23 +513,45 @@ def _apply_op(df: pd.DataFrame, op: dict) -> tuple[pd.DataFrame, dict]:
         before = len(df)
         if col not in df.columns:
             return df, {"op": op_name, "column": col, "error": "column not found"}
+        # threshold was accepted and never read: 1.5 and 3 were hardcoded, so
+        # asking for a wider or tighter fence changed nothing and said nothing.
+        # The validator has already refused any method outside OUTLIER_METHODS,
+        # so this is a choice between two, not a fallthrough.
         if method == "iqr":
+            multiplier = float(op.get("threshold", 1.5))
             q1 = df[col].quantile(0.25)
             q3 = df[col].quantile(0.75)
             iqr = q3 - q1
-            df = df[(df[col] >= q1 - 1.5 * iqr) & (df[col] <= q3 + 1.5 * iqr)].copy()  # type: ignore[assignment]
-        else:  # std
+            lower, upper = q1 - multiplier * iqr, q3 + multiplier * iqr
+        else:
+            multiplier = float(op.get("threshold", 3.0))
             mean, std = df[col].mean(), df[col].std()
-            df = df[(df[col] >= mean - 3 * std) & (df[col] <= mean + 3 * std)].copy()  # type: ignore[assignment]
-        return df, {"op": op_name, "column": col, "method": method, "removed": before - len(df)}
+            lower, upper = mean - multiplier * std, mean + multiplier * std
+        df = df[(df[col] >= lower) & (df[col] <= upper)].copy()  # type: ignore[assignment]
+        return df, {
+            "op": op_name,
+            "column": col,
+            "method": method,
+            "threshold": multiplier,
+            "removed": before - len(df),
+        }
 
     elif op_name == "label_encode":
         col = op["column"]
         if col not in df.columns:
             return df, {"op": op_name, "column": col, "error": "column not found"}
+        # new_column was accepted and never read, so the codes were written over
+        # the categorical they encode and the original was gone.
+        new_col = op.get("new_column") or col
         le = LabelEncoder()
-        df[col] = le.fit_transform(df[col].fillna("nan").astype(str))
-        return df, {"op": op_name, "column": col, "classes": list(le.classes_[:10])}
+        df[new_col] = le.fit_transform(df[col].fillna("nan").astype(str))
+        return df, {
+            "op": op_name,
+            "column": col,
+            "new_column": new_col,
+            "replaced_source": new_col == col,
+            "classes": list(le.classes_[:10]),
+        }
 
     elif op_name == "onehot_encode":
         col = op["column"]
@@ -488,6 +641,10 @@ def _apply_op(df: pd.DataFrame, op: dict) -> tuple[pd.DataFrame, dict]:
             return df, {"op": op_name, "column": col, "error": "column not found"}
         series = pd.to_numeric(df[col], errors="coerce")
         offset = max(0, float(-series.min()) + 1) if series.min() <= 0 else 0.0
+        # The validator has already refused any base outside LOG_BASES. It used
+        # to end in a bare `else`, so an unrecognised base -- including `log10`
+        # written as the sibling tool's `method=log10` -- came back reported as
+        # the base asked for and computed as a natural log.
         if base == "log2":
             df[new_col] = np.log2(series + offset)
         elif base == "log10":

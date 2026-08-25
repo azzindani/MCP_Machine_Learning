@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 
 from shared.handover import make_context, make_handover
+from shared.platform_utils import get_dbscan_row_cap
 
 from ._medium_helpers import (
     ALLOWED_CLUSTER_ALGOS,
@@ -103,6 +104,23 @@ def run_clustering(
         )
 
     x = numeric_df.values
+
+    # Refused here, before the scaler runs and long before DBSCAN allocates.
+    # On the full reference dataset this call peaked at ~4.1 GB against a 1 GiB
+    # container: the process was OOM-killed, every tool on the server went down
+    # with it, and the caller saw a closed socket rather than an error -- the
+    # sweep that found it recorded "The socket connection was closed
+    # unexpectedly". A refusal naming the row count is the whole fix; see
+    # get_dbscan_row_cap for the measurements behind the number.
+    dbscan_cap = get_dbscan_row_cap()
+    if algorithm == "dbscan" and len(x) > dbscan_cap:
+        return _error(
+            f"DBSCAN needs more memory than this server has for {len(x):,} rows (limit {dbscan_cap:,}).",
+            f"Use algorithm='kmeans', which handles any size, or take a sample first -- "
+            f"data-medium sample_data(n={dbscan_cap:,}), then cluster the sample. "
+            f"Attempting it here would stop the server rather than return a result.",
+            progress,
+        )
 
     if dry_run:
         resp: dict = {
