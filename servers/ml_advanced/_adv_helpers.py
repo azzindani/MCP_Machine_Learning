@@ -34,6 +34,7 @@ from shared.file_utils import apply_default_mode, atomic_write_json, get_output_
 from shared.html_layout import get_output_path  # noqa: F401  (re-exported)
 from shared.html_theme import _open_file, save_chart  # noqa: F401  (re-exported)
 from shared.ml_utils import _auto_preprocess
+from shared.model_output import save_model
 from shared.model_signing import dump_signed, load_signed
 from shared.platform_utils import get_cv_folds, is_constrained_mode  # noqa: F401
 from shared.progress import info, ok, warn  # noqa: F401
@@ -130,15 +131,13 @@ def _build_estimator(model: str, task: str) -> object:
     raise ValueError(f"Cannot build estimator for model '{model}'. XGBoost tuning uses defaults.")
 
 
-def _save_model(model_obj: object, path: Path, metadata: dict) -> None:
-    payload = {"model": model_obj, "metadata": metadata}
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pkl", dir=path.parent) as tmp:
-        dump_signed(payload, tmp)
-        tmp_path = tmp.name
-    apply_default_mode(tmp_path)
-    shutil.move(tmp_path, path)
-    manifest_path = path.with_suffix(".manifest.json")
-    atomic_write_json(manifest_path, metadata)
+def _save_model(model_obj: object, path: Path, metadata: dict) -> Path:
+    """Write the signed model and its manifest. Returns the manifest's path.
+
+    Kept as a name this module already exported; the implementation is shared
+    with ml_basic, which had a second copy of it. See shared.model_output.
+    """
+    return save_model(model_obj, path, metadata)
 
 
 def _load_model(model_path: str) -> tuple[object, dict]:

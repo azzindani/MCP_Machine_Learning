@@ -231,9 +231,15 @@ def run_clustering(
         "token_estimate": 0,
         **extra,
     }
+    # The labelled CSV was written and the context said artifacts: [], so a
+    # client following the structured surface saw a tool that produced nothing.
+    # Empty is right for the read-only tools here; it was wrong for the two
+    # that write. `output_path` is "" when no file was asked for.
+    written = resp.get("output_path") or ""
     resp["context"] = make_context(
         "run_clustering",
         f"Clustered {path.name} with {algorithm}: {n_found} cluster(s), silhouette={silhouette}",
+        [{"type": "csv", "path": written, "role": "cluster_labels"}] if written else [],
     )
     resp["handover"] = make_handover(
         "TRAIN",

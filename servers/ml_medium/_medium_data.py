@@ -600,9 +600,12 @@ def anomaly_detection(
             f"Scored over {n_samples} rows. {method} compares each point against the rest of the sample, "
             f"and below about {MIN_ROWS_FOR_ANOMALY_CONFIDENCE} rows there is little rest to compare with."
         )
+    # Same as run_clustering: a file written and no artifact declared.
+    written = resp.get("output_path") or ""
     resp["context"] = make_context(
         "anomaly_detection",
         f"Detected {n_anomalies} anomaly rows ({anomaly_pct}%) in {path.name} using {method}",
+        [{"type": "csv", "path": written, "role": "anomaly_flags"}] if written else [],
     )
     resp["handover"] = make_handover(
         "INSPECT",

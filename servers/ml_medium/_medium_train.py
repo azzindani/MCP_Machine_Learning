@@ -191,7 +191,7 @@ def train_with_cv(
 
     # A wall-clock name means an identical retry writes a second 7 MB model
     # instead of replacing the first. See shared/model_output.py.
-    model_path = resolve_model_path(output_path, path, f"{path.stem}_{model}_cv_{ts}.pkl")
+    model_path = resolve_model_path(output_path, path, f"{path.stem}_{model}_cv_{ts}.pkl", progress)
     models_dir = model_path.parent
     models_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = model_path.with_suffix(".manifest.json")
@@ -275,6 +275,7 @@ def train_with_cv(
         "fold_scores": fold_scores,
         "mean_metrics": mean_metrics,
         "model_path": str(model_path),
+        "manifest_path": str(manifest_path),
         "backup": backup,
         "progress": progress,
         "token_estimate": 0,
@@ -416,7 +417,7 @@ def compare_models(
         ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
         import os as _os
 
-        mp = resolve_model_path(output_path, path, f"{path.stem}_{best}_best_{ts}.pkl")
+        mp = resolve_model_path(output_path, path, f"{path.stem}_{best}_best_{ts}.pkl", progress)
         models_dir = mp.parent
         models_dir.mkdir(parents=True, exist_ok=True)
 
