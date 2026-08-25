@@ -106,7 +106,7 @@ def test_read_column_profile_numeric_with_inf(tmp_path):
     Regression test for a bug where mean/std/max/skewness all came back None
     because a handful of inf values poisoned pandas' aggregate functions."""
     f = tmp_path / "ratios.csv"
-    f.write_text("impressions,clicks,ctr_pct\n10,2,20.0\n0,1,inf\n5,1,20.0\n0,3,inf\n20,4,20.0\n")
+    f.write_text("impressions,clicks,ctr_pct\n10,2,20.0\n0,1,inf\n5,1,20.0\n0,3,inf\n20,4,20.0\n", encoding="utf-8")
     r = read_column_profile(str(f), "ctr_pct")
     assert r["success"] is True
     profile = r["profile"]
@@ -1024,7 +1024,7 @@ def test_list_models_corrupt_manifest(tmp_path):
     fake_pkl = tmp_path / "broken_manifest_model.pkl"
     fake_pkl.write_bytes(b"not a real pickle")
     fake_manifest = fake_pkl.with_suffix(".manifest.json")
-    fake_manifest.write_text("{invalid json [[[")
+    fake_manifest.write_text("{invalid json [[[", encoding="utf-8")
 
     r = list_models(str(tmp_path))
     assert r["success"] is True
@@ -1189,7 +1189,7 @@ def test_split_dataset_regression(regression_simple, tmp_path):
 def test_split_dataset_non_csv_extension(tmp_path):
     """Line 369: file with non-.csv extension → error."""
     txt_file = tmp_path / "data.txt"
-    txt_file.write_text("col1,col2\n1,2\n")
+    txt_file.write_text("col1,col2\n1,2\n", encoding="utf-8")
     r = split_dataset(str(txt_file), output_dir=str(tmp_path))
     assert r["success"] is False
     assert "hint" in r
@@ -1249,14 +1249,14 @@ class TestInspectDatasetValueError:
 
     def test_inspect_dataset_wrong_extension_returns_error(self, tmp_path):
         txt_file = tmp_path / "data.txt"
-        txt_file.write_text("col1,col2\n1,2\n")
+        txt_file.write_text("col1,col2\n1,2\n", encoding="utf-8")
         r = inspect_dataset(str(txt_file))
         assert r["success"] is False
         assert "hint" in r
 
     def test_inspect_dataset_wrong_extension_has_token_estimate(self, tmp_path):
         txt_file = tmp_path / "data.txt"
-        txt_file.write_text("col1,col2\n1,2\n")
+        txt_file.write_text("col1,col2\n1,2\n", encoding="utf-8")
         r = inspect_dataset(str(txt_file))
         assert "token_estimate" in r
 
@@ -1271,14 +1271,14 @@ class TestReadColumnProfileValueError:
 
     def test_read_column_profile_wrong_extension_returns_error(self, tmp_path):
         txt_file = tmp_path / "data.txt"
-        txt_file.write_text("col1,col2\n1,2\n")
+        txt_file.write_text("col1,col2\n1,2\n", encoding="utf-8")
         r = read_column_profile(str(txt_file), "col1")
         assert r["success"] is False
         assert "hint" in r
 
     def test_read_column_profile_wrong_extension_has_token_estimate(self, tmp_path):
         txt_file = tmp_path / "data.txt"
-        txt_file.write_text("col1,col2\n1,2\n")
+        txt_file.write_text("col1,col2\n1,2\n", encoding="utf-8")
         r = read_column_profile(str(txt_file), "col1")
         assert "token_estimate" in r
 
@@ -1293,14 +1293,14 @@ class TestSearchColumnsValueError:
 
     def test_search_columns_wrong_extension_returns_error(self, tmp_path):
         txt_file = tmp_path / "data.txt"
-        txt_file.write_text("col1,col2\n1,2\n")
+        txt_file.write_text("col1,col2\n1,2\n", encoding="utf-8")
         r = search_columns(str(txt_file))
         assert r["success"] is False
         assert "hint" in r
 
     def test_search_columns_wrong_extension_has_token_estimate(self, tmp_path):
         txt_file = tmp_path / "data.txt"
-        txt_file.write_text("col1,col2\n1,2\n")
+        txt_file.write_text("col1,col2\n1,2\n", encoding="utf-8")
         r = search_columns(str(txt_file))
         assert "token_estimate" in r
 
@@ -1315,14 +1315,14 @@ class TestReadRowsValueError:
 
     def test_read_rows_wrong_extension_returns_error(self, tmp_path):
         txt_file = tmp_path / "data.txt"
-        txt_file.write_text("col1,col2\n1,2\n")
+        txt_file.write_text("col1,col2\n1,2\n", encoding="utf-8")
         r = read_rows(str(txt_file), 0, 5)
         assert r["success"] is False
         assert "hint" in r
 
     def test_read_rows_wrong_extension_has_token_estimate(self, tmp_path):
         txt_file = tmp_path / "data.txt"
-        txt_file.write_text("col1,col2\n1,2\n")
+        txt_file.write_text("col1,col2\n1,2\n", encoding="utf-8")
         r = read_rows(str(txt_file), 0, 5)
         assert "token_estimate" in r
 

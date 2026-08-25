@@ -154,7 +154,7 @@ class TestTheDeadFieldIsGone:
         }
         with open(mp, "wb") as fh:
             dump_signed(payload, fh)
-        mp.with_suffix(".manifest.json").write_text("{}")
+        mp.with_suffix(".manifest.json").write_text("{}", encoding="utf-8")
 
         r = adv.read_model_report(str(mp))
         assert 0 < len(r["classification_report"]) <= 500

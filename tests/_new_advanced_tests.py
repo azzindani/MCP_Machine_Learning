@@ -98,7 +98,7 @@ class TestReadModelReportMorePaths:
         }
         with open(mp, "wb") as fh:
             pickle.dump(payload, fh)
-        mp.with_suffix(".manifest.json").write_text("{}")
+        mp.with_suffix(".manifest.json").write_text("{}", encoding="utf-8")
         r = read_model_report(str(mp))
         assert r["success"] is True
         assert len(r["classification_report"]) <= 500
@@ -110,7 +110,7 @@ class TestReadModelReportMorePaths:
         from pathlib import Path
 
         mp = train_classifier(str(classification_simple), "churned", "rf")["model_path"]
-        Path(mp).with_suffix(".manifest.json").write_text("NOT_VALID_JSON!!!")
+        Path(mp).with_suffix(".manifest.json").write_text("NOT_VALID_JSON!!!", encoding="utf-8")
         r = read_model_report(mp)
         assert r["success"] is True
 
@@ -172,7 +172,7 @@ class TestDRMorePaths:
         from servers.ml_advanced.engine import apply_dimensionality_reduction
 
         out = tmp_path / "reduced.csv"
-        out.write_text("existing")
+        out.write_text("existing", encoding="utf-8")
         with patch("servers.ml_advanced.engine.snapshot", side_effect=Exception("snap fail")):
             r = apply_dimensionality_reduction(
                 str(clustering_simple), ["x", "y"], "pca", output_path=str(out)
@@ -248,7 +248,7 @@ class TestPlotRocXGBAndNoProba:
                 },
                 fh,
             )
-        mp.with_suffix(".manifest.json").write_text("{}")
+        mp.with_suffix(".manifest.json").write_text("{}", encoding="utf-8")
         out = str(tmp_path / "roc_noproba.html")
         r = plot_roc_curve(str(mp), str(classification_simple), output_path=out, open_after=False)
         assert r["success"] is False

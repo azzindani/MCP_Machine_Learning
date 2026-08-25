@@ -36,7 +36,7 @@ from shared.small_sample import MIN_N_IQR, min_n_for_zscore  # noqa: E402
 def _csv(tmp_path, n_rows: int, name: str = "rows") -> Path:
     f = tmp_path / f"{name}_{n_rows}.csv"
     rows = "\n".join(f"r{i},{i * 10},{i * 3}" for i in range(1, n_rows + 1))
-    f.write_text(f"label,spend,clicks\n{rows}\n")
+    f.write_text(f"label,spend,clicks\n{rows}\n", encoding="utf-8")
     return f
 
 
@@ -69,7 +69,7 @@ def test_iqr_withholds_a_verdict_below_four_rows(tmp_path, n_rows):
 
 def test_iqr_reports_a_real_count_from_four_rows(tmp_path):
     f = tmp_path / "four.csv"
-    f.write_text("spend\n0\n0\n0\n100\n")
+    f.write_text("spend\n0\n0\n0\n100\n", encoding="utf-8")
     entry = detect_outliers(str(f), columns=["spend"], method="iqr")["results"][0]
     assert entry["outlier_count"] == 1
     assert entry["lower_bound"] is not None
@@ -84,14 +84,14 @@ def test_three_sigma_withholds_a_verdict_below_eleven_rows(tmp_path, n_rows):
 
 def test_three_sigma_reports_a_real_count_from_eleven_rows(tmp_path):
     f = tmp_path / "eleven.csv"
-    f.write_text("spend\n" + "1\n" * 10 + "1000\n")
+    f.write_text("spend\n" + "1\n" * 10 + "1000\n", encoding="utf-8")
     entry = detect_outliers(str(f), columns=["spend"], method="std")["results"][0]
     assert entry["outlier_count"] == 1
 
 
 def test_a_constant_column_with_enough_rows_still_answers_zero(tmp_path):
     f = tmp_path / "flat.csv"
-    f.write_text("spend\n" + "7\n" * 20)
+    f.write_text("spend\n" + "7\n" * 20, encoding="utf-8")
     entry = detect_outliers(str(f), columns=["spend"], method="iqr")["results"][0]
     assert entry["outlier_count"] == 0
     assert "zero spread" in entry["status"]
@@ -143,7 +143,7 @@ def test_one_row_is_not_scored_as_every_column_being_constant(tmp_path):
 
 def test_a_genuinely_constant_column_is_still_flagged(tmp_path):
     f = tmp_path / "const.csv"
-    f.write_text("spend,flag\n1,X\n2,X\n3,X\n4,X\n")
+    f.write_text("spend,flag\n1,X\n2,X\n3,X\n4,X\n", encoding="utf-8")
     r = check_data_quality(str(f))
     assert r["constant_columns"] == ["flag"]
     assert r["checks_skipped"] == []
@@ -152,6 +152,6 @@ def test_a_genuinely_constant_column_is_still_flagged(tmp_path):
 def test_an_all_null_column_is_still_flagged_at_one_row(tmp_path):
     """n_unique == 0 is about the data, not the row count -- it stays."""
     f = tmp_path / "null.csv"
-    f.write_text("spend,empty\n5,\n")
+    f.write_text("spend,empty\n5,\n", encoding="utf-8")
     r = check_data_quality(str(f))
     assert any(a["type"] == "all_null_column" for a in r["alerts"])

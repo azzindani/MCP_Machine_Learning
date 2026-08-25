@@ -49,7 +49,7 @@ ROWS = [
 def trained(tmp_path):
     train = tmp_path / "train.csv"
     body = "\n".join(f"{p},{d},{i},{c}" for p, d, i, c in ROWS * 6)
-    train.write_text(f"{HEADER}\n{body}\n")
+    train.write_text(f"{HEADER}\n{body}\n", encoding="utf-8")
     model = tmp_path / "m.pkl"
     r = train_regressor(file_path=str(train), target_column="clicks", model="rfr", output_path=str(model))
     assert r["success"] is True, r
@@ -58,7 +58,7 @@ def trained(tmp_path):
 
 def test_the_saved_row_is_the_row_that_went_in(tmp_path, trained):
     src = tmp_path / "one.csv"
-    src.write_text(f"{HEADER}\nGoogle Ads,Desktop,100,4\n")
+    src.write_text(f"{HEADER}\nGoogle Ads,Desktop,100,4\n", encoding="utf-8")
     out = tmp_path / "preds.csv"
 
     r = batch_predict(model_path=str(trained), file_path=str(src), output_path=str(out))
@@ -77,7 +77,7 @@ def test_the_saved_row_is_the_row_that_went_in(tmp_path, trained):
 def test_every_source_column_survives_unchanged(tmp_path, trained):
     src = tmp_path / "many.csv"
     body = "\n".join(f"{p},{d},{i},{c}" for p, d, i, c in ROWS)
-    src.write_text(f"{HEADER}\n{body}\n")
+    src.write_text(f"{HEADER}\n{body}\n", encoding="utf-8")
     out = tmp_path / "preds.csv"
 
     assert batch_predict(model_path=str(trained), file_path=str(src), output_path=str(out))["success"]
@@ -99,7 +99,7 @@ def test_an_unseen_category_is_reported_not_silently_encoded(tmp_path, trained):
     model scores it as a real category, and the caller has no way to know.
     """
     src = tmp_path / "novel.csv"
-    src.write_text(f"{HEADER}\nTikTok,Desktop,100,4\n")
+    src.write_text(f"{HEADER}\nTikTok,Desktop,100,4\n", encoding="utf-8")
     out = tmp_path / "preds.csv"
 
     r = batch_predict(model_path=str(trained), file_path=str(src), output_path=str(out))
@@ -117,7 +117,7 @@ def test_an_unseen_category_is_reported_not_silently_encoded(tmp_path, trained):
 
 def test_a_fully_known_input_reports_nothing_unmapped(tmp_path, trained):
     src = tmp_path / "known.csv"
-    src.write_text(f"{HEADER}\nFacebook,Mobile,250,9\n")
+    src.write_text(f"{HEADER}\nFacebook,Mobile,250,9\n", encoding="utf-8")
     out = tmp_path / "preds.csv"
     r = batch_predict(model_path=str(trained), file_path=str(src), output_path=str(out))
     assert r["unmapped_categories"] == {}
