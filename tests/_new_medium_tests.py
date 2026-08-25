@@ -113,7 +113,7 @@ class TestFilterRowsMorePaths:
         csv_path = tmp_path / "data.csv"
         pd.DataFrame({"col": [1, 2, 3]}).to_csv(csv_path, index=False)
         out_path = tmp_path / "filtered.csv"
-        out_path.write_text("existing content")
+        out_path.write_text("existing content", encoding="utf-8")
         with patch("servers.ml_medium._medium_data.snapshot", side_effect=Exception("snap fail")):
             r = filter_rows(str(csv_path), "col", "eq", "1", output_path=str(out_path))
         assert r["success"] is True
@@ -146,7 +146,7 @@ class TestMergeDatasetsMorePaths:
         pd.DataFrame({"id": [1, 2], "v": [10, 20]}).to_csv(csv1, index=False)
         pd.DataFrame({"id": [1, 2], "w": [30, 40]}).to_csv(csv2, index=False)
         out = tmp_path / "merged.csv"
-        out.write_text("existing")
+        out.write_text("existing", encoding="utf-8")
         with patch("servers.ml_medium._medium_data.snapshot", side_effect=Exception("snap fail")):
             r = merge_datasets(str(csv1), str(csv2), on="id", output_path=str(out))
         assert r["success"] is True
@@ -281,7 +281,7 @@ class TestEvaluateModelXGBPaths:
                 },
                 fh,
             )
-        mp.with_suffix(".manifest.json").write_text("{}")
+        mp.with_suffix(".manifest.json").write_text("{}", encoding="utf-8")
         r = evaluate_model(str(mp), str(classification_simple), "churned")
         assert r["success"] is True
         assert "auc_roc" not in r["metrics"]
@@ -335,7 +335,7 @@ class TestBatchPredictMorePaths:
         """Lines 761-762: snapshot failure during output write is ignored."""
         mp = train_classifier(str(classification_simple), "churned", "rf")["model_path"]
         out = tmp_path / "preds.csv"
-        out.write_text("old")
+        out.write_text("old", encoding="utf-8")
         with patch("servers.ml_medium._medium_data.snapshot", side_effect=Exception("snap")):
             r = batch_predict(mp, str(classification_simple), output_path=str(out))
         assert r["success"] is True
@@ -355,7 +355,7 @@ class TestEDAReportAlertPaths:
     def test_non_csv_extension(self, tmp_path):
         """Line 273: non-CSV extension returns error."""
         p = tmp_path / "data.txt"
-        p.write_text("hello")
+        p.write_text("hello", encoding="utf-8")
         r = generate_eda_report(str(p))
         assert r["success"] is False
 
