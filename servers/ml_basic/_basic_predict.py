@@ -13,8 +13,9 @@ import xgboost as xgb
 from shared.file_utils import get_output_dir, resolve_path
 from shared.file_utils import read_csv as _read_csv
 from shared.handover import make_context, make_handover
+from shared.model_signing import is_signed_by_us
 from shared.platform_utils import get_max_rows
-from shared.progress import info, ok
+from shared.progress import info, ok, warn
 from shared.progress import name as pname
 from shared.receipt import append_receipt
 from shared.version_control import restore_version as _restore_version
@@ -245,6 +246,13 @@ def predict_single(model_path: str, input_data: str) -> dict:
             f"Provide all features: {', '.join(feature_columns)}",
         )
 
+    # A key the model never saw was dropped without a word, while a missing one
+    # is refused by name three lines up. Passing a whole row -- target column
+    # and all -- is a reasonable thing to do, so this is reported rather than
+    # refused; what matters is that a typo'd feature name cannot look like it
+    # was used.
+    extras = [k for k in record if k not in feature_columns]
+
     # Build single-row DataFrame and apply encoding
     row_df = pd.DataFrame([{c: record[c] for c in feature_columns}])
     encoding_map: dict = metadata.get("encoding_map", {})
@@ -289,6 +297,13 @@ def predict_single(model_path: str, input_data: str) -> dict:
         )
 
     progress.append(ok("Loaded model", mp.name))
+    if extras:
+        progress.append(
+            warn(
+                f"{len(extras)} field(s) in the record are not features of this model",
+                f"ignored: {', '.join(extras[:8])}",
+            )
+        )
     progress.append(ok("Predicted", f"result={prediction}"))
 
     resp: dict = {
@@ -300,6 +315,7 @@ def predict_single(model_path: str, input_data: str) -> dict:
         "prediction": int(prediction) if task == "classification" else float(prediction),
         "probabilities": prob,
         "feature_columns": feature_columns,
+        "ignored_fields": extras,
         "progress": progress,
         "token_estimate": 0,
     }
@@ -361,22 +377,45 @@ def list_models(directory: str = "") -> dict:
                 )
             except Exception as _meta_exc:
                 logger.debug("Manifest read failed for %s: %s", pkl.name, _meta_exc)
+        # The listing advertised four models that every loading tool in the
+        # fleet refused with "Model file signature is invalid": they had been
+        # written by this server before a rebuild replaced its signing key.
+        # A listing whose entries the sibling tools will not accept is a
+        # catalogue of dead ends, so each row says whether it can be loaded.
+        entry["loadable"] = is_signed_by_us(pkl)
         models.append(entry)
 
+    unloadable = [m["name"] for m in models if not m["loadable"]]
     progress.append(ok("Scanned for models", f"{len(models)} found"))
+    if unloadable:
+        progress.append(
+            warn(
+                f"{len(unloadable)} model(s) cannot be loaded by this server",
+                "signed with a different key — retrain, or load where they were made",
+            )
+        )
 
     resp: dict = {
         "success": True,
         "op": "list_models",
         "directory": str(search_dir),
         "model_count": len(models),
+        "loadable_count": len(models) - len(unloadable),
         "models": models,
         "progress": progress,
         "token_estimate": 0,
     }
+    if unloadable:
+        resp["unloadable"] = unloadable
+        resp["hint"] = (
+            f"{', '.join(unloadable[:5])} will fail in get_predictions, predict_single and "
+            "evaluate_model: they were signed with a different key. Retrain them here, or "
+            "load them on the machine that wrote them."
+        )
     resp["context"] = make_context(
         "list_models",
-        f"Found {len(models)} model(s) in {search_dir.name}",
+        f"Found {len(models)} model(s) in {search_dir.name}"
+        + (f", {len(models) - len(unloadable)} loadable" if unloadable else ""),
     )
     resp["handover"] = make_handover(
         "COLLECT",

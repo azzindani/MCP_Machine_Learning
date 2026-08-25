@@ -115,6 +115,17 @@ def inspect_dataset(file_path: str) -> dict:
 # ---------------------------------------------------------------------------
 # 2. read_column_profile
 # ---------------------------------------------------------------------------
+def _top_values(series: pd.Series, limit: int = 10) -> dict:
+    """The most frequent values and their counts, for any dtype.
+
+    read_column_profile's docstring says it returns "stats, null count, top
+    values"; the third only ever appeared for categorical columns, so a numeric
+    column got two of the three things it was told it would get.
+    """
+    counts = series.value_counts().head(limit)
+    return {str(k): int(v) for k, v in counts.items()}
+
+
 def read_column_profile(file_path: str, column_name: str) -> dict:
     """Profile one column. Returns stats, null count, top values."""
     progress: list[dict] = []
@@ -181,6 +192,7 @@ def read_column_profile(file_path: str, column_name: str) -> dict:
                 "kind": "boolean",
                 "true_count": true_count,
                 "false_count": false_count,
+                "top_values": _top_values(series),
                 "null_count": null_count,
                 "null_pct": null_pct,
                 "balance_ratio": round(true_count / max(false_count, 1), 4),
@@ -200,17 +212,23 @@ def read_column_profile(file_path: str, column_name: str) -> dict:
                 "q25": round(float(clean.quantile(0.25)), 4) if len(clean) else None,
                 "q75": round(float(clean.quantile(0.75)), 4) if len(clean) else None,
                 "skewness": round(float(clean.skew()), 4) if len(clean) else None,
+                # The docstring promises "stats, null count, top values" and
+                # only the categorical branch produced the third. On the
+                # reference dataset link_clicks comes back with median, q25 and
+                # q75 all 0.0 -- a heavy-zero column whose shape the top values
+                # state outright, from the one tool that had been asked for
+                # them and answered with the other two thirds.
+                "top_values": _top_values(series),
                 "inf_count": inf_count,
                 "null_count": null_count,
                 "null_pct": null_pct,
             }
         else:
-            top_vals = series.value_counts().head(10)
             profile = {
                 "dtype": dtype_str,
                 "kind": "categorical",
                 "unique_count": int(series.nunique()),
-                "top_values": {str(k): int(v) for k, v in top_vals.items()},
+                "top_values": _top_values(series),
                 "mode": str(series.mode().iloc[0]) if len(series.dropna()) else None,
                 "null_count": null_count,
                 "null_pct": null_pct,

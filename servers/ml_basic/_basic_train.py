@@ -8,8 +8,11 @@ from shared.model_output import resolve_model_path
 from ._basic_helpers import (
     ALLOWED_CLASSIFIERS,
     ALLOWED_REGRESSORS,
+    CLASS_WEIGHTS,
+    CLASSIFIER_ARG_MODELS,
     MIN_ROWS_CLASSIFIER,
     MIN_ROWS_REGRESSOR,
+    REGRESSOR_ARG_MODELS,
     SVC,
     UTC,
     Any,
@@ -51,6 +54,7 @@ from ._basic_helpers import (
     sys,
     train_test_split,
     typical_row,
+    unread_arg_error,
     warn,
     xgb,
 )
@@ -102,6 +106,17 @@ def train_classifier(
                 _wrong_trainer_hint(model, ALLOWED_REGRESSORS, "train_regressor")
                 or "Use one of: lr svm rf dtc knn nb xgb",
             )
+
+        class_weight = class_weight.strip().lower()
+        if class_weight and class_weight not in CLASS_WEIGHTS:
+            return _error(
+                f"Unknown class_weight: '{class_weight}'",
+                f"Use one of: {', '.join(sorted(CLASS_WEIGHTS))}, or omit it to weight every class equally.",
+            )
+
+        unread = unread_arg_error(CLASSIFIER_ARG_MODELS, model, {"class_weight": class_weight}, {"class_weight": ""})
+        if unread:
+            return _error(*unread)
 
         if path.stat().st_size == 0:
             return _error(f"File is empty: {path.name}", "Verify the file has header + data rows.")
@@ -164,7 +179,7 @@ def train_classifier(
         scaler: StandardScaler | None = None
         model_class_name = ""
 
-        cw = class_weight if class_weight in ("balanced",) else None
+        cw = class_weight if class_weight in CLASS_WEIGHTS else None
 
         if model == "lr":
             clf = LogisticRegression(random_state=42, max_iter=200, class_weight=cw)
@@ -295,6 +310,13 @@ def train_classifier(
             "model_type": model_class_name,
             "task": "classification",
             "model_key": model,
+            # Same provenance gap as the regressor: a weighted and an
+            # unweighted model saved to disk looked identical.
+            "hyperparameters": (
+                {"class_weight": class_weight}
+                if model in CLASSIFIER_ARG_MODELS["class_weight"] and class_weight
+                else {}
+            ),
             "trained_on": path.name,
             "training_date": datetime.now(UTC).isoformat(),
             "feature_columns": feature_cols,
@@ -392,6 +414,15 @@ def train_regressor(
                 _wrong_trainer_hint(model, ALLOWED_CLASSIFIERS, "train_classifier")
                 or "Use one of: lir pr lar rr dtr rfr xgb",
             )
+
+        unread = unread_arg_error(
+            REGRESSOR_ARG_MODELS,
+            model,
+            {"degree": degree, "alpha": alpha, "n_estimators": n_estimators},
+            {"degree": 5, "alpha": 0.01, "n_estimators": 10},
+        )
+        if unread:
+            return _error(*unread)
 
         if path.stat().st_size == 0:
             return _error(f"File is empty: {path.name}", "Verify the file has header + data rows.")
@@ -493,7 +524,11 @@ def train_regressor(
             dtrain = xgb.DMatrix(x_train, label=y_train)
             dtest = xgb.DMatrix(x_test, label=y_test)
             params = {"objective": "reg:squarederror", "max_depth": 3, "eta": 0.3, "verbosity": 0}
-            xgb_model = xgb.train(params, dtrain, num_boost_round=5)
+            # n_estimators is a boosted tree's number of rounds. This branch
+            # hardcoded 5 and left the argument unread, which is the same
+            # silent drop as class_weight on nb -- with the difference that the
+            # model does have the knob, so the fix is to use it.
+            xgb_model = xgb.train(params, dtrain, num_boost_round=n_estimators)
             y_pred = xgb_model.predict(dtest)
             model_class_name = "XGBRegressor"
             trained = xgb_model
@@ -516,10 +551,20 @@ def train_regressor(
         if model_path.exists():
             backup = snapshot(str(model_path))
 
+        # n_estimators=15 reached the RandomForestRegressor and appeared
+        # nowhere in the manifest, so the saved model could not be told from
+        # one trained with the default. Record what this model actually read.
+        hyperparameters = {
+            name: {"degree": degree, "alpha": alpha, "n_estimators": n_estimators}[name]
+            for name, models in REGRESSOR_ARG_MODELS.items()
+            if model in models
+        }
+
         metadata: dict = {
             "model_type": model_class_name,
             "task": "regression",
             "model_key": model,
+            "hyperparameters": hyperparameters,
             "trained_on": path.name,
             "training_date": datetime.now(UTC).isoformat(),
             "feature_columns": feature_cols,
@@ -550,6 +595,7 @@ def train_regressor(
             "model": model,
             "model_class": model_class_name,
             "task": "regression",
+            "hyperparameters": hyperparameters,
             "target_column": target_column,
             "feature_columns": feature_cols,
             "row_count": len(df),

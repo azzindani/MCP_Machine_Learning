@@ -63,6 +63,48 @@ ALLOWED_REGRESSORS = _allowed_regressors()
 
 MODELS_DIR = ".mcp_models"
 
+# Which models actually read each hyper-parameter the trainers declare.
+#
+# The tool schema describes the tool; the vocabulary is per model. Four of the
+# seven classifiers pass class_weight to sklearn and three do not, so
+# train_classifier(model="nb", class_weight="balanced") trained a GaussianNB
+# that has no such parameter and answered success: true without a word --
+# every schema check there is passes, because the argument is valid for the
+# tool. Same shape on the regressor: degree is read by pr alone, alpha by lar
+# and rr, n_estimators by rfr and (since this table was written) xgb.
+#
+# One table, next to the model lists it refers to, so a new model cannot be
+# added to one copy.
+CLASSIFIER_ARG_MODELS: dict[str, frozenset[str]] = {
+    "class_weight": frozenset({"lr", "svm", "rf", "dtc"}),
+}
+REGRESSOR_ARG_MODELS: dict[str, frozenset[str]] = {
+    "degree": frozenset({"pr"}),
+    "alpha": frozenset({"lar", "rr"}),
+    "n_estimators": frozenset({"rfr", "xgb"}),
+}
+
+# `cw = class_weight if class_weight in ("balanced",) else None` turned every
+# other spelling into the default in silence: "balance", "auto" and
+# "class_weight" all trained an unweighted model under success: true.
+CLASS_WEIGHTS = frozenset({"balanced"})
+
+
+def unread_arg_error(
+    table: dict[str, frozenset[str]], model: str, given: dict, defaults: dict
+) -> tuple[str, str] | None:
+    """(error, hint) when an argument was set that this model never reads."""
+    ignored = sorted(
+        name for name, value in given.items() if value != defaults[name] and model not in table.get(name, frozenset())
+    )
+    if not ignored:
+        return None
+    parts = [f"{name} (read by: {', '.join(sorted(table.get(name, ())))})" for name in ignored]
+    return (
+        f"model='{model}' does not read {', '.join(ignored)}",
+        f"Drop the argument, or choose a model that uses it — {'; '.join(parts)}.",
+    )
+
 
 # ---------------------------------------------------------------------------
 # Private helpers
@@ -180,6 +222,10 @@ __all__ = [
     "MIN_ROWS_REGRESSOR",
     "ALLOWED_CLASSIFIERS",
     "ALLOWED_REGRESSORS",
+    "CLASSIFIER_ARG_MODELS",
+    "CLASS_WEIGHTS",
+    "REGRESSOR_ARG_MODELS",
+    "unread_arg_error",
     "MODELS_DIR",
     # helpers
     "_check_memory",

@@ -809,6 +809,12 @@ def _panel_defaults(metadata: dict) -> dict:
     return dict(stored) if isinstance(stored, dict) else {}
 
 
+_SECTION_TITLES = {
+    "confusion": "Confusion Matrix",
+    "importance": "Feature Importance",
+}
+
+
 def generate_training_report(
     model_path: str,
     theme: str = "device",
@@ -899,11 +905,28 @@ def generate_training_report(
         )
         sections.append({"id": "metrics", "heading": "Evaluation Metrics", "html": metrics_html})
 
+    # The docstring promises three things -- "metrics, confusion matrix, feature
+    # importance" -- and two of them were conditional on what the manifest and
+    # the model object happened to carry. A model saved by tune_hyperparameters
+    # records best_score and nothing else, so the page came back with a
+    # one-row metrics table, no matrix, no importances, and success: true with
+    # nothing anywhere saying two thirds of the report was not there.
+    #
+    # read_model_report already explains an absent confusion matrix and points
+    # at the tool that can produce one; this is the sibling that did not.
+    omitted: dict[str, str] = {}
+
     confusion = metrics.get("confusion_matrix", {})
     if confusion:
         cm_rows = "".join(f"<tr><td>{k}</td><td>{v}</td></tr>" for k, v in confusion.items())
         cm_html = f"<table><thead><tr><th>Category</th><th>Count</th></tr></thead><tbody>{cm_rows}</tbody></table>"
         sections.append({"id": "confusion", "heading": "Confusion Matrix", "html": cm_html})
+    elif task != "regression":
+        omitted["confusion"] = (
+            "This model carries no confusion matrix: only train_classifier() records one. "
+            "Retrain with train_classifier(), or use evaluate_model() to score this model "
+            "against a held-out file."
+        )
 
     if model_obj is not None and hasattr(model_obj, "feature_importances_"):
         importances = model_obj.feature_importances_
@@ -911,6 +934,22 @@ def generate_training_report(
         fi_rows = "".join(f"<tr><td>{f}</td><td>{round(i, 4)}</td></tr>" for f, i in fi_pairs)
         fi_html = f"<table><thead><tr><th>Feature</th><th>Importance</th></tr></thead><tbody>{fi_rows}</tbody></table>"
         sections.append({"id": "importance", "heading": "Feature Importance (Top 10)", "html": fi_html})
+    else:
+        kind = type(model_obj).__name__ if model_obj is not None else "this model"
+        omitted["importance"] = (
+            f"{kind} exposes no feature_importances_ — linear and distance-based models "
+            "weight features differently. Train a tree or forest (dtc, rf, dtr, rfr) for "
+            "importances, or read the coefficients from the model itself."
+        )
+
+    # Said on the page as well as in the response: a report is read as a file,
+    # and an absence is invisible unless something writes it down.
+    if omitted:
+        missing_html = "".join(
+            f"<p><strong>{html_escape(_SECTION_TITLES[key])}</strong>: {html_escape(text)}</p>"
+            for key, text in omitted.items()
+        )
+        sections.append({"id": "omitted", "heading": "Not in this report", "html": missing_html})
 
     # The model itself, as a scoring function the page can run. A metrics table
     # says how the model scored; this says what it does — and it keeps working
@@ -954,9 +993,18 @@ def generate_training_report(
         "model_type": model_type,
         "task": task,
         "interactive_prediction": embedded,
+        "sections_generated": [sec["id"] for sec in sections],
+        "sections_omitted": omitted,
         "progress": progress,
         "token_estimate": 0,
     }
+    if omitted:
+        progress.append(
+            warn(
+                f"{len(omitted)} promised section(s) are not in this report",
+                ", ".join(_SECTION_TITLES[k] for k in omitted),
+            )
+        )
     resp["context"] = make_context(
         "generate_training_report",
         f"Generated training report for {path.name} ({model_type}, {task}) → {out_path.name}",
