@@ -258,6 +258,24 @@ def _quality_score_html(score: float, alerts: list[dict], t: dict) -> str:
     return score_card + _alerts_html(alerts, t)
 
 
+def _charts_in(sections: list[dict]) -> int:
+    """How many charts the assembled report actually holds.
+
+    `charts_generated` used to be len(sections), and a section is not a chart.
+    Two of the seven this report can build are tables with no chart in them at
+    all -- "Data Quality" is metric cards over an alert list, "Summary
+    Statistics" is a describe() table -- and "Categorical Columns" is one
+    section holding one chart per column. So the old number was wrong in both
+    directions: inflated by the tables, flattened by the categorical section.
+    A round-15 sweep opened a report claiming six and counted four.
+
+    A figure embedded by shared.html_theme.plotly_div carries exactly one
+    `plotly-graph-div`, so counting the marker counts the charts however many
+    any one section turns out to hold.
+    """
+    return sum(str(s.get("html", "")).count("plotly-graph-div") for s in sections)
+
+
 def generate_eda_report(
     file_path: str,
     target_column: str = "",
@@ -587,7 +605,8 @@ def generate_eda_report(
         "alerts_medium": sum(1 for a in alerts if a.get("severity") == "medium"),
         "alerts_low": sum(1 for a in alerts if a.get("severity") == "low"),
         "alerts": alerts,
-        "charts_generated": len(sections),
+        "charts_generated": _charts_in(sections),
+        "sections_generated": len(sections),
         "progress": progress,
         "token_estimate": 0,
     }
