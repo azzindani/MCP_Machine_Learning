@@ -48,22 +48,23 @@ from shared.platform_utils import get_silhouette_sample_cap, get_sklearn_working
 # module forced.
 
 FIXTURES = Path(__file__).parent / "fixtures"
-# The container these run in is capped at 1 GiB and holds ~300 MB before a tool
-# is called, so a single call has to stay well under half of it.
-PEAK_CEILING_MB = 450
 
-# That ceiling is a fact about the deployed Linux container. A macOS runner has
-# a different allocator and a different BLAS and sits higher for the same work,
-# so measuring it against the container's number tests the runner rather than
-# the tool -- which is exactly how this failed: 464 MB on macOS, green on
-# ubuntu, from a change to how chart pages are written. Elsewhere the call still
-# has to finish and stay inside a bound loose enough to be about the algorithm
-# and tight enough to catch the 962 MB regression this file exists for.
-ELSEWHERE_CEILING_MB = 900
-
-
-def ceiling_mb() -> float:
-    return PEAK_CEILING_MB if sys.platform.startswith("linux") else ELSEWHERE_CEILING_MB
+# What a single call may add to whatever is already resident.
+#
+# The number that kills the container is total RSS against its 1 GiB cap, and
+# the deployed server holds ~300 MB before a tool is called -- so a call has
+# room to grow by a few hundred MB and no more. The regression this file exists
+# for grew by roughly 660 MB in one call and reached 962 MB total.
+#
+# Growth, not the total, because the total depends on the baseline of whatever
+# process is doing the measuring, and a pytest worker's baseline is not the
+# server's: it holds every test module, fixture and cached frame in the suite.
+# Asserting the container's total against a worker's total compares two
+# different baselines and fails for reasons that have nothing to do with the
+# tool -- 464 MB on macOS and 454 MB on ubuntu, on two commits that changed how
+# chart pages are written. The call's own growth measured ~75 MB on every one
+# of those runs.
+GROWTH_CEILING_MB = 400
 
 
 def rss_mb() -> float:
@@ -71,19 +72,20 @@ def rss_mb() -> float:
     return psutil.Process().memory_info().rss / 1e6
 
 
-def peak_rss_during(call, interval: float = 0.02) -> tuple[Any, float]:
-    """Run `call`, sampling RSS on a thread; return its result and the peak MB.
+def rss_growth_during(call, interval: float = 0.02) -> tuple[Any, float]:
+    """Run `call`, sampling RSS on a thread; return its result and MB of growth.
 
     `ru_maxrss` is a high-water mark for the life of the process, so it answers
     "what is the most this pytest worker ever held", not "what did this call
     allocate". Once other tests in the same worker started materialising 4.86 MB
     chart pages, the number this file asserted on stopped being about clustering
     at all, and the guard passed or failed on test order. Sampling the current
-    RSS across the call measures the tool, and measures the thing the container
-    actually kills on -- total resident bytes at a moment in time.
+    RSS across the call and subtracting the baseline measures the tool itself,
+    on any machine and in any test order.
     """
     proc = psutil.Process()
-    peak = proc.memory_info().rss
+    baseline = proc.memory_info().rss
+    peak = baseline
     stop = threading.Event()
 
     def sample() -> None:
@@ -103,7 +105,7 @@ def peak_rss_during(call, interval: float = 0.02) -> tuple[Any, float]:
         stop.set()
         watcher.join(timeout=1.0)
     peak = max(peak, proc.memory_info().rss)
-    return result, peak / 1e6
+    return result, (peak - baseline) / 1e6
 
 
 @pytest.fixture()
@@ -167,9 +169,36 @@ class TestTheHelperBoundsWhatItAllocates:
         assert bounded_silhouette(rng.rand(100, 2), labels, cap=1) is None
 
 
+class TestTheWeighingItselfWorks:
+    """A guard that cannot fail is not a guard.
+
+    Both previous versions of this measurement were wrong in a way that still
+    let the file pass somewhere, so the helper is checked against known
+    quantities rather than trusted.
+    """
+
+    def test_it_sees_an_allocation(self):
+        _, growth = rss_growth_during(lambda: bytearray(200 * 1024 * 1024))
+        assert growth > 150, f"200 MB allocated, {growth:.0f} MB seen"
+
+    def test_it_would_fail_on_the_regression_this_file_exists_for(self):
+        """dbscan grew by roughly 660 MB in one call and reached 962 MB."""
+        _, growth = rss_growth_during(lambda: bytearray(int(GROWTH_CEILING_MB * 1.2) * 1024 * 1024))
+        assert growth >= GROWTH_CEILING_MB, f"{growth:.0f} MB did not trip a {GROWTH_CEILING_MB} MB ceiling"
+
+    def test_it_does_not_see_memory_that_was_already_held(self):
+        """The baseline is subtracted, so test order cannot move the number."""
+        held = bytearray(150 * 1024 * 1024)
+        try:
+            _, growth = rss_growth_during(lambda: None)
+            assert growth < 20, f"idle call reported {growth:.0f} MB"
+        finally:
+            del held
+
+
 class TestTheToolsStayInsideTheContainer:
     def test_run_clustering_peaks_well_below_the_cap(self, clustering_csv: str):
-        r, peak = peak_rss_during(
+        r, growth = rss_growth_during(
             lambda: run_clustering(
                 clustering_csv,
                 algorithm="kmeans",
@@ -178,7 +207,7 @@ class TestTheToolsStayInsideTheContainer:
             )
         )
         assert r["success"] is True, r.get("error")
-        assert peak < ceiling_mb(), f"peak {peak:.0f} MB against {ceiling_mb():.0f} MB"
+        assert growth < GROWTH_CEILING_MB, f"grew {growth:.0f} MB against {GROWTH_CEILING_MB} MB"
 
     def test_it_still_returns_a_silhouette(self, clustering_csv: str):
         r = run_clustering(
@@ -191,12 +220,12 @@ class TestTheToolsStayInsideTheContainer:
 
     def test_find_optimal_clusters_scores_every_k_within_the_cap(self, clustering_csv: str):
         """Seven silhouette calls in a loop, not one."""
-        r, peak = peak_rss_during(
+        r, growth = rss_growth_during(
             lambda: find_optimal_clusters(clustering_csv, feature_columns=["spends", "impressions", "clicks"], max_k=8)
         )
         assert r["success"] is True, r.get("error")
         assert len(r["silhouette_scores"]) >= 2
-        assert peak < ceiling_mb(), f"peak {peak:.0f} MB against {ceiling_mb():.0f} MB"
+        assert growth < GROWTH_CEILING_MB, f"grew {growth:.0f} MB against {GROWTH_CEILING_MB} MB"
 
     def test_it_picks_a_k_from_those_scores(self, clustering_csv: str):
         r = find_optimal_clusters(clustering_csv, feature_columns=["spends", "impressions", "clicks"], max_k=8)
