@@ -224,7 +224,7 @@ class TestExportModel:
         assert r["success"] is True
         import json
 
-        manifest = json.loads(Path(r["manifest_path"]).read_text())
+        manifest = json.loads(Path(r["manifest_path"]).read_text(encoding="utf-8"))
         for field in ("model_type", "task", "trained_on", "feature_columns", "sklearn_version"):
             assert field in manifest
 
@@ -399,7 +399,7 @@ class TestApplyDimensionalityReduction:
     def test_snapshot_created(self, clustering_simple, tmp_path):
         out = str(tmp_path / "dr_snap.csv")
         # Create file first to trigger snapshot
-        Path(out).write_text("dummy")
+        Path(out).write_text("dummy", encoding="utf-8")
         r = apply_dimensionality_reduction(clustering_simple, ["x", "y"], "pca", output_path=out)
         assert r["success"] is True
         assert "backup" in r
@@ -531,8 +531,8 @@ class TestPlotRocCurve:
 
     def test_return_content_embeds_something_that_renders(self, classification_simple, tmp_path):
         """Deliberately not the bytes on disk. The file is the interactive chart
-        and loads plotly.min.js from beside itself; a caller handed only the
-        bytes has no such neighbour, so the inline copy is a self-contained SVG.
+        carrying its own 4.85 MB of Plotly, which is far past what any client
+        can take inline, so the returned copy is a few-KB self-contained SVG.
         """
         import base64
 
@@ -553,11 +553,20 @@ class TestPlotRocCurve:
         assert len(r["content_base64"]) < 200_000
 
     def test_the_file_on_disk_is_still_the_interactive_chart(self, classification_simple, tmp_path):
+        """Returning an SVG inline must not change what was written.
+
+        The file used to reference a plotly.min.js sidecar, which made it a
+        blank page anywhere that file was not; it now carries the library, and
+        the small SVG lives only in the response.
+        """
         mp = _train_basic_model(classification_simple, model="lr")
         out = tmp_path / "roc_disk.html"
         plot_roc_curve(mp, classification_simple, output_path=str(out), open_after=False, return_content=True)
-        assert 'src="plotly.min.js"' in out.read_text(encoding="utf-8")
-        assert (out.parent / "plotly.min.js").exists()
+        text = out.read_text(encoding="utf-8")
+        assert "Plotly.newPlot" in text, "the interactive chart, not the SVG"
+        assert 'src="plotly.min.js"' not in text
+        assert not (out.parent / "plotly.min.js").exists()
+        assert out.stat().st_size > 4_000_000
 
     def test_no_return_content_by_default(self, classification_simple, tmp_path):
         mp = _train_basic_model(classification_simple, model="lr")
@@ -1101,7 +1110,7 @@ class TestPlotRocCurveErrorPaths:
         """resolve_path with .csv extension check — non-csv raises ValueError."""
         mp = _train_basic_model(classification_simple)
         bad_data = str(tmp_path / "data.txt")
-        Path(bad_data).write_text("dummy")
+        Path(bad_data).write_text("dummy", encoding="utf-8")
         r = plot_roc_curve(mp, bad_data, open_after=False)
         assert r["success"] is False
 
@@ -1204,7 +1213,7 @@ class TestPlotLearningCurveErrorPaths:
 
     def test_invalid_csv_extension(self, tmp_path):
         bad = str(tmp_path / "data.parquet")
-        Path(bad).write_text("dummy")
+        Path(bad).write_text("dummy", encoding="utf-8")
         r = plot_learning_curve(bad, "churned", "rf", "classification", open_after=False)
         assert r["success"] is False
 
@@ -1238,7 +1247,7 @@ class TestPlotPredictionsVsActualErrorPaths:
     def test_invalid_csv_extension(self, regression_simple, tmp_path):
         mp = _train_basic_model(regression_simple, target="salary", model="rfr", task="regression")
         bad = str(tmp_path / "data.txt")
-        Path(bad).write_text("dummy")
+        Path(bad).write_text("dummy", encoding="utf-8")
         r = plot_predictions_vs_actual(mp, bad, open_after=False)
         assert r["success"] is False
 
@@ -1261,7 +1270,7 @@ class TestPlotPredictionsVsActualErrorPaths:
 class TestGenerateClusterReportErrorPaths:
     def test_invalid_csv_extension(self, tmp_path):
         bad = str(tmp_path / "data.txt")
-        Path(bad).write_text("dummy")
+        Path(bad).write_text("dummy", encoding="utf-8")
         r = generate_cluster_report(bad, ["x", "y"], "cluster_label", open_after=False)
         assert r["success"] is False
 
@@ -1308,7 +1317,7 @@ class TestTuneHyperparametersCoverage:
 
     def test_non_csv_file_rejected(self, tmp_path):
         bad = tmp_path / "model.parquet"
-        bad.write_text("dummy")
+        bad.write_text("dummy", encoding="utf-8")
         r = tune_hyperparameters(str(bad), "target", "rf", "classification")
         assert r["success"] is False
 
@@ -1342,7 +1351,7 @@ class TestTuneHyperparametersCoverage:
 class TestExportModelCoverage:
     def test_non_pkl_extension_rejected(self, classification_simple, tmp_path):
         non_pkl = tmp_path / "model.json"
-        non_pkl.write_text("{}")
+        non_pkl.write_text("{}", encoding="utf-8")
         r = export_model(str(non_pkl))
         assert r["success"] is False
 
@@ -1361,7 +1370,7 @@ class TestRunProfilingReportCoverage:
 
     def test_non_csv_extension(self, tmp_path):
         bad = tmp_path / "data.txt"
-        bad.write_text("dummy")
+        bad.write_text("dummy", encoding="utf-8")
         r = run_profiling_report(str(bad), open_after=False)
         assert r["success"] is False
 
@@ -1563,7 +1572,7 @@ class TestReadModelReportMorePaths:
         }
         with open(mp, "wb") as fh:
             dump_signed(payload, fh)
-        mp.with_suffix(".manifest.json").write_text("{}")
+        mp.with_suffix(".manifest.json").write_text("{}", encoding="utf-8")
         r = read_model_report(str(mp))
         assert r["success"] is True
         assert len(r["classification_report"]) <= 500
@@ -1576,7 +1585,7 @@ class TestReadModelReportMorePaths:
         from servers.ml_basic.engine import train_classifier
 
         mp = train_classifier(str(classification_simple), "churned", "rf")["model_path"]
-        Path(mp).with_suffix(".manifest.json").write_text("NOT_VALID_JSON!!!")
+        Path(mp).with_suffix(".manifest.json").write_text("NOT_VALID_JSON!!!", encoding="utf-8")
         r = read_model_report(mp)
         assert r["success"] is True
 
@@ -1643,7 +1652,7 @@ class TestDRMorePaths:
         from servers.ml_advanced.engine import apply_dimensionality_reduction
 
         out = tmp_path / "reduced.csv"
-        out.write_text("existing")
+        out.write_text("existing", encoding="utf-8")
         with patch("servers.ml_advanced.engine.snapshot", side_effect=Exception("snap fail")):
             r = apply_dimensionality_reduction(str(clustering_simple), ["x", "y"], "pca", output_path=str(out))
         assert r["success"] is True
@@ -1719,7 +1728,7 @@ class TestPlotRocXGBAndNoProba:
                 },
                 fh,
             )
-        mp.with_suffix(".manifest.json").write_text("{}")
+        mp.with_suffix(".manifest.json").write_text("{}", encoding="utf-8")
         out = str(tmp_path / "roc_noproba.html")
         r = plot_roc_curve(str(mp), str(classification_simple), output_path=out, open_after=False)
         assert r["success"] is False
