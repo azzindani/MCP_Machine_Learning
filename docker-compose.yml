@@ -66,6 +66,13 @@ services:
       MCP_FETCH_URLS: ${MCP_FETCH_URLS:-0}
       MCP_FETCH_ALLOW_PRIVATE: ${MCP_FETCH_ALLOW_PRIVATE:-0}
       MCP_MAX_FETCH_MB: ${MCP_MAX_FETCH_MB:-100}
+      # Trained models are HMAC-signed with a server-local key and every
+      # loading tool verifies before unpickling. The key defaults to
+      # ~/.mcp_ml_signing_key, which lives in the image — so a rebuild issued a
+      # new one and every model already saved to the mounted output volume came
+      # back "Model file signature is invalid", which reads as tampering, for
+      # files this server wrote itself. Keep it on the persisted volume.
+      MCP_ML_SIGNING_KEY_FILE: /home/app/.model-keys/signing.key
     mem_limit: ${ML_MEM_LIMIT:-1g}
     volumes:
       - ./tokens.json:/home/app/tokens.json:ro
@@ -79,6 +86,9 @@ services:
       # oauth-state && chown 999:999 oauth-state` before first run — left
       # root-owned, the container's non-root user can't write to it.
       - ./oauth-state:/home/app/.oauth-state
+      # Holds the model signing key (see MCP_ML_SIGNING_KEY_FILE above). Same
+      # ownership gotcha: `mkdir -p model-keys && chown 999:999 model-keys`.
+      - ./model-keys:/home/app/.model-keys
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8820/health', timeout=3)"]
       interval: 30s

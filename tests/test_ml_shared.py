@@ -121,7 +121,7 @@ def test_is_alias_false_relative():
 def test_resolve_alias_success(tmp_path, monkeypatch):
     monkeypatch.setenv("MCP_PROJECTS_DIR", str(tmp_path))
     csv_file = tmp_path / "data.csv"
-    csv_file.write_text("a,b\n1,2\n")
+    csv_file.write_text("a,b\n1,2\n", encoding="utf-8")
     _make_project(tmp_path, "testproj", "mydata", csv_file)
     result = resolve_alias("project:testproj/mydata")
     assert result == csv_file.resolve()
@@ -130,7 +130,7 @@ def test_resolve_alias_success(tmp_path, monkeypatch):
 def test_resolve_alias_workspace_prefix(tmp_path, monkeypatch):
     monkeypatch.setenv("MCP_WORKSPACE_DIR", str(tmp_path))
     csv_file = tmp_path / "data.csv"
-    csv_file.write_text("a,b\n1,2\n")
+    csv_file.write_text("a,b\n1,2\n", encoding="utf-8")
     _make_project(tmp_path, "testproj", "mydata", csv_file)
     result = resolve_alias("workspace:testproj/mydata")
     assert result == csv_file.resolve()
@@ -142,7 +142,7 @@ def test_resolve_alias_relative_path_in_manifest(tmp_path, monkeypatch):
     proj_dir.mkdir()
     (proj_dir / "data" / "working").mkdir(parents=True)
     csv_file = proj_dir / "data" / "working" / "clean.csv"
-    csv_file.write_text("a,b\n1,2\n")
+    csv_file.write_text("a,b\n1,2\n", encoding="utf-8")
     manifest = {
         "name": "proj2",
         "files": {"clean": {"path": "data/working/clean.csv", "stage": "working"}},
@@ -163,7 +163,7 @@ def test_resolve_alias_project_not_found(tmp_path, monkeypatch):
 def test_resolve_alias_alias_not_found(tmp_path, monkeypatch):
     monkeypatch.setenv("MCP_PROJECTS_DIR", str(tmp_path))
     csv_file = tmp_path / "data.csv"
-    csv_file.write_text("a,b\n1,2\n")
+    csv_file.write_text("a,b\n1,2\n", encoding="utf-8")
     _make_project(tmp_path, "testproj", "mydata", csv_file)
     with pytest.raises(ValueError, match="not found"):
         resolve_alias("project:testproj/wrongalias")
@@ -177,7 +177,7 @@ def test_resolve_alias_bad_format(tmp_path, monkeypatch):
 
 def test_resolve_alias_non_alias_passthrough(tmp_path):
     csv_file = tmp_path / "data.csv"
-    csv_file.write_text("a,b\n1,2\n")
+    csv_file.write_text("a,b\n1,2\n", encoding="utf-8")
     result = resolve_alias(str(csv_file))
     assert result == csv_file.resolve()
 
@@ -190,7 +190,7 @@ def test_resolve_alias_non_alias_passthrough(tmp_path):
 def test_register_file_success(tmp_path, monkeypatch):
     monkeypatch.setenv("MCP_PROJECTS_DIR", str(tmp_path))
     csv_file = tmp_path / "output.csv"
-    csv_file.write_text("a,b\n1,2\n3,4\n")
+    csv_file.write_text("a,b\n1,2\n3,4\n", encoding="utf-8")
     _make_empty_project(tmp_path, "myproj")
     manifest = register_file("myproj", str(csv_file), "clean_output", stage="working")
     assert "clean_output" in manifest["files"]
@@ -200,7 +200,7 @@ def test_register_file_success(tmp_path, monkeypatch):
 def test_register_file_updates_manifest_on_disk(tmp_path, monkeypatch):
     monkeypatch.setenv("MCP_PROJECTS_DIR", str(tmp_path))
     csv_file = tmp_path / "out.csv"
-    csv_file.write_text("x\n1\n")
+    csv_file.write_text("x\n1\n", encoding="utf-8")
     _make_empty_project(tmp_path, "myproj")
     register_file("myproj", str(csv_file), "out_alias")
     manifest = load_manifest("myproj")
@@ -242,7 +242,7 @@ def test_create_project_dirs(tmp_path, monkeypatch):
 def test_resolve_path_project_alias(tmp_path, monkeypatch):
     monkeypatch.setenv("MCP_PROJECTS_DIR", str(tmp_path))
     csv_file = tmp_path / "data.csv"
-    csv_file.write_text("a,b\n1,2\n")
+    csv_file.write_text("a,b\n1,2\n", encoding="utf-8")
     _make_project(tmp_path, "proj1", "mycsv", csv_file)
     result = resolve_path("project:proj1/mycsv")
     assert result == csv_file.resolve()
@@ -251,7 +251,7 @@ def test_resolve_path_project_alias(tmp_path, monkeypatch):
 def test_resolve_path_workspace_alias(tmp_path, monkeypatch):
     monkeypatch.setenv("MCP_WORKSPACE_DIR", str(tmp_path))
     csv_file = tmp_path / "data.csv"
-    csv_file.write_text("a,b\n1,2\n")
+    csv_file.write_text("a,b\n1,2\n", encoding="utf-8")
     _make_project(tmp_path, "proj1", "mycsv", csv_file)
     result = resolve_path("workspace:proj1/mycsv")
     assert result == csv_file.resolve()
@@ -265,7 +265,7 @@ def test_resolve_path_project_alias_bad_project(tmp_path, monkeypatch):
 
 def test_resolve_path_normal_path(tmp_path):
     csv_file = tmp_path / "data.csv"
-    csv_file.write_text("a,b\n1,2\n")
+    csv_file.write_text("a,b\n1,2\n", encoding="utf-8")
     result = resolve_path(str(csv_file))
     assert result == csv_file.resolve()
 
@@ -283,7 +283,7 @@ def test_resolve_path_filesystem_root_rejected():
 
 def test_resolve_path_extension_check(tmp_path):
     csv_file = tmp_path / "data.csv"
-    csv_file.write_text("a,b\n1,2\n")
+    csv_file.write_text("a,b\n1,2\n", encoding="utf-8")
     with pytest.raises(ValueError, match="not allowed"):
         resolve_path(str(csv_file), allowed_extensions=(".pkl",))
 
@@ -699,7 +699,7 @@ class TestSnapshotCreation:
 
     def test_snapshot_creates_versions_dir(self, tmp_path):
         src = tmp_path / "data.csv"
-        src.write_text("a,b\n1,2\n")
+        src.write_text("a,b\n1,2\n", encoding="utf-8")
         backup = snapshot(str(src))
         versions_dir = tmp_path / ".mcp_versions"
         assert versions_dir.exists()
@@ -707,13 +707,13 @@ class TestSnapshotCreation:
 
     def test_snapshot_returns_string_path(self, tmp_path):
         src = tmp_path / "data.csv"
-        src.write_text("a,b\n1,2\n")
+        src.write_text("a,b\n1,2\n", encoding="utf-8")
         backup = snapshot(str(src))
         assert isinstance(backup, str)
 
     def test_snapshot_creates_bak_file(self, tmp_path):
         src = tmp_path / "data.csv"
-        src.write_text("a,b\n1,2\n")
+        src.write_text("a,b\n1,2\n", encoding="utf-8")
         backup = snapshot(str(src))
         bak = Path(backup)
         assert bak.exists()
@@ -721,27 +721,27 @@ class TestSnapshotCreation:
 
     def test_snapshot_bak_has_correct_stem(self, tmp_path):
         src = tmp_path / "mydata.csv"
-        src.write_text("x\n1\n")
+        src.write_text("x\n1\n", encoding="utf-8")
         backup = snapshot(str(src))
         assert Path(backup).name.startswith("mydata_")
 
     def test_snapshot_bak_content_matches_source(self, tmp_path):
         src = tmp_path / "data.csv"
         content = "a,b\n1,2\n3,4\n"
-        src.write_text(content)
+        src.write_text(content, encoding="utf-8")
         backup = snapshot(str(src))
-        assert Path(backup).read_text() == content
+        assert Path(backup).read_text(encoding="utf-8") == content
 
     def test_snapshot_does_not_modify_source(self, tmp_path):
         src = tmp_path / "data.csv"
         original = "a,b\n1,2\n"
-        src.write_text(original)
+        src.write_text(original, encoding="utf-8")
         snapshot(str(src))
-        assert src.read_text() == original
+        assert src.read_text(encoding="utf-8") == original
 
     def test_snapshot_successive_calls_create_distinct_files(self, tmp_path):
         src = tmp_path / "data.csv"
-        src.write_text("a,b\n1,2\n")
+        src.write_text("a,b\n1,2\n", encoding="utf-8")
         bak1 = snapshot(str(src))
         bak2 = snapshot(str(src))
         assert bak1 != bak2
@@ -768,7 +768,7 @@ class TestSnapshotCollision:
 
     def test_snapshot_collision_generates_counter_suffix(self, tmp_path):
         src = tmp_path / "data.csv"
-        src.write_text("a,b\n1,2\n")
+        src.write_text("a,b\n1,2\n", encoding="utf-8")
 
         # Take a real snapshot to get a valid timestamp pattern
         bak1_path = snapshot(str(src))
@@ -777,14 +777,14 @@ class TestSnapshotCollision:
         # Manually create a file at the exact same name to force collision
         # on the NEXT call by monkey-patching datetime isn't needed —
         # instead just verify the counter path by pre-creating the expected name
-        bak1.write_text("collision_placeholder")
+        bak1.write_text("collision_placeholder", encoding="utf-8")
 
         # Take another snapshot — must NOT overwrite bak1
         bak2_path = snapshot(str(src))
         bak2 = Path(bak2_path)
 
         # bak1 still has original placeholder content (not overwritten)
-        assert bak1.read_text() == "collision_placeholder"
+        assert bak1.read_text(encoding="utf-8") == "collision_placeholder"
         # bak2 is a different file
         assert bak1_path != bak2_path
         assert bak2.exists()
@@ -795,23 +795,23 @@ class TestListSnapshots:
 
     def test_list_snapshots_returns_empty_when_no_versions_dir(self, tmp_path):
         src = tmp_path / "data.csv"
-        src.write_text("a,b\n1,2\n")
+        src.write_text("a,b\n1,2\n", encoding="utf-8")
         result = list_snapshots(str(src))
         assert result == []
 
     def test_list_snapshots_returns_empty_when_no_matching_bak(self, tmp_path):
         src = tmp_path / "data.csv"
-        src.write_text("a,b\n1,2\n")
+        src.write_text("a,b\n1,2\n", encoding="utf-8")
         # Create the dir but put an unrelated file there
         versions_dir = tmp_path / ".mcp_versions"
         versions_dir.mkdir()
-        (versions_dir / "other_2026-01-01T00-00-00-000000Z.bak").write_text("x")
+        (versions_dir / "other_2026-01-01T00-00-00-000000Z.bak").write_text("x", encoding="utf-8")
         result = list_snapshots(str(src))
         assert result == []
 
     def test_list_snapshots_returns_list_after_snapshot(self, tmp_path):
         src = tmp_path / "data.csv"
-        src.write_text("a,b\n1,2\n")
+        src.write_text("a,b\n1,2\n", encoding="utf-8")
         snapshot(str(src))
         result = list_snapshots(str(src))
         assert isinstance(result, list)
@@ -819,7 +819,7 @@ class TestListSnapshots:
 
     def test_list_snapshots_entry_has_required_keys(self, tmp_path):
         src = tmp_path / "data.csv"
-        src.write_text("a,b\n1,2\n")
+        src.write_text("a,b\n1,2\n", encoding="utf-8")
         snapshot(str(src))
         result = list_snapshots(str(src))
         entry = result[0]
@@ -829,14 +829,14 @@ class TestListSnapshots:
 
     def test_list_snapshots_path_exists_on_disk(self, tmp_path):
         src = tmp_path / "data.csv"
-        src.write_text("a,b\n1,2\n")
+        src.write_text("a,b\n1,2\n", encoding="utf-8")
         snapshot(str(src))
         result = list_snapshots(str(src))
         assert Path(result[0]["path"]).exists()
 
     def test_list_snapshots_multiple_snapshots(self, tmp_path):
         src = tmp_path / "data.csv"
-        src.write_text("a,b\n1,2\n")
+        src.write_text("a,b\n1,2\n", encoding="utf-8")
         snapshot(str(src))
         snapshot(str(src))
         snapshot(str(src))
@@ -845,9 +845,9 @@ class TestListSnapshots:
 
     def test_list_snapshots_ordered_newest_first(self, tmp_path):
         src = tmp_path / "data.csv"
-        src.write_text("v1")
+        src.write_text("v1", encoding="utf-8")
         snapshot(str(src))
-        src.write_text("v2")
+        src.write_text("v2", encoding="utf-8")
         snapshot(str(src))
         result = list_snapshots(str(src))
         # sorted reverse=True means newest timestamp string sorts last → first in list
@@ -856,7 +856,7 @@ class TestListSnapshots:
 
     def test_list_snapshots_size_kb_is_numeric(self, tmp_path):
         src = tmp_path / "data.csv"
-        src.write_text("a,b\n1,2\n")
+        src.write_text("a,b\n1,2\n", encoding="utf-8")
         snapshot(str(src))
         result = list_snapshots(str(src))
         assert isinstance(result[0]["size_kb"], (int, float))
@@ -867,7 +867,7 @@ class TestRestoreVersion:
 
     def test_restore_without_timestamp_returns_snapshot_list(self, tmp_path):
         src = tmp_path / "data.csv"
-        src.write_text("a,b\n1,2\n")
+        src.write_text("a,b\n1,2\n", encoding="utf-8")
         snapshot(str(src))
         result = restore_version(str(src), timestamp="")
         assert result["success"] is True
@@ -876,7 +876,7 @@ class TestRestoreVersion:
 
     def test_restore_without_timestamp_lists_correct_count(self, tmp_path):
         src = tmp_path / "data.csv"
-        src.write_text("a,b\n1,2\n")
+        src.write_text("a,b\n1,2\n", encoding="utf-8")
         snapshot(str(src))
         snapshot(str(src))
         result = restore_version(str(src), timestamp="")
@@ -884,13 +884,13 @@ class TestRestoreVersion:
 
     def test_restore_without_timestamp_includes_hint(self, tmp_path):
         src = tmp_path / "data.csv"
-        src.write_text("a,b\n1,2\n")
+        src.write_text("a,b\n1,2\n", encoding="utf-8")
         result = restore_version(str(src), timestamp="")
         assert "hint" in result
 
     def test_restore_with_invalid_timestamp_returns_false(self, tmp_path):
         src = tmp_path / "data.csv"
-        src.write_text("a,b\n1,2\n")
+        src.write_text("a,b\n1,2\n", encoding="utf-8")
         snapshot(str(src))
         result = restore_version(str(src), timestamp="9999-totally-wrong")
         assert result["success"] is False
@@ -899,7 +899,7 @@ class TestRestoreVersion:
 
     def test_restore_with_invalid_timestamp_mentions_timestamp(self, tmp_path):
         src = tmp_path / "data.csv"
-        src.write_text("a,b\n1,2\n")
+        src.write_text("a,b\n1,2\n", encoding="utf-8")
         snapshot(str(src))
         ts = "9999-totally-wrong"
         result = restore_version(str(src), timestamp=ts)
@@ -907,30 +907,30 @@ class TestRestoreVersion:
 
     def test_restore_with_valid_timestamp_returns_success(self, tmp_path):
         src = tmp_path / "data.csv"
-        src.write_text("original content")
+        src.write_text("original content", encoding="utf-8")
         snapshot(str(src))
         snapshots = list_snapshots(str(src))
         ts = snapshots[0]["timestamp"]
         # Overwrite src so restore actually does something
-        src.write_text("modified content")
+        src.write_text("modified content", encoding="utf-8")
         result = restore_version(str(src), timestamp=ts)
         assert result["success"] is True
 
     def test_restore_with_valid_timestamp_actually_restores_content(self, tmp_path):
         src = tmp_path / "data.csv"
         original = "a,b\n1,2\n3,4\n"
-        src.write_text(original)
+        src.write_text(original, encoding="utf-8")
         snapshot(str(src))
         snapshots = list_snapshots(str(src))
         ts = snapshots[0]["timestamp"]
         # Corrupt the file
-        src.write_text("corrupted!")
+        src.write_text("corrupted!", encoding="utf-8")
         restore_version(str(src), timestamp=ts)
-        assert src.read_text() == original
+        assert src.read_text(encoding="utf-8") == original
 
     def test_restore_success_response_has_required_keys(self, tmp_path):
         src = tmp_path / "data.csv"
-        src.write_text("a,b\n1,2\n")
+        src.write_text("a,b\n1,2\n", encoding="utf-8")
         snapshot(str(src))
         snapshots = list_snapshots(str(src))
         ts = snapshots[0]["timestamp"]
@@ -943,7 +943,7 @@ class TestRestoreVersion:
 
     def test_restore_failure_response_has_required_keys(self, tmp_path):
         src = tmp_path / "data.csv"
-        src.write_text("a,b\n1,2\n")
+        src.write_text("a,b\n1,2\n", encoding="utf-8")
         snapshot(str(src))
         result = restore_version(str(src), timestamp="bad-ts")
         assert "success" in result
@@ -953,14 +953,14 @@ class TestRestoreVersion:
 
     def test_restore_no_snapshots_invalid_timestamp_returns_false(self, tmp_path):
         src = tmp_path / "data.csv"
-        src.write_text("a,b\n1,2\n")
+        src.write_text("a,b\n1,2\n", encoding="utf-8")
         # No snapshot taken — list is empty
         result = restore_version(str(src), timestamp="2026-01-01")
         assert result["success"] is False
 
     def test_restore_with_partial_timestamp_match(self, tmp_path):
         src = tmp_path / "data.csv"
-        src.write_text("hello")
+        src.write_text("hello", encoding="utf-8")
         snapshot(str(src))
         snapshots = list_snapshots(str(src))
         # Use only the date portion of the timestamp (partial match)
@@ -1136,7 +1136,7 @@ class TestGetOutputPath:
 
     def test_get_output_path_with_input_file(self, tmp_path):
         input_file = tmp_path / "data.csv"
-        input_file.write_text("a,b\n1,2\n")
+        input_file.write_text("a,b\n1,2\n", encoding="utf-8")
         result = get_output_path("", input_file, "eda", "html")
         # Should be in same directory as input file
         assert result.parent == input_file.parent
@@ -1337,14 +1337,14 @@ class TestReceiptAppend:
 
     def test_append_receipt_creates_file(self, tmp_path):
         csv_path = str(tmp_path / "data.csv")
-        Path(csv_path).write_text("a,b\n1,2\n")
+        Path(csv_path).write_text("a,b\n1,2\n", encoding="utf-8")
         append_receipt(csv_path, "test_tool", {"arg": "val"}, "ok")
         receipt_file = tmp_path / "data.csv.mcp_receipt.json"
         assert receipt_file.exists()
 
     def test_append_receipt_content_is_valid_json(self, tmp_path):
         csv_path = str(tmp_path / "data.csv")
-        Path(csv_path).write_text("a,b\n1,2\n")
+        Path(csv_path).write_text("a,b\n1,2\n", encoding="utf-8")
         append_receipt(csv_path, "test_tool", {"arg": "val"}, "ok")
         receipt_file = tmp_path / "data.csv.mcp_receipt.json"
         import json as _json
@@ -1356,7 +1356,7 @@ class TestReceiptAppend:
     def test_append_receipt_to_existing_file_appends(self, tmp_path):
         """Lines 38-41: receipt file already exists — reads and appends."""
         csv_path = str(tmp_path / "data.csv")
-        Path(csv_path).write_text("a,b\n1,2\n")
+        Path(csv_path).write_text("a,b\n1,2\n", encoding="utf-8")
         # First write
         append_receipt(csv_path, "tool_a", {}, "first")
         # Second write — must read existing and append
@@ -1370,7 +1370,7 @@ class TestReceiptAppend:
 
     def test_append_receipt_record_has_required_fields(self, tmp_path):
         csv_path = str(tmp_path / "data.csv")
-        Path(csv_path).write_text("a,b\n1,2\n")
+        Path(csv_path).write_text("a,b\n1,2\n", encoding="utf-8")
         append_receipt(csv_path, "my_tool", {"k": "v"}, "success", backup="snap.bak")
         records = read_receipt_log(csv_path)
         entry = records[0]
@@ -1396,7 +1396,7 @@ class TestReceiptReadLog:
 
     def test_read_receipt_log_returns_list(self, tmp_path):
         csv_path = str(tmp_path / "data.csv")
-        Path(csv_path).write_text("a,b\n1,2\n")
+        Path(csv_path).write_text("a,b\n1,2\n", encoding="utf-8")
         append_receipt(csv_path, "my_tool", {}, "done")
         result = read_receipt_log(csv_path)
         assert isinstance(result, list)
@@ -1404,7 +1404,7 @@ class TestReceiptReadLog:
 
     def test_read_receipt_log_returns_newest_first(self, tmp_path):
         csv_path = str(tmp_path / "data.csv")
-        Path(csv_path).write_text("a,b\n1,2\n")
+        Path(csv_path).write_text("a,b\n1,2\n", encoding="utf-8")
         append_receipt(csv_path, "tool_1", {}, "first")
         append_receipt(csv_path, "tool_2", {}, "second")
         result = read_receipt_log(csv_path)
@@ -1415,15 +1415,15 @@ class TestReceiptReadLog:
     def test_read_receipt_log_corrupted_json_returns_empty(self, tmp_path):
         """Lines 79-80: corrupted JSON → returns []."""
         csv_path = str(tmp_path / "test.csv")
-        Path(csv_path).write_text("a\n1\n")
+        Path(csv_path).write_text("a\n1\n", encoding="utf-8")
         rpath = tmp_path / "test.csv.mcp_receipt.json"
-        rpath.write_text("invalid json {{[")
+        rpath.write_text("invalid json {{[", encoding="utf-8")
         result = read_receipt_log(str(csv_path))
         assert result == []
 
     def test_read_receipt_log_last_n_limits_entries(self, tmp_path):
         csv_path = str(tmp_path / "data.csv")
-        Path(csv_path).write_text("a\n1\n")
+        Path(csv_path).write_text("a\n1\n", encoding="utf-8")
         for i in range(5):
             append_receipt(csv_path, f"tool_{i}", {}, f"result_{i}")
         result = read_receipt_log(csv_path, last_n=3)
@@ -1460,7 +1460,7 @@ class TestGetDefaultOutputDir:
     def test_get_default_output_dir_existing_parent_returns_parent(self, monkeypatch, tmp_path):
         monkeypatch.delenv("MCP_OUTPUT_DIR", raising=False)
         csv_file = tmp_path / "data.csv"
-        csv_file.write_text("a,b\n1,2\n")
+        csv_file.write_text("a,b\n1,2\n", encoding="utf-8")
         result = get_default_output_dir(str(csv_file))
         assert result == tmp_path
 
@@ -1477,7 +1477,7 @@ class TestGetDefaultOutputDir:
         # guaranteed to be that, so the env var wins.
         csv_file = tmp_path / "elsewhere" / "data.csv"
         csv_file.parent.mkdir()
-        csv_file.write_text("a,b\n1,2\n")
+        csv_file.write_text("a,b\n1,2\n", encoding="utf-8")
         monkeypatch.setenv("MCP_OUTPUT_DIR", str(tmp_path / "shared"))
         assert get_default_output_dir(str(csv_file)) == tmp_path / "shared"
 
@@ -1550,7 +1550,7 @@ class TestSnapshotValueErrorFallback:
 
     def test_snapshot_falls_back_when_resolve_path_raises(self, tmp_path):
         src = tmp_path / "data.csv"
-        src.write_text("a,b\n1,2\n")
+        src.write_text("a,b\n1,2\n", encoding="utf-8")
 
         # resolve_path is lazy-imported inside snapshot() as _resolve
         # Patch the canonical location so the lazy import picks up the mock
@@ -1562,11 +1562,11 @@ class TestSnapshotValueErrorFallback:
     def test_snapshot_fallback_still_creates_backup(self, tmp_path):
         src = tmp_path / "myfile.csv"
         content = "x,y\n10,20\n"
-        src.write_text(content)
+        src.write_text(content, encoding="utf-8")
 
         with patch("shared.file_utils.resolve_path", side_effect=ValueError("mock")):
             bak = snapshot(str(src))
-        assert Path(bak).read_text() == content
+        assert Path(bak).read_text(encoding="utf-8") == content
 
 
 class TestSnapshotCollisionCounter:
@@ -1574,19 +1574,19 @@ class TestSnapshotCollisionCounter:
 
     def test_snapshot_collision_uses_counter_suffix(self, tmp_path):
         src = tmp_path / "data.csv"
-        src.write_text("a,b\n1,2\n")
+        src.write_text("a,b\n1,2\n", encoding="utf-8")
 
         # First snapshot to get a valid timestamp pattern
         bak1 = Path(snapshot(str(src)))
         # Replace content with placeholder to detect overwrite
-        bak1.write_text("collision_placeholder")
+        bak1.write_text("collision_placeholder", encoding="utf-8")
 
         # Second snapshot in same microsecond won't happen naturally, but
         # pre-creating the exact bak path forces the counter branch
         bak2 = Path(snapshot(str(src)))
 
         # bak1 must not have been overwritten
-        assert bak1.read_text() == "collision_placeholder"
+        assert bak1.read_text(encoding="utf-8") == "collision_placeholder"
         # bak2 must be a distinct file
         assert str(bak1) != str(bak2)
         assert bak2.exists()
@@ -1597,7 +1597,7 @@ class TestSnapshotExceptionCleanup:
 
     def test_snapshot_reraises_on_copy_failure(self, tmp_path):
         src = tmp_path / "data.csv"
-        src.write_text("a,b\n1,2\n")
+        src.write_text("a,b\n1,2\n", encoding="utf-8")
 
         with patch("shutil.copy2", side_effect=OSError("disk full")):
             with pytest.raises(OSError, match="disk full"):
@@ -1605,7 +1605,7 @@ class TestSnapshotExceptionCleanup:
 
     def test_snapshot_no_partial_bak_on_failure(self, tmp_path):
         src = tmp_path / "data.csv"
-        src.write_text("a,b\n1,2\n")
+        src.write_text("a,b\n1,2\n", encoding="utf-8")
         versions_dir = tmp_path / ".mcp_versions"
 
         with patch("shutil.copy2", side_effect=OSError("disk full")):
@@ -1623,7 +1623,7 @@ class TestRestoreVersionExceptionCleanup:
 
     def test_restore_reraises_on_copy_failure(self, tmp_path):
         src = tmp_path / "data.csv"
-        src.write_text("original content")
+        src.write_text("original content", encoding="utf-8")
         bak = snapshot(str(src))
         ts = list_snapshots(str(src))[0]["timestamp"]
 
@@ -1634,19 +1634,19 @@ class TestRestoreVersionExceptionCleanup:
     def test_restore_source_unchanged_on_failure(self, tmp_path):
         src = tmp_path / "data.csv"
         original = "original content"
-        src.write_text(original)
+        src.write_text(original, encoding="utf-8")
         snapshot(str(src))
         ts = list_snapshots(str(src))[0]["timestamp"]
 
         # Modify the file after snapshotting
-        src.write_text("modified content")
+        src.write_text("modified content", encoding="utf-8")
 
         with patch("shutil.copy2", side_effect=OSError("read error")):
             with pytest.raises(OSError):
                 restore_version(str(src), ts)
 
         # File should still contain modified content (restore was aborted)
-        assert src.read_text() == "modified content"
+        assert src.read_text(encoding="utf-8") == "modified content"
 
 
 # ===========================================================================
@@ -1916,7 +1916,7 @@ class TestOpenFile:
         """Normal path: webbrowser.open called with file:// URL."""
         monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
         f = tmp_path / "test.html"
-        f.write_text("<html></html>")
+        f.write_text("<html></html>", encoding="utf-8")
         with patch("webbrowser.open") as mock_wb:
             _open_file(str(f))
         mock_wb.assert_called_once()
@@ -1925,7 +1925,7 @@ class TestOpenFile:
         """webbrowser.open raises → platform fallback runs (mocked)."""
         monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
         f = tmp_path / "test.html"
-        f.write_text("<html></html>")
+        f.write_text("<html></html>", encoding="utf-8")
 
         # subprocess.Popen on every platform now, Windows included: the
         # in-process os.startfile() it used to call there is exactly what could
@@ -1957,13 +1957,13 @@ class TestSnapshotCollisionCounterExtra:
         from unittest.mock import patch as _patch
 
         src = tmp_path / "data.csv"
-        src.write_text("col\n1\n2\n")
+        src.write_text("col\n1\n2\n", encoding="utf-8")
 
         fixed_ts = "2026-01-01T00-00-00-000000Z"
         versions_dir = tmp_path / ".mcp_versions"
         versions_dir.mkdir()
         expected_first = versions_dir / f"data_{fixed_ts}.bak"
-        expected_first.write_text("dummy")  # pre-create to force collision
+        expected_first.write_text("dummy", encoding="utf-8")  # pre-create to force collision
 
         with _patch("shared.version_control.datetime") as mock_dt:
             mock_dt.now.return_value.strftime.return_value = fixed_ts
@@ -1982,7 +1982,7 @@ class TestSnapshotCleanupOnFailure:
 
     def test_unlink_oserror_swallowed_during_snapshot(self, tmp_path):
         src = tmp_path / "data.csv"
-        src.write_text("col\n1\n")
+        src.write_text("col\n1\n", encoding="utf-8")
 
         with patch("shutil.copy2", side_effect=OSError("write error")):
             with patch("os.unlink", side_effect=OSError("unlink error")):
@@ -2000,7 +2000,7 @@ class TestRestoreVersionCleanup:
 
     def test_restore_unlink_oserror_swallowed(self, tmp_path):
         src = tmp_path / "data.csv"
-        src.write_text("original")
+        src.write_text("original", encoding="utf-8")
         bak = snapshot(str(src))
         ts = list_snapshots(str(src))[0]["timestamp"]
 
@@ -2063,7 +2063,7 @@ class TestWorkspaceUtilsCoverage:
         ws_dir = tmp_path / "default"
         ws_dir.mkdir()
         manifest_path = ws_dir / "workspace.json"
-        manifest_path.write_text(_json.dumps({"files": {}, "created": "2026-01-01"}))
+        manifest_path.write_text(_json.dumps({"files": {}, "created": "2026-01-01"}), encoding="utf-8")
 
         # Write binary content with invalid UTF-8 bytes — fails to iterate with encoding='utf-8'
         csv = ws_dir / "test.csv"
@@ -2141,9 +2141,10 @@ from shared.model_signing import ModelIntegrityError, dump_signed, load_signed  
 class TestModelSigning:
     @pytest.fixture(autouse=True)
     def _isolate_key(self, tmp_path, monkeypatch):
-        import shared.model_signing as model_signing
-
-        monkeypatch.setattr(model_signing, "_KEY_PATH", tmp_path / ".mcp_ml_signing_key")
+        # The key path is resolved per call now rather than at import, so that
+        # a deployment can point it at a volume that survives a rebuild --
+        # setting the env var is how a test isolates it.
+        monkeypatch.setenv("MCP_ML_SIGNING_KEY_FILE", str(tmp_path / ".mcp_ml_signing_key"))
 
     def test_round_trip(self, tmp_path):
         p = tmp_path / "model.pkl"
@@ -2211,7 +2212,7 @@ class TestModelSigning:
 
         import shared.model_signing as model_signing
 
-        key_path = model_signing._KEY_PATH
+        key_path = model_signing._key_path()
         assert key_path.exists()
         mode = stat.S_IMODE(key_path.stat().st_mode)
         assert mode == 0o600
