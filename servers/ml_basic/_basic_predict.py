@@ -352,7 +352,13 @@ def list_models(directory: str = "") -> dict:
         search_dir = Path(override) if override else Path.home() / ".mcp_models"
 
     models: list[dict] = []
-    for pkl in sorted(search_dir.glob("*.pkl")):
+    # rglob, not glob. The docstring says "all saved .pkl models" and the flat
+    # scan only ever saw the top level, so pointing this at a directory whose
+    # models sit one level down answered `model_count: 0` under success -- a
+    # zero meaning "nothing was looked at here" reads exactly like "there are
+    # none". Models land in a subdirectory by default (.mcp_models beside the
+    # csv), so a nested layout is the ordinary case, not an unusual one.
+    for pkl in sorted(search_dir.rglob("*.pkl")):
         if ".mcp_versions" in str(pkl):
             continue
         manifest = pkl.with_suffix(".manifest.json")
@@ -399,12 +405,21 @@ def list_models(directory: str = "") -> dict:
         "success": True,
         "op": "list_models",
         "directory": str(search_dir),
+        "searched_recursively": True,
         "model_count": len(models),
         "loadable_count": len(models) - len(unloadable),
         "models": models,
         "progress": progress,
         "token_estimate": 0,
     }
+    if not models:
+        # An empty listing used to be the whole answer, and it is the one
+        # answer that cannot be acted on: nothing said where it looked.
+        resp["hint"] = (
+            f"No .pkl model under {search_dir}, searched recursively. "
+            "Pass directory= to look elsewhere, or train one first — "
+            "train_classifier() and train_regressor() report the path they write."
+        )
     if unloadable:
         resp["unloadable"] = unloadable
         resp["hint"] = (

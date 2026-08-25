@@ -47,16 +47,67 @@ def default_models_dir(source: Path) -> Path:
     return Path(override) if override else source.parent / ".mcp_models"
 
 
-def resolve_model_path(output_path: str, source: Path, default_name: str) -> Path:
+def resolve_model_path(output_path: str, source: Path, default_name: str, progress: list | None = None) -> Path:
     """The path to save a model to, honouring an explicit output_path.
 
     A missing or wrong extension is corrected rather than refused: `.pkl` is
     what every loader here expects, and list_models finds models by that glob,
     so a model saved as `mine.dat` would be invisible to the tool that lists it.
+
+    Pass `progress` and the caller is told when that happened. It used to be
+    silent, so `output_path="cv_lr.json"` wrote cv_lr.pkl with nothing to say
+    the name had changed -- and a sweep reading its own arguments back
+    reasonably concluded output_path had been ignored altogether. The
+    correction is right; not mentioning it is what made it look like a defect.
+    The chart tools in the sibling repo have warned about exactly this since an
+    earlier round.
     """
     if output_path:
         out = resolve_path(output_path, ())
         if out.suffix.lower() != ".pkl":
+            asked = out.name
             out = out.with_suffix(".pkl")
+            if progress is not None:
+                from shared.progress import warn
+
+                progress.append(
+                    warn(
+                        "Output extension changed",
+                        f"{asked} → {out.name}; models are saved as .pkl so list_models can find them",
+                    )
+                )
         return out
     return default_models_dir(source) / default_name
+
+
+def save_model(model_obj: object, path: Path, metadata: dict) -> Path:
+    """Write the signed model and its manifest atomically. Returns the manifest.
+
+    There were two of these, one per server, and they had drifted. The basic
+    copy created the parent directory and the advanced one did not, so the same
+    call was robust from one server and raised FileNotFoundError from the other.
+    Neither returned anything, which is why three trainers reported the .pkl
+    they wrote and never the .manifest.json beside it -- and read_model_report
+    reads the manifest, so a caller who copied the path they were given left
+    the report behind.
+
+    One function, in shared, next to the path rules the same tools already
+    share. It returns the manifest path so a caller can name both files.
+    """
+    import shutil
+    import tempfile
+
+    from shared.exchange import apply_default_mode
+    from shared.file_utils import atomic_write_json
+    from shared.model_signing import dump_signed
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"model": model_obj, "metadata": metadata}
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pkl", dir=path.parent) as tmp:
+        dump_signed(payload, tmp)
+        tmp_path = tmp.name
+    apply_default_mode(tmp_path)
+    shutil.move(tmp_path, str(path))
+    manifest_path = path.with_suffix(".manifest.json")
+    atomic_write_json(manifest_path, metadata)
+    return manifest_path

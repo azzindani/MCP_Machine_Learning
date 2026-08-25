@@ -40,6 +40,7 @@ from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 from shared.file_utils import apply_default_mode, atomic_write_json, get_output_dir, resolve_path
 from shared.file_utils import read_csv as _read_csv
 from shared.ml_utils import _auto_preprocess, leakage_warning, typical_row
+from shared.model_output import save_model
 from shared.model_signing import dump_signed, load_signed
 from shared.platform_utils import get_max_columns, get_max_results, get_max_rows
 from shared.progress import info, ok, warn
@@ -152,17 +153,15 @@ def _confusion_dict(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
     return result
 
 
-def _save_model(model: Any, path: Path, metadata: dict) -> None:
-    """Atomically save model pickle + manifest JSON."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"model": model, "metadata": metadata}
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".pkl", dir=path.parent) as tmp:
-        dump_signed(payload, tmp)
-        tmp_path = tmp.name
-    apply_default_mode(tmp_path)
-    shutil.move(tmp_path, str(path))
-    manifest_path = path.with_suffix(".manifest.json")
-    atomic_write_json(manifest_path, metadata)
+def _save_model(model: Any, path: Path, metadata: dict) -> Path:
+    """Atomically save model pickle + manifest JSON. Returns the manifest path.
+
+    Kept as a name this module already exported; the implementation is shared
+    with ml_advanced, which had a second copy of it that had drifted -- this
+    one made the parent directory and that one did not. See
+    shared.model_output.
+    """
+    return save_model(model, path, metadata)
 
 
 def _load_model(model_path: str) -> tuple[Any, dict]:

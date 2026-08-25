@@ -297,7 +297,7 @@ def train_classifier(
         # to point anywhere else. Four sibling tools (split_dataset,
         # run_clustering, batch_predict, export_model) already take an output
         # path; the two that write the largest artifacts took none.
-        model_path = resolve_model_path(output_path, path, f"{path.stem}_{model}_{ts}.pkl")
+        model_path = resolve_model_path(output_path, path, f"{path.stem}_{model}_{ts}.pkl", progress)
         models_dir = model_path.parent
         models_dir.mkdir(parents=True, exist_ok=True)
         model_filename = model_path.name
@@ -330,7 +330,7 @@ def train_classifier(
             "python_version": sys.version,
             "sklearn_version": sklearn.__version__,
         }
-        _save_model(trained, model_path, metadata)
+        manifest_path = _save_model(trained, model_path, metadata)
         progress.append(ok("Saved model", pname(str(model_path))))
 
         append_receipt(
@@ -354,6 +354,7 @@ def train_classifier(
             "test_size": len(x_test),
             "metrics": metrics,
             "model_path": str(model_path),
+            "manifest_path": str(manifest_path),
             "backup": backup or "",
             "progress": progress,
         }
@@ -544,7 +545,7 @@ def train_regressor(
             progress.append(warn("Suspiciously perfect score", leakage))
 
         ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
-        model_path = resolve_model_path(output_path, path, f"{path.stem}_{model}_{ts}.pkl")
+        model_path = resolve_model_path(output_path, path, f"{path.stem}_{model}_{ts}.pkl", progress)
         models_dir = model_path.parent
         models_dir.mkdir(parents=True, exist_ok=True)
 
@@ -578,7 +579,7 @@ def train_regressor(
             "python_version": sys.version,
             "sklearn_version": sklearn.__version__,
         }
-        _save_model(trained, model_path, metadata)
+        manifest_path = _save_model(trained, model_path, metadata)
         progress.append(ok("Saved model", pname(str(model_path))))
 
         append_receipt(
@@ -603,6 +604,7 @@ def train_regressor(
             "test_size": len(x_test),
             "metrics": metrics,
             "model_path": str(model_path),
+            "manifest_path": str(manifest_path),
             "backup": backup or "",
             "progress": progress,
         }

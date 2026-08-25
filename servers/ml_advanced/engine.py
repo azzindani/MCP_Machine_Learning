@@ -209,7 +209,7 @@ def tune_hyperparameters(
     # The most expensive call on the fleet, so the likeliest to time out and be
     # retried -- and every retry used to leave another model. See
     # shared/model_output.py.
-    mp = resolve_model_path(output_path, path, f"{path.stem}_{model}_tuned_{ts}.pkl")
+    mp = resolve_model_path(output_path, path, f"{path.stem}_{model}_tuned_{ts}.pkl", progress)
     models_dir = mp.parent
     models_dir.mkdir(parents=True, exist_ok=True)
 
@@ -236,7 +236,7 @@ def tune_hyperparameters(
         "python_version": sys.version,
         "sklearn_version": sklearn.__version__,
     }
-    _save_model(searcher.best_estimator_, mp, metadata)
+    manifest_path = _save_model(searcher.best_estimator_, mp, metadata)
     progress.append(ok("Saved best model", mp.name))
 
     append_receipt(
@@ -253,6 +253,7 @@ def tune_hyperparameters(
         "best_params": searcher.best_params_,
         "top_results": top_results,
         "model_path": str(mp),
+        "manifest_path": str(manifest_path),
         "backup": backup,
         "progress": progress,
         "token_estimate": 0,
