@@ -18,6 +18,7 @@ from ._medium_helpers import (
     append_receipt,
     info,
     ok,
+    receipt_for_created,
     resolve_path,
     snapshot,
     warn,
@@ -136,6 +137,7 @@ def run_preprocessing(
         "success",
         backup,
     )
+    receipt_for_created(str(out_path_resolved), path, "run_preprocessing", {"ops_count": len(ops)})
 
     resp = {
         "success": True,
