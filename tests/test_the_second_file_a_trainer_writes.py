@@ -132,7 +132,11 @@ class TestThereIsOneSaver:
                 # A delegating wrapper is fine; a second implementation is not.
                 body = ast.unparse(node)
                 if "atomic_write_json" in body:
-                    writers.append(f"{path.relative_to(ROOT)}:{node.lineno}")
+                    # as_posix(), not str(): on Windows a relative path prints
+                    # with backslashes and the assertion below is written with a
+                    # forward slash, so CI went red on windows-latest alone --
+                    # 'shared/model_output.py' in 'shared\\model_output.py:83'.
+                    writers.append(f"{path.relative_to(ROOT).as_posix()}:{node.lineno}")
         assert len(writers) == 1, f"more than one place writes the manifest: {writers}"
         assert "shared/model_output.py" in writers[0], writers
 
