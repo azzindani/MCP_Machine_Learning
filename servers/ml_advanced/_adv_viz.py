@@ -611,13 +611,28 @@ def plot_predictions_vs_actual(
                 )
             )
 
-        # Subsample for scatter readability (>10K markers are unreadable)
+        # Subsample for scatter readability (>10K markers are unreadable).
+        #
+        # The reply said n_points: 16834 and the file held exactly 10,000 --
+        # a round-15 sweep decoded the trace and counted them. The thinning is
+        # right; saying nothing about it is not, and plot_learning_curve a few
+        # hundred lines up already carries the note this one lacked: "say it in
+        # the payload, not only in the progress log".
+        #
+        # Unlike that one, the metrics here are computed over every row and only
+        # the drawing is thinned, so this is `plot_sampled` rather than
+        # `sampled` -- a caller must not read it as "the R-squared is from a
+        # sample", because it is not.
         scat_cap = min(len(y_true), 10_000)
-        if len(y_true) > scat_cap:
+        plot_sampled = len(y_true) > scat_cap
+        if plot_sampled:
             rng = np.random.RandomState(42)
             idx = rng.choice(len(y_true), scat_cap, replace=False)
             plot_true = y_true[idx]
             plot_pred = y_pred[idx]
+            progress.append(
+                warn("Scatter thinned for readability", f"drew {scat_cap:,} of {len(y_true):,} points (seed 42)")
+            )
         else:
             plot_true = y_true
             plot_pred = y_pred
@@ -647,11 +662,12 @@ def plot_predictions_vs_actual(
             )
         )
 
+        drawn_note = f" (drew {scat_cap:,}/{n_points:,})" if plot_sampled else ""
         fig.update_layout(
             title=(
                 f"Predictions vs Actual — {n_points} point(s), R² undefined"
                 if scoreless
-                else f"Predictions vs Actual — R²={r2:.3f}"
+                else f"Predictions vs Actual — R²={r2:.3f}{drawn_note}"
             ),
             xaxis_title="Actual",
             yaxis_title="Predicted",
@@ -669,7 +685,11 @@ def plot_predictions_vs_actual(
             "output_path": out_abs,
             "output_name": out_name,
             "metrics": {"mse": rounded(mse), "rmse": rounded(rmse), "r2": r2},
+            # n_points is what was scored -- every row. points_plotted is what
+            # the file actually holds, which is not the same number above 10K.
             "n_points": n_points,
+            "points_plotted": int(len(plot_true)),
+            "plot_sampled": plot_sampled,
             "progress": progress,
             "token_estimate": 0,
         }
@@ -677,6 +697,11 @@ def plot_predictions_vs_actual(
             resp["hint"] = (
                 f"R-squared is undefined over {n_points} point(s), and RMSE here is the single absolute "
                 "residual rather than a measure of fit. Score the model on a held-out set with more rows."
+            )
+        elif plot_sampled:
+            resp["hint"] = (
+                f"The chart draws {len(plot_true):,} of {n_points:,} points (seed 42) because more markers "
+                f"than that are unreadable. The metrics above are over all {n_points:,} rows, not the sample."
             )
         resp["context"] = make_context(
             "plot_predictions_vs_actual",
@@ -821,6 +846,14 @@ def generate_cluster_report(
         )
 
         # --- PCA scatter (2D) — subsample for readability ---
+        # The title has carried "(sampled 10,000/16,834)" all along, so anyone
+        # looking at the chart could see it. The response said n_samples: 16834
+        # and nothing else, so anyone reading the reply could not -- and a
+        # round-15 sweep decoded the four marker traces, counted 10,000 points
+        # against a claimed 16,834, and called it silent. Both surfaces now say
+        # the same thing.
+        scatter_points_plotted = 0
+        scatter_sampled = False
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(X)
         n_comp = min(2, X_scaled.shape[1])
@@ -837,10 +870,12 @@ def generate_cluster_report(
                 scat_coords = coords[idx]
                 scat_labels = labels.values[idx]
                 scat_note = f" (sampled {scat_cap:,}/{len(coords):,})"
+                scatter_sampled = True
             else:
                 scat_coords = coords
                 scat_labels = labels.values
                 scat_note = ""
+            scatter_points_plotted = int(len(scat_coords))
 
             scatter_df = pd.DataFrame(
                 {
@@ -953,11 +988,20 @@ def generate_cluster_report(
             "labels_source": (
                 f"distinct values of '{label_column}', read as-is; run_clustering(save_labels=True) writes that column"
             ),
+            # n_samples is what was clustered -- every row. The PCA scatter in
+            # the file holds only scatter_points_plotted of them.
             "n_samples": len(df),
+            "scatter_points_plotted": scatter_points_plotted,
+            "scatter_sampled": scatter_sampled,
             "sections_generated": len(sections),
             "progress": progress,
             "token_estimate": 0,
         }
+        if scatter_sampled:
+            resp["hint"] = (
+                f"The PCA scatter draws {scatter_points_plotted:,} of {len(df):,} points (seed 42) because "
+                "more markers than that are unreadable. Cluster sizes and profiles are over all rows."
+            )
         resp["context"] = make_context(
             "generate_cluster_report",
             f"Generated cluster report for {dp.name}: {n_clusters} clusters, {len(df):,} samples → {out.name}",
