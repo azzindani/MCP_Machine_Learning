@@ -24,6 +24,7 @@ from ._medium_helpers import (
     get_output_dir,
     info,
     ok,
+    receipt_for_created,
     resolve_path,
     snapshot,
     warn,
@@ -260,6 +261,7 @@ def merge_datasets(
     df_merged.to_csv(out_resolved, index=False)
     progress.append(ok("Saved merged dataset", out_resolved.name))
     append_receipt(str(p1), "merge_datasets", {"file_2": p2.name, "on": on, "how": how}, "success", backup)
+    receipt_for_created(str(out_resolved), p1, "merge_datasets", {"file_2": p2.name, "on": on, "how": how})
 
     resp = {
         "success": True,

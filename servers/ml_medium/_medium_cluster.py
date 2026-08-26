@@ -23,6 +23,7 @@ from ._medium_helpers import (
     bounded_silhouette,
     ok,
     read_receipt_log,
+    receipt_for_created,
     resolve_path,
     snapshot,
     warn,
@@ -236,6 +237,9 @@ def run_clustering(
     # Empty is right for the read-only tools here; it was wrong for the two
     # that write. `output_path` is "" when no file was asked for.
     written = resp.get("output_path") or ""
+    # The receipt above is filed against the input; the file the labels went to
+    # needs its own, or it cannot say where it came from.
+    receipt_for_created(written, path, "run_clustering", {"algorithm": algorithm, "feature_columns": feature_columns})
     resp["context"] = make_context(
         "run_clustering",
         f"Clustered {path.name} with {algorithm}: {n_found} cluster(s), silhouette={silhouette}",
@@ -266,6 +270,16 @@ def read_receipt(file_path: str) -> dict:
         "entries": log,
         "token_estimate": 0,
     }
+    if not log:
+        # An empty log used to come back as success with no explanation, so
+        # "nothing has been done to this file" and "you are asking the wrong
+        # file" were the same answer. Say which kinds of tool leave a record.
+        resp["hint"] = (
+            f"No operations are recorded against {Path(file_path).name}. A receipt is written by "
+            "tools that change or create a file -- run_preprocessing, run_clustering, "
+            "merge_datasets -- while read-only and charting tools leave none. If this file was "
+            "produced from another one, ask read_receipt about the source file too."
+        )
     resp["context"] = make_context(
         "read_receipt",
         f"Read {len(log)} operation log entries for {Path(file_path).name}",

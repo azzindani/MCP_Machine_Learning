@@ -676,7 +676,27 @@ def _apply_op(df: pd.DataFrame, op: dict) -> tuple[pd.DataFrame, dict]:
     return df, {"op": op_name, "error": "unhandled op"}
 
 
+def receipt_for_created(output_path: str, source_path: object, tool: str, args: dict) -> None:
+    """Give a file this tool created its own provenance entry.
+
+    A tool's receipt is filed against its input. When the output is a different
+    file, that new file was left with no history at all, so read_receipt on it
+    answered entry_count 0 with success true -- making "nothing has been done to
+    this file" and "its history is filed under another name" the same answer.
+    Found on run_clustering; run_preprocessing and merge_datasets did it too,
+    which is why this lives here rather than being written out three times.
+    """
+    if not output_path:
+        return
+    out = Path(output_path)
+    src = Path(str(source_path))
+    if out == src:
+        return  # in place: the input's own receipt already covers it
+    append_receipt(str(out), tool, {"source": src.name, **args}, f"created from {src.name}")
+
+
 __all__ = [
+    "receipt_for_created",
     "leakage_warning",
     "typical_row",
     "bounded_silhouette",
