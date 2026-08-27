@@ -15,11 +15,13 @@ from starlette.responses import JSONResponse
 
 try:
     from shared.deploy_auth import build_oauth_bridge, build_token_verifier
+    from shared.token_estimate import measure_responses
 
     from . import engine
 except ImportError:
     from servers.ml_advanced import engine
     from shared.deploy_auth import build_oauth_bridge, build_token_verifier
+    from shared.token_estimate import measure_responses
 
 _VERSION = "0.1.1"  # keep in sync with pyproject.toml [project].version
 
@@ -259,6 +261,11 @@ def generate_cluster_report(
     return engine.generate_cluster_report(
         file_path, feature_columns, label_column, theme, output_path, open_after, dry_run, return_content
     )
+
+
+# Every tool above reports what its response actually costs; see
+# shared/token_estimate.py for why this is a choke point and not 101 edits.
+measure_responses(mcp)
 
 
 def main() -> None:

@@ -15,11 +15,13 @@ from starlette.responses import JSONResponse
 
 try:
     from shared.deploy_auth import build_oauth_bridge, build_token_verifier
+    from shared.token_estimate import measure_responses
 
     from . import engine
 except ImportError:
     from servers.ml_basic import engine
     from shared.deploy_auth import build_oauth_bridge, build_token_verifier
+    from shared.token_estimate import measure_responses
 
 _VERSION = "0.1.1"  # keep in sync with pyproject.toml [project].version
 
@@ -221,6 +223,11 @@ def split_dataset(
 ) -> dict:
     """Split CSV into train/test CSV files and save both."""
     return engine.split_dataset(file_path, test_size, stratify_column, output_dir, random_state)
+
+
+# Every tool above reports what its response actually costs; see
+# shared/token_estimate.py for why this is a choke point and not 101 edits.
+measure_responses(mcp)
 
 
 def main() -> None:
