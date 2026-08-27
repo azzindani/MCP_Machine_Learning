@@ -17,6 +17,7 @@ try:
     from shared.arg_alias import missing, missing_list, pick, pick_list
     from shared.deploy_auth import build_oauth_bridge, build_token_verifier
     from shared.progress import info
+    from shared.token_estimate import measure_responses
 
     from . import engine
 except ImportError:
@@ -24,6 +25,7 @@ except ImportError:
     from shared.arg_alias import missing, missing_list, pick, pick_list
     from shared.deploy_auth import build_oauth_bridge, build_token_verifier
     from shared.progress import info
+    from shared.token_estimate import measure_responses
 
 _VERSION = "0.1.1"  # keep in sync with pyproject.toml [project].version
 
@@ -315,6 +317,11 @@ def batch_predict(
 ) -> dict:
     """Predict all rows, save to CSV. No row limit. Returns output path."""
     return engine.batch_predict(model_path, file_path, output_path, dry_run, return_content)
+
+
+# Every tool above reports what its response actually costs; see
+# shared/token_estimate.py for why this is a choke point and not 101 edits.
+measure_responses(mcp)
 
 
 def main() -> None:
