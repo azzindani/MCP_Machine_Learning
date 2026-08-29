@@ -116,7 +116,7 @@ class TestTheListingSaysWhatItCanLoad:
             try:
                 with open(m["path"], "rb") as fh:
                     load_signed(fh)
-            except (ModelIntegrityError, Exception):
+            except ModelIntegrityError, Exception:
                 loaded_ok = False
             assert m["loadable"] is loaded_ok, m["name"]
 

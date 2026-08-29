@@ -35,7 +35,7 @@ def find_determinant_features(df: pd.DataFrame, target_column: str, feature_cols
             continue
         try:
             worst = df.groupby(column, observed=True)[target_column].nunique(dropna=False).max()
-        except (TypeError, ValueError):
+        except TypeError, ValueError:
             continue
         if worst is not None and worst <= 1:
             culprits.append(column)
