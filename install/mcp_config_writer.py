@@ -168,7 +168,7 @@ def main() -> int:
         if cfg_path.exists():
             try:
                 existing = json.loads(cfg_path.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError):
+            except json.JSONDecodeError, OSError:
                 existing = {}
 
         merged = _merge_config(existing, servers)

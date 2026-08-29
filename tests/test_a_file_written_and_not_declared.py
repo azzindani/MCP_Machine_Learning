@@ -141,7 +141,7 @@ class TestEveryWriterDeclares:
                 continue
             try:
                 tree = ast.parse(path.read_text(encoding="utf-8"))
-            except (SyntaxError, UnicodeDecodeError):
+            except SyntaxError, UnicodeDecodeError:
                 continue
             funcs = [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]
             for node in ast.walk(tree):
@@ -165,7 +165,7 @@ class TestEveryWriterDeclares:
                 continue
             try:
                 tree = ast.parse(path.read_text(encoding="utf-8"))
-            except (SyntaxError, UnicodeDecodeError):
+            except SyntaxError, UnicodeDecodeError:
                 continue
             seen += sum(
                 1 for n in ast.walk(tree) if isinstance(n, ast.Call) and getattr(n.func, "id", "") == "make_context"

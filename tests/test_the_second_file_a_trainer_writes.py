@@ -122,7 +122,7 @@ class TestThereIsOneSaver:
                 continue
             try:
                 tree = ast.parse(path.read_text(encoding="utf-8"))
-            except (SyntaxError, UnicodeDecodeError):
+            except SyntaxError, UnicodeDecodeError:
                 continue
             for node in ast.walk(tree):
                 if not isinstance(node, ast.FunctionDef):
