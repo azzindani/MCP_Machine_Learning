@@ -9,20 +9,21 @@ import sys
 
 logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
 
-from fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 try:
     from shared.arg_errors import contract_errors
-    from shared.deploy_auth import build_oauth_bridge, build_token_verifier
+    from shared.deploy_auth import build_auth, build_oauth_bridge
     from shared.token_estimate import measure_responses
 
     from . import engine
 except ImportError:
     from servers.ml_basic import engine
     from shared.arg_errors import contract_errors
-    from shared.deploy_auth import build_oauth_bridge, build_token_verifier
+    from shared.deploy_auth import build_auth, build_oauth_bridge
     from shared.token_estimate import measure_responses
 
 _VERSION = "0.1.1"  # keep in sync with pyproject.toml [project].version
@@ -32,7 +33,17 @@ _oauth_bridge = build_oauth_bridge(
 )
 _public_origin = os.environ.get("ML_PUBLIC_URL", "").rstrip("/")
 _base_url = f"{_public_origin}/basic" if _public_origin else None
-mcp = FastMCP("ml-basic", auth=build_token_verifier("ML", _oauth_bridge, base_url=_base_url))
+_HOST = os.environ.get("ML_BASIC_HOST", "127.0.0.1")
+_PORT = int(os.environ.get("ML_BASIC_PORT", "8820"))
+_token_verifier, _auth_settings = build_auth("ML", _base_url, _oauth_bridge)
+
+mcp = FastMCP(
+    "ml-basic",
+    host=_HOST,
+    port=_PORT,
+    token_verifier=_token_verifier,
+    auth=_auth_settings,
+)
 if _oauth_bridge is not None:
     _oauth_bridge.register_routes(mcp)
 
@@ -50,12 +61,7 @@ async def version(request: Request) -> JSONResponse:
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 )
 def inspect_dataset(file_path: str) -> dict:
     """Inspect dataset schema, row count, dtypes, null summary."""
@@ -63,12 +69,7 @@ def inspect_dataset(file_path: str) -> dict:
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 )
 def read_column_profile(file_path: str, column_name: str) -> dict:
     """Profile one column. Returns stats, null count, top values."""
@@ -76,12 +77,7 @@ def read_column_profile(file_path: str, column_name: str) -> dict:
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 )
 def search_columns(
     file_path: str,
@@ -95,12 +91,7 @@ def search_columns(
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 )
 def read_rows(file_path: str, start: int, end: int) -> dict:
     """Read bounded row slice. Max rows enforced by hardware mode."""
@@ -108,12 +99,7 @@ def read_rows(file_path: str, start: int, end: int) -> dict:
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": False,
-        "destructiveHint": False,
-        "idempotentHint": False,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
 )
 def train_classifier(
     file_path: str,
@@ -141,12 +127,7 @@ def train_classifier(
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": False,
-        "destructiveHint": False,
-        "idempotentHint": False,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
 )
 def train_regressor(
     file_path: str,
@@ -176,12 +157,7 @@ def train_regressor(
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 )
 def get_predictions(model_path: str, file_path: str, max_rows: int = 20, return_proba: bool = False) -> dict:
     """Run predictions with saved model. Returns bounded prediction list."""
@@ -189,32 +165,31 @@ def get_predictions(model_path: str, file_path: str, max_rows: int = 20, return_
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": False,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 )
 def restore_version(file_path: str, timestamp: str = "") -> dict:
     """Restore file/model to previous snapshot. Empty timestamp = list."""
     return engine.restore_version(file_path, timestamp)
 
 
-@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False})
+@mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
+)
 def predict_single(model_path: str, input_data: str | dict) -> dict:
     """Predict on one record: a JSON string or an object. No CSV needed."""
     return engine.predict_single(model_path, input_data)
 
 
-@mcp.tool(annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False})
+@mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
+)
 def list_models(directory: str = "") -> dict:
     """List saved .pkl models. Empty scans the server's model output dir."""
     return engine.list_models(directory)
 
 
 @mcp.tool(
-    annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False}
+    annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
 )
 def split_dataset(
     file_path: str,
@@ -239,12 +214,10 @@ contract_errors(mcp)
 def main() -> None:
     parser = argparse.ArgumentParser(description="ml_basic MCP Server")
     parser.add_argument("--transport", choices=["stdio", "http"], default=os.environ.get("ML_BASIC_TRANSPORT", "stdio"))
-    parser.add_argument("--host", default=os.environ.get("ML_BASIC_HOST", "127.0.0.1"))
-    parser.add_argument("--port", type=int, default=int(os.environ.get("ML_BASIC_PORT", "8820")))
     args = parser.parse_args()
 
     if args.transport == "http":
-        mcp.run(transport="http", host=args.host, port=args.port)
+        mcp.run(transport="streamable-http")
     else:
         mcp.run(transport="stdio")
 

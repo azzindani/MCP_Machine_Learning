@@ -9,20 +9,21 @@ import sys
 
 logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
 
-from fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 try:
     from shared.arg_errors import contract_errors
-    from shared.deploy_auth import build_oauth_bridge, build_token_verifier
+    from shared.deploy_auth import build_auth, build_oauth_bridge
     from shared.token_estimate import measure_responses
 
     from . import engine
 except ImportError:
     from servers.ml_advanced import engine
     from shared.arg_errors import contract_errors
-    from shared.deploy_auth import build_oauth_bridge, build_token_verifier
+    from shared.deploy_auth import build_auth, build_oauth_bridge
     from shared.token_estimate import measure_responses
 
 _VERSION = "0.1.1"  # keep in sync with pyproject.toml [project].version
@@ -32,7 +33,17 @@ _oauth_bridge = build_oauth_bridge(
 )
 _public_origin = os.environ.get("ML_PUBLIC_URL", "").rstrip("/")
 _base_url = f"{_public_origin}/advanced" if _public_origin else None
-mcp = FastMCP("ml-advanced", auth=build_token_verifier("ML", _oauth_bridge, base_url=_base_url))
+_HOST = os.environ.get("ML_ADVANCED_HOST", "127.0.0.1")
+_PORT = int(os.environ.get("ML_ADVANCED_PORT", "8822"))
+_token_verifier, _auth_settings = build_auth("ML", _base_url, _oauth_bridge)
+
+mcp = FastMCP(
+    "ml-advanced",
+    host=_HOST,
+    port=_PORT,
+    token_verifier=_token_verifier,
+    auth=_auth_settings,
+)
 if _oauth_bridge is not None:
     _oauth_bridge.register_routes(mcp)
 
@@ -50,12 +61,7 @@ async def version(request: Request) -> JSONResponse:
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": False,
-        "destructiveHint": False,
-        "idempotentHint": False,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
 )
 def tune_hyperparameters(
     file_path: str,
@@ -76,12 +82,7 @@ def tune_hyperparameters(
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": False,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 )
 def export_model(
     model_path: str,
@@ -95,12 +96,7 @@ def export_model(
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 )
 def read_model_report(model_path: str) -> dict:
     """Read model metrics, feature importance, confusion matrix."""
@@ -108,12 +104,7 @@ def read_model_report(model_path: str) -> dict:
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": False,
-        "destructiveHint": False,
-        "idempotentHint": False,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
 )
 def run_profiling_report(
     file_path: str,
@@ -129,12 +120,7 @@ def run_profiling_report(
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": False,
-        "destructiveHint": False,
-        "idempotentHint": False,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
 )
 def apply_dimensionality_reduction(
     file_path: str,
@@ -152,12 +138,7 @@ def apply_dimensionality_reduction(
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": False,
-        "destructiveHint": False,
-        "idempotentHint": False,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
 )
 def generate_training_report(
     model_path: str,
@@ -172,12 +153,7 @@ def generate_training_report(
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": False,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 )
 def plot_roc_curve(
     model_path: str,
@@ -193,12 +169,7 @@ def plot_roc_curve(
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": False,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 )
 def plot_learning_curve(
     file_path: str,
@@ -219,12 +190,7 @@ def plot_learning_curve(
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": False,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 )
 def plot_predictions_vs_actual(
     model_path: str,
@@ -242,12 +208,7 @@ def plot_predictions_vs_actual(
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": False,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 )
 def generate_cluster_report(
     file_path: str,
@@ -279,12 +240,10 @@ def main() -> None:
     parser.add_argument(
         "--transport", choices=["stdio", "http"], default=os.environ.get("ML_ADVANCED_TRANSPORT", "stdio")
     )
-    parser.add_argument("--host", default=os.environ.get("ML_ADVANCED_HOST", "127.0.0.1"))
-    parser.add_argument("--port", type=int, default=int(os.environ.get("ML_ADVANCED_PORT", "8822")))
     args = parser.parse_args()
 
     if args.transport == "http":
-        mcp.run(transport="http", host=args.host, port=args.port)
+        mcp.run(transport="streamable-http")
     else:
         mcp.run(transport="stdio")
 

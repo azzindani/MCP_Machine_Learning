@@ -49,13 +49,15 @@ import pandas as pd
 import pytest
 
 from servers.ml_advanced.engine import read_model_report
+from servers.ml_basic import server as _basic
 from servers.ml_basic.engine import train_regressor
-from servers.ml_basic.server import predict_single as _predict_single_tool
-from servers.ml_medium.server import evaluate_model as _evaluate_model_tool
+from servers.ml_medium import server as _medium
 
-# fastmcp v2 hands back a FunctionTool, not the function it decorated.
-predict_single = _predict_single_tool.fn
-evaluate_model = _evaluate_model_tool.fn
+# Reach both through the registry: the official SDK's @mcp.tool returns the
+# plain undecorated function, so the module-level name skips every wrapper
+# installed on the registry entry -- which is the path a real request takes.
+predict_single = _basic.mcp._tool_manager._tools["predict_single"].fn
+evaluate_model = _medium.mcp._tool_manager._tools["evaluate_model"].fn
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
