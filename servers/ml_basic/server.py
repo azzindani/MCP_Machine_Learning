@@ -14,12 +14,14 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 try:
+    from shared.arg_errors import contract_errors
     from shared.deploy_auth import build_oauth_bridge, build_token_verifier
     from shared.token_estimate import measure_responses
 
     from . import engine
 except ImportError:
     from servers.ml_basic import engine
+    from shared.arg_errors import contract_errors
     from shared.deploy_auth import build_oauth_bridge, build_token_verifier
     from shared.token_estimate import measure_responses
 
@@ -228,6 +230,10 @@ def split_dataset(
 # Every tool above reports what its response actually costs; see
 # shared/token_estimate.py for why this is a choke point and not 101 edits.
 measure_responses(mcp)
+# A known argument with the WRONG TYPE is rejected by pydantic before any of
+# this runs, and used to escape as a raw dump with no success/hint/token_estimate
+# and a pydantic.dev URL. Give it the fleet's failure shape instead.
+contract_errors(mcp)
 
 
 def main() -> None:
