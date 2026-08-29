@@ -37,7 +37,7 @@ from shared.file_utils import get_output_dir, resolve_path
 from shared.file_utils import read_csv as _read_csv
 from shared.html_layout import get_output_path
 from shared.html_theme import _open_file, save_chart
-from shared.ml_utils import _auto_preprocess, bounded_silhouette, leakage_warning, typical_row
+from shared.ml_utils import _auto_preprocess, baseline_warning, bounded_silhouette, leakage_warning, typical_row
 from shared.platform_utils import get_cv_folds, get_max_models
 from shared.progress import fail, info, ok, warn
 from shared.receipt import append_receipt, read_receipt_log
@@ -697,6 +697,7 @@ def receipt_for_created(output_path: str, source_path: object, tool: str, args: 
 
 __all__ = [
     "receipt_for_created",
+    "baseline_warning",
     "leakage_warning",
     "typical_row",
     "bounded_silhouette",

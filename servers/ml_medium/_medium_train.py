@@ -28,6 +28,7 @@ from ._medium_helpers import (
     _read_csv,
     accuracy_score,
     append_receipt,
+    baseline_warning,
     f1_score,
     fail,
     fit_final_estimator,
@@ -265,6 +266,14 @@ def train_with_cv(
     leakage = leakage_warning(df, target_column, [c for c in df.columns if c != target_column], float(cv_score))
     if leakage:
         progress.append(warn("Suspiciously perfect score", leakage))
+
+    # The same caveat in the other direction. No single fold's predictions
+    # survive to here, so only the base-rate comparison applies -- which is the
+    # part that matters for a mean accuracy on an imbalanced target.
+    if task == "classification" and "accuracy_mean" in mean_metrics:
+        baseline = baseline_warning(df[target_column], None, float(mean_metrics["accuracy_mean"]))
+        if baseline:
+            progress.append(warn("Accuracy overstates this model", baseline))
 
     resp = {
         "success": True,

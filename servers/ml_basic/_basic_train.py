@@ -37,6 +37,7 @@ from ._basic_helpers import (
     _save_model,
     accuracy_score,
     append_receipt,
+    baseline_warning,
     datetime,
     f1_score,
     get_output_dir,
@@ -288,6 +289,12 @@ def train_classifier(
         leakage = leakage_warning(df, target_column, feature_cols, acc)
         if leakage:
             progress.append(warn("Suspiciously perfect score", leakage))
+
+        # The opposite caveat, and the commoner one: an accuracy that is really
+        # just the base rate. Only one of the two can apply to a given fit.
+        baseline = baseline_warning(y_test, y_pred, acc, metrics.get("auc_roc"))
+        if baseline:
+            progress.append(warn("Accuracy overstates this model", baseline))
 
         # --- save model ---
         ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
