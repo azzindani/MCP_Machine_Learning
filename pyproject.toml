@@ -4,7 +4,7 @@ version = "0.1.1"
 description = "Local-first MCP server for machine learning"
 requires-python = "==3.12.*"
 dependencies = [
-    "fastmcp>=2.0,<3.0",
+    "mcp>=1.0,<2.0",
     "pandas>=2.2",
     "numpy>=1.26",
     "scikit-learn>=1.4",

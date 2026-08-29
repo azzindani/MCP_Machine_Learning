@@ -37,10 +37,11 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from servers.ml_medium.server import detect_outliers as _detect_outliers_tool
+from servers.ml_medium import server as _srv
 
-# fastmcp v2 hands back a FunctionTool, not the function it decorated.
-detect_outliers = _detect_outliers_tool.fn
+# Reach it through the registry: the official SDK's @mcp.tool returns the
+# plain function, so the module-level name skips every registry wrapper.
+detect_outliers = _srv.mcp._tool_manager._tools["detect_outliers"].fn
 
 ROOT = Path(__file__).parent.parent
 

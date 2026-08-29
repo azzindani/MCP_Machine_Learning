@@ -9,14 +9,15 @@ import sys
 
 logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
 
-from fastmcp import FastMCP
+from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 try:
     from shared.arg_alias import missing, missing_list, pick, pick_list
     from shared.arg_errors import contract_errors
-    from shared.deploy_auth import build_oauth_bridge, build_token_verifier
+    from shared.deploy_auth import build_auth, build_oauth_bridge
     from shared.progress import info
     from shared.token_estimate import measure_responses
 
@@ -25,7 +26,7 @@ except ImportError:
     from servers.ml_medium import engine
     from shared.arg_alias import missing, missing_list, pick, pick_list
     from shared.arg_errors import contract_errors
-    from shared.deploy_auth import build_oauth_bridge, build_token_verifier
+    from shared.deploy_auth import build_auth, build_oauth_bridge
     from shared.progress import info
     from shared.token_estimate import measure_responses
 
@@ -36,7 +37,17 @@ _oauth_bridge = build_oauth_bridge(
 )
 _public_origin = os.environ.get("ML_PUBLIC_URL", "").rstrip("/")
 _base_url = f"{_public_origin}/medium" if _public_origin else None
-mcp = FastMCP("ml-medium", auth=build_token_verifier("ML", _oauth_bridge, base_url=_base_url))
+_HOST = os.environ.get("ML_MEDIUM_HOST", "127.0.0.1")
+_PORT = int(os.environ.get("ML_MEDIUM_PORT", "8821"))
+_token_verifier, _auth_settings = build_auth("ML", _base_url, _oauth_bridge)
+
+mcp = FastMCP(
+    "ml-medium",
+    host=_HOST,
+    port=_PORT,
+    token_verifier=_token_verifier,
+    auth=_auth_settings,
+)
 if _oauth_bridge is not None:
     _oauth_bridge.register_routes(mcp)
 
@@ -54,12 +65,7 @@ async def version(request: Request) -> JSONResponse:
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": False,
-        "destructiveHint": False,
-        "idempotentHint": False,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
 )
 def run_preprocessing(
     file_path: str,
@@ -73,12 +79,7 @@ def run_preprocessing(
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 )
 def detect_outliers(
     file_path: str,
@@ -99,12 +100,7 @@ def detect_outliers(
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": False,
-        "destructiveHint": False,
-        "idempotentHint": False,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
 )
 def train_with_cv(
     file_path: str,
@@ -121,12 +117,7 @@ def train_with_cv(
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": False,
-        "destructiveHint": False,
-        "idempotentHint": False,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
 )
 def compare_models(
     file_path: str,
@@ -143,12 +134,7 @@ def compare_models(
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": False,
-        "destructiveHint": False,
-        "idempotentHint": False,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
 )
 def run_clustering(
     file_path: str,
@@ -180,12 +166,7 @@ def run_clustering(
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 )
 def read_receipt(file_path: str) -> dict:
     """Read operation history for a file. Returns log entries."""
@@ -193,12 +174,7 @@ def read_receipt(file_path: str) -> dict:
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": False,
-        "destructiveHint": False,
-        "idempotentHint": False,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
 )
 def generate_eda_report(
     file_path: str,
@@ -214,12 +190,7 @@ def generate_eda_report(
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": False,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 )
 def find_optimal_clusters(
     file_path: str,
@@ -237,12 +208,7 @@ def find_optimal_clusters(
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": False,
-        "destructiveHint": False,
-        "idempotentHint": False,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
 )
 def anomaly_detection(
     file_path: str,
@@ -260,12 +226,7 @@ def anomaly_detection(
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 )
 def check_data_quality(file_path: str) -> dict:
     """Return JSON quality score 0-100 with typed alerts per column."""
@@ -273,12 +234,7 @@ def check_data_quality(file_path: str) -> dict:
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": True,
-        "destructiveHint": False,
-        "idempotentHint": True,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 )
 def evaluate_model(
     model_path: str,
@@ -303,12 +259,7 @@ def evaluate_model(
 
 
 @mcp.tool(
-    annotations={
-        "readOnlyHint": False,
-        "destructiveHint": False,
-        "idempotentHint": False,
-        "openWorldHint": False,
-    }
+    annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
 )
 def batch_predict(
     model_path: str,
@@ -335,12 +286,10 @@ def main() -> None:
     parser.add_argument(
         "--transport", choices=["stdio", "http"], default=os.environ.get("ML_MEDIUM_TRANSPORT", "stdio")
     )
-    parser.add_argument("--host", default=os.environ.get("ML_MEDIUM_HOST", "127.0.0.1"))
-    parser.add_argument("--port", type=int, default=int(os.environ.get("ML_MEDIUM_PORT", "8821")))
     args = parser.parse_args()
 
     if args.transport == "http":
-        mcp.run(transport="http", host=args.host, port=args.port)
+        mcp.run(transport="streamable-http")
     else:
         mcp.run(transport="stdio")
 
