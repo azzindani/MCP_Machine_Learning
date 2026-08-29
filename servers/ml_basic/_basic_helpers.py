@@ -39,7 +39,7 @@ from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
 from shared.file_utils import apply_default_mode, atomic_write_json, get_output_dir, resolve_path
 from shared.file_utils import read_csv as _read_csv
-from shared.ml_utils import _auto_preprocess, leakage_warning, typical_row
+from shared.ml_utils import _auto_preprocess, baseline_warning, leakage_warning, typical_row
 from shared.model_output import save_model
 from shared.model_signing import dump_signed, load_signed
 from shared.platform_utils import get_max_columns, get_max_results, get_max_rows
@@ -230,6 +230,7 @@ __all__ = [
     "_check_memory",
     "_error",
     "_auto_preprocess",
+    "baseline_warning",
     "leakage_warning",
     "typical_row",
     "warn",

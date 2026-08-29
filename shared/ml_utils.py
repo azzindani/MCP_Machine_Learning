@@ -66,6 +66,63 @@ def leakage_warning(df: pd.DataFrame, target_column: str, feature_cols: list[str
     )
 
 
+def baseline_warning(y_true, y_pred, accuracy: float, auc: float | None = None) -> str:
+    """Explain an accuracy that is really the base rate, or '' when it is earned.
+
+    The mirror of leakage_warning, and the commoner failure. On a 95/5 target a
+    model that predicts the majority class for every row scores 0.95, and that
+    is the number the result leads with, the progress line prints and
+    `context.summary` carries forward. A real run on a 5.2% positive rate came
+    back accuracy=0.950, f1_weighted=0.9256 -- both exactly correct -- with
+    TP=0 out of 10 positives and AUC 0.29, which is worse than guessing. Nothing
+    said so.
+
+    Both directions now get a caveat: a score too good to be true, and a score
+    that is not the achievement it looks like.
+
+    `y_pred` may be None -- cross-validation reports a mean score with no single
+    set of predictions to inspect, and the base-rate comparison still holds.
+    Classification only; the caller decides, because r2 is not an accuracy.
+    """
+    y_true = np.asarray(y_true)
+    if y_true.size == 0:
+        return ""
+
+    labels, counts = np.unique(y_true, return_counts=True)
+    if labels.size < 2:
+        return ""
+    majority_rate = float(counts.max()) / float(counts.sum())
+    if y_pred is None:
+        never_predicted = []
+    else:
+        y_pred = np.asarray(y_pred)
+        never_predicted = [lab for lab in labels if not np.any(y_pred == lab)]
+
+    parts: list[str] = []
+    if never_predicted:
+        named = ", ".join(repr(lab.item() if hasattr(lab, "item") else lab) for lab in never_predicted)
+        missed = int(sum(int(counts[list(labels).index(lab)]) for lab in never_predicted))
+        parts.append(
+            f"the model never predicts {named}, so it missed all {missed} of those rows "
+            f"while still scoring {accuracy:.4f}"
+        )
+    if accuracy <= majority_rate + 1e-9:
+        parts.append(
+            f"always answering the most common class would score {majority_rate:.4f}, which this model does not beat"
+        )
+    if auc is not None and auc < 0.5:
+        parts.append(f"AUC of {auc:.4f} is below 0.5, so its ranking is worse than random")
+
+    if not parts:
+        return ""
+    return (
+        "Accuracy overstates this model: "
+        + "; ".join(parts)
+        + ". Judge it on the per-class recall in the confusion matrix, "
+        "retrain with class_weight='balanced', or resample the classes."
+    )
+
+
 def typical_row(df_raw: pd.DataFrame, feature_cols: list[str]) -> dict:
     """A representative value per feature, in the dataset's own vocabulary.
 
