@@ -25,8 +25,12 @@ set -euo pipefail
 
 DOMAIN="${DOMAIN:-https://ml.casava.space}"
 CONTAINER="${CONTAINER:-mcp-ml}"
-if [ -f .env ]; then
-  set -a; source .env; set +a
+# Read the key out of .env without executing it. `source` runs every line of
+# the file, so a line that is not a KEY=VALUE assignment is a command; that has
+# already turned a stray summary line into a file named after a secret. A plain
+# read of one assignment cannot do that.
+if [ -z "${ML_API_KEY:-}" ] && [ -f .env ]; then
+  ML_API_KEY=$(sed -n 's/^[[:space:]]*ML_API_KEY[[:space:]]*=[[:space:]]*//p' .env | tail -n1 | tr -d '\042\047\r')
 fi
 KEY="${ML_API_KEY:?Set ML_API_KEY (env var or .env file) before running}"
 DATASET_PATH="/tmp/remote-smoke-test/dataset.csv"
