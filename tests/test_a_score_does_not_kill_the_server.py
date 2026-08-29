@@ -169,21 +169,52 @@ class TestTheHelperBoundsWhatItAllocates:
         assert bounded_silhouette(rng.rand(100, 2), labels, cap=1) is None
 
 
+def _resident(mb: int) -> bytearray:
+    """Allocate `mb` megabytes and fault every page of it in.
+
+    bytearray(n) is zero-filled, and a page of zeros is the easiest thing in
+    the world for a kernel not to make resident. Writing one distinct byte per
+    page forces the mapping to exist before RSS is read.
+    """
+    buf = bytearray(mb * 1024 * 1024)
+    for offset in range(0, len(buf), 4096):
+        buf[offset] = (offset // 4096) % 251 + 1
+    return buf
+
+
 class TestTheWeighingItselfWorks:
     """A guard that cannot fail is not a guard.
 
     Both previous versions of this measurement were wrong in a way that still
     let the file pass somewhere, so the helper is checked against known
     quantities rather than trusted.
+
+    These two checks ask only whether the helper notices a large allocation,
+    so they allocate about twice what they assert. They used to allocate about
+    a third more, which made them a measurement of the platform's RSS
+    accounting rather than of the helper: macOS reported 147 MB for a 200 MB
+    allocation and 350 MB for a 480 MB one -- 73% both times, consistently
+    enough to be systematic rather than a sampling race -- and each in turn
+    failed CI on macOS alone while the real guards below passed everywhere.
+    The allocation is also held until the measurement is read, so a peak that
+    exists only inside the lambda cannot fall between two 20 ms samples.
     """
 
     def test_it_sees_an_allocation(self):
-        _, growth = rss_growth_during(lambda: bytearray(200 * 1024 * 1024))
-        assert growth > 150, f"200 MB allocated, {growth:.0f} MB seen"
+        holder: list[bytearray] = []
+        try:
+            _, growth = rss_growth_during(lambda: holder.append(_resident(300)))
+        finally:
+            holder.clear()
+        assert growth > 150, f"300 MB allocated, {growth:.0f} MB seen"
 
     def test_it_would_fail_on_the_regression_this_file_exists_for(self):
         """dbscan grew by roughly 660 MB in one call and reached 962 MB."""
-        _, growth = rss_growth_during(lambda: bytearray(int(GROWTH_CEILING_MB * 1.2) * 1024 * 1024))
+        holder: list[bytearray] = []
+        try:
+            _, growth = rss_growth_during(lambda: holder.append(_resident(GROWTH_CEILING_MB * 2)))
+        finally:
+            holder.clear()
         assert growth >= GROWTH_CEILING_MB, f"{growth:.0f} MB did not trip a {GROWTH_CEILING_MB} MB ceiling"
 
     def test_it_does_not_see_memory_that_was_already_held(self):
