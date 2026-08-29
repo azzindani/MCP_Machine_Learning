@@ -102,7 +102,18 @@ call() {
     -d "{\"jsonrpc\":\"2.0\",\"id\":$id,\"method\":\"tools/call\",\"params\":{\"name\":\"$name\",\"arguments\":$args}}"
 }
 extract_path() {
-  echo "$1" | grep -oE '"model_path":[[:space:]]*\\?"[^\\"]+' | head -1 | sed -E 's/.*"([^"]+)$/\1/'
+  # The key arrives escaped. A tool's document is delivered as the JSON *string*
+  # result.content[0].text, so it reads \"model_path\" on the wire: a pattern
+  # anchored on a bare opening quote allows for the backslash before the value
+  # but not the ones around the key, and matches nothing.
+  #
+  # It failed silently, which is worse than failing. Under `set -euo pipefail` a
+  # grep that matches nothing makes the whole pipeline non-zero, so the
+  # assignment below aborted the script before the `|| fail` beside it could
+  # say so -- the run ended on the line after a PASS with no message at all.
+  # The trailing `|| true` keeps a genuinely absent key reportable.
+  echo "$1" | grep -oE '\\?"model_path\\?"[[:space:]]*:[[:space:]]*\\?"[^\\"]+' | head -1 \
+    | sed -E 's/.*"([^"]+)$/\1/' || true
 }
 
 echo
