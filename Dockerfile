@@ -15,7 +15,7 @@
 # Run:    docker run --rm -p 8820:8820 -e ML_TRANSPORT=http mcp-machine-learning:latest
 # ─────────────────────────────────────────────────────────────────────────────
 
-ARG PYTHON_VERSION=3.12-slim
+ARG PYTHON_VERSION=3.14-slim
 
 FROM python:${PYTHON_VERSION} AS builder
 WORKDIR /app

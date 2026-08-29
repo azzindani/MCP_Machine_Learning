@@ -42,7 +42,7 @@ A self-hosted MCP server that gives local LLMs structured access to the full sup
 ### Requirements
 
 - **Git** — `git --version`
-- **Python 3.12 or higher** — `python --version`
+- **Python 3.14 or higher** — `python --version`
 - **uv** — `uv --version` ([install guide](https://docs.astral.sh/uv/getting-started/installation/))
 - **LM Studio** with a model that supports tool calling (Gemma 4, Qwen 3.5, etc.)
 

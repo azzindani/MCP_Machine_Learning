@@ -159,7 +159,7 @@ MCP_Machine_Learning/
 ├── pyproject.toml                      # root workspace
 ├── pyrightconfig.json
 ├── uv.lock
-├── .python-version                     # 3.12
+├── .python-version                     # 3.14
 ├── .gitattributes
 ├── verify_tool_docstrings.py
 └── CLAUDE.md                           # this file

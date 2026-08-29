@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 # install.sh — MCP Machine Learning server installer for Linux / macOS
-# Requires: Python 3.12+, uv, git
+# Requires: Python 3.14+, uv, git
 set -e
 
 REPO_URL="https://github.com/azzindani/MCP_Machine_Learning.git"
@@ -14,8 +14,8 @@ echo ""
 PY=$(python3 --version 2>&1 | grep -oE '[0-9]+\.[0-9]+' | head -1)
 PY_MAJOR=$(echo "$PY" | cut -d. -f1)
 PY_MINOR=$(echo "$PY" | cut -d. -f2)
-if [ "$PY_MAJOR" -lt 3 ] || { [ "$PY_MAJOR" -eq 3 ] && [ "$PY_MINOR" -lt 12 ]; }; then
-    echo "ERROR: Python 3.12+ required. Found Python ${PY}."
+if [ "$PY_MAJOR" -lt 3 ] || { [ "$PY_MAJOR" -eq 3 ] && [ "$PY_MINOR" -lt 14 ]; }; then
+    echo "ERROR: Python 3.14+ required. Found Python ${PY}."
     echo "Install from https://www.python.org/downloads/ or use pyenv."
     exit 1
 fi

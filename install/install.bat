@@ -1,6 +1,6 @@
 @echo off
 REM install.bat — MCP Machine Learning server installer for Windows
-REM Requires: Python 3.12+, uv, git
+REM Requires: Python 3.14+, uv, git
 
 setlocal EnableDelayedExpansion
 
@@ -22,11 +22,11 @@ for /f "tokens=1,2 delims=." %%a in ("%PY_VER%") do (
     set PY_MINOR=%%b
 )
 if %PY_MAJOR% LSS 3 (
-    echo ERROR: Python 3.12+ required. Found Python %PY_VER%.
+    echo ERROR: Python 3.14+ required. Found Python %PY_VER%.
     exit /b 1
 )
-if %PY_MAJOR% EQU 3 if %PY_MINOR% LSS 12 (
-    echo ERROR: Python 3.12+ required. Found Python %PY_VER%.
+if %PY_MAJOR% EQU 3 if %PY_MINOR% LSS 14 (
+    echo ERROR: Python 3.14+ required. Found Python %PY_VER%.
     exit /b 1
 )
 echo Python %PY_VER% OK
