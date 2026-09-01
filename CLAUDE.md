@@ -1166,9 +1166,18 @@ reaches any tool.
 
 `Dockerfile` + `docker-compose.yml` build one image and run **one container**
 (`unified_server.py`, `ML_HOST`/`ML_PORT`, default port `8820`). CI builds the
-image on every push (`docker-build` job, no push); `release.yml` publishes
-`ghcr.io/<owner>/mcp-machine-learning:<version>` on tag via the shared
-`azzindani/MCP_Math` composite action.
+image on every push inside the `e2e` job (`docker compose up --build`), which
+then runs it — there is no separate build-only job, because it could not fail
+in any case `e2e` does not fail first and it made every push build this
+(expensive) image twice.
+
+`release.yml` does **not** publish an image on a tag. The GHCR job is still
+there but gated behind a `workflow_dispatch` boolean, so a tag cuts the GitHub
+Release only; publishing `ghcr.io/<owner>/mcp-machine-learning:<version>` is a
+deliberate hand-run against the tag
+(`gh workflow run release.yml --ref <tag> -f publish_image=true`), via the
+shared `azzindani/MCP_Math` composite action. The fleet deploys from locally
+built images, so nothing pulls the published one.
 
 ### Hybrid file exchange (`shared/exchange.py`)
 
