@@ -2,9 +2,11 @@
 
 A self-hosted MCP server that gives local LLMs structured access to the full supervised + unsupervised machine learning pipeline. No cloud APIs, no API keys — everything runs on your machine.
 
+**Release [`v0.1.2`](https://github.com/azzindani/MCP_Machine_Learning/releases/tag/v0.1.2)** — source only. No wheel and no container image are published: install from the tag with the bundled installer, or build the image yourself from the `Dockerfile` in this repo.
+
 ## Features
 
-- **35 tools** across 3 tiers: basic (11), medium (14), advanced (10)
+- **33 tools** across 3 tiers: basic (11), medium (12), advanced (10)
 - **LOCATE → INSPECT → PATCH → VERIFY** workflow for surgical ML operations
 - **Automatic version control** — every write is snapshotted and fully restorable
 - **Operation receipt logging** — full audit trail of all modifications
@@ -121,7 +123,7 @@ The first launch clones the repo and installs dependencies (~2–5 minutes). Sub
 ```
 
 4. Wait for the blue dot next to each server
-5. Start chatting — the model will see all 35 tools
+5. Start chatting — the model will see all 33 tools
 
 > **Low-memory machines:** Set `MCP_CONSTRAINED_MODE` to `"1"` in all `env` blocks and omit `ml-advanced` if needed. See [Configuration](#configuration) for details.
 
@@ -449,7 +451,7 @@ set.
 
 ```bash
 uv run python unified_server.py --port 8820
-curl http://localhost:8820/health            # {"status":"ok","version":"0.1.0","tiers":[...]}
+curl http://localhost:8820/health            # {"status":"ok","version":"0.1.2","tiers":[...]}
 curl http://localhost:8820/basic/health      # per-tier health
 ```
 
