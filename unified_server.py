@@ -32,7 +32,7 @@ from servers.ml_advanced.server import mcp as advanced_mcp
 from servers.ml_basic.server import mcp as basic_mcp
 from servers.ml_medium.server import mcp as medium_mcp
 
-_VERSION = "0.1.0"
+_VERSION = "0.1.2"
 
 _TIERS = {
     "basic": basic_mcp,

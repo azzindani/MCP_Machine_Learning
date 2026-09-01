@@ -26,7 +26,7 @@ except ImportError:
     from shared.deploy_auth import build_auth, build_oauth_bridge
     from shared.token_estimate import measure_responses
 
-_VERSION = "0.1.1"  # keep in sync with pyproject.toml [project].version
+_VERSION = "0.1.2"  # keep in sync with pyproject.toml [project].version
 
 _oauth_bridge = build_oauth_bridge(
     "ML", state_dir=os.environ.get("ML_BASIC_OAUTH_STATE_DIR", "/tmp/ml-basic-oauth-state")
