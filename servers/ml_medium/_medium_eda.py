@@ -6,6 +6,7 @@ import pandas as pd
 
 from shared.file_utils import atomic_write_text, embed_content
 from shared.handover import make_context, make_handover
+from shared.quality import quality_report, quality_score
 from shared.version_control import size_kb
 
 from ._medium_helpers import (
@@ -22,30 +23,23 @@ from ._medium_helpers import (
 
 
 def _compute_quality_score(df: pd.DataFrame, alerts: list[dict]) -> float:
-    """Score 0–100. Start at 100, deduct per alert severity and per structure.
+    """Score 0-100, from `shared.quality` -- the same arithmetic as the sibling.
 
-    The alert term used to be the one term with no ceiling, while missingness
-    and duplicates were both capped. Alerts are raised per column, so the count
-    grows with the width of the frame: the real ad dataset raises four
-    extreme_skewness alerts and three multicollinearity alerts, which alone cost
-    56 points, and it scored 5.6 -- a dataset that trains a classifier without
-    complaint, sitting next to a frame of eight constant columns and 100%
-    duplicates on 0.0. Almost the whole scale went unused, and the sibling
-    report in MCP_Data_Analyst scored the same file 41.
+    This repo and MCP_Data_Analyst each kept their own formula, with different
+    weights, different caps and different severity vocabularies, and scored one
+    38,576-row file 53 against the sibling's 77 while flagging the same four
+    issues. Both had already been fixed locally for disagreeing with a sibling
+    report; neither fix crossed the repo boundary, so they went on disagreeing.
 
-    Capping the alert term restores the resolution and matches what the other
-    two terms already did. The three caps sum to exactly 100, so 0 stays
-    reachable, but only by a frame that is bad on every axis at once.
+    The percentages are computed here because they are properties of this
+    frame; everything after that is shared, so the two servers cannot come
+    apart again. Callers wanting the breakdown -- completeness, validity,
+    uniqueness -- call `quality_report` with these same two numbers.
     """
-    severity_weights = {"high": 15, "medium": 8, "low": 3}
-    alert_penalty = sum(severity_weights.get(a.get("severity", "low"), 3) for a in alerts)
-    deductions = min(alert_penalty, ALERT_DEDUCTION_CAP)
-    # Additional structural deductions
-    miss_pct = df.isnull().sum().sum() / max(len(df) * len(df.columns), 1) * 100
+    cells = max(len(df) * len(df.columns), 1)
+    null_pct = df.isnull().sum().sum() / cells * 100
     dup_pct = df.duplicated().sum() / max(len(df), 1) * 100
-    deductions += min(miss_pct * 0.5, MISSINGNESS_DEDUCTION_CAP)
-    deductions += min(dup_pct * 0.3, DUPLICATE_DEDUCTION_CAP)
-    return round(max(0.0, min(100.0, 100.0 - deductions)), 1)
+    return quality_score(null_pct, dup_pct, alerts)
 
 
 def _run_quality_alerts(df: pd.DataFrame, target_column: str = "") -> list[dict]:
@@ -343,6 +337,12 @@ def generate_eda_report(
     # ── 1. Quality Alerts + Score ──────────────────────────────────────────
     alerts = _run_quality_alerts(df, target_column)
     quality_score = _compute_quality_score(df, alerts)
+    _cells = max(len(df) * len(df.columns), 1)
+    _quality_breakdown = quality_report(
+        df.isnull().sum().sum() / _cells * 100,
+        df.duplicated().sum() / max(len(df), 1) * 100,
+        alerts,
+    )
     progress.append(ok("Quality analysis", f"score={quality_score}/100, {len(alerts)} alerts"))
 
     missing_total = int(df.isnull().sum().sum())
@@ -600,6 +600,11 @@ def generate_eda_report(
         "output_name": out_path.name,
         "file_size_kb": file_size_kb,
         "quality_score": quality_score,
+        # The parts behind the headline. 53 can mean "half the values are
+        # missing" or "one column is constant", and those want opposite next
+        # actions -- a scalar cannot say which, and the sibling repo scoring
+        # the same file differently is what made that impossible to check.
+        **{k: v for k, v in _quality_breakdown.items() if k != "quality_score"},
         "alerts_count": len(alerts),
         "alerts_high": sum(1 for a in alerts if a.get("severity") == "high"),
         "alerts_medium": sum(1 for a in alerts if a.get("severity") == "medium"),

@@ -10,6 +10,7 @@ import pandas as pd
 
 from shared.file_utils import embed_content
 from shared.handover import make_context, make_handover
+from shared.quality import quality_score
 from shared.small_sample import rounded
 
 from ._medium_helpers import (
@@ -1089,10 +1090,6 @@ def check_data_quality(file_path: str) -> dict:
         }
 
     alerts = []
-    score = 100.0
-    # Alert penalties accumulate separately so they can be capped once, the way
-    # the duplicate term below already is. See ALERT_DEDUCTION_CAP.
-    alert_penalty = 0.0
 
     # Compute stats in bulk (vectorized — single pass each)
     nunique_all = df.nunique(dropna=True)
@@ -1122,7 +1119,6 @@ def check_data_quality(file_path: str) -> dict:
                     ),
                 }
             )
-            alert_penalty += 15
         elif n_unique == 1 and n_rows > 1:
             # `and n_rows > 1` because with a single row every column has
             # exactly one unique value, by arithmetic rather than by any
@@ -1139,7 +1135,6 @@ def check_data_quality(file_path: str) -> dict:
                     "recommendation": f"Drop column '{col}' — it contains no information.",
                 }
             )
-            alert_penalty += 15
 
     # 2. High missing
     null_summary = []
@@ -1158,7 +1153,6 @@ def check_data_quality(file_path: str) -> dict:
                     "recommendation": f"Use run_preprocessing fill_nulls or drop column '{col}'.",
                 }
             )
-            alert_penalty += 15
 
     # 3. Duplicate rows
     dup_count = int(df.duplicated().sum())
@@ -1172,7 +1166,6 @@ def check_data_quality(file_path: str) -> dict:
                 "recommendation": "Use run_preprocessing op 'drop_duplicates' to remove them.",
             }
         )
-        score -= min(10, dup_pct * 0.3)
 
     # 4. Zero-inflated numeric (vectorized)
     #
@@ -1199,7 +1192,6 @@ def check_data_quality(file_path: str) -> dict:
                         "recommendation": f"Consider log_transform or separate zero/nonzero modeling for '{col}'.",
                     }
                 )
-                alert_penalty += 8
 
     # 5. High cardinality (use pre-computed nunique)
     for col in cat_cols:
@@ -1215,7 +1207,6 @@ def check_data_quality(file_path: str) -> dict:
                     "recommendation": f"Consider drop_column or target-encoding for '{col}'.",
                 }
             )
-            alert_penalty += 8
 
     # 6. Extreme skewness (vectorized)
     if num_cols:
@@ -1233,7 +1224,6 @@ def check_data_quality(file_path: str) -> dict:
                             "recommendation": f"Apply log_transform to column '{col}' before training.",
                         }
                     )
-                    alert_penalty += 8
         except Exception:
             pass
 
@@ -1264,12 +1254,22 @@ def check_data_quality(file_path: str) -> dict:
                                 "recommendation": f"Drop one of '{c1}' or '{c2}' to reduce multicollinearity.",
                             }
                         )
-                        alert_penalty += 8
         except Exception:
             pass
 
-    # Cap score
-    score = max(0.0, min(100.0, score - min(alert_penalty, ALERT_DEDUCTION_CAP)))
+    # One scorer for the whole fleet.
+    #
+    # This function accumulated its own score inline -- a per-alert penalty, a
+    # capped alert term, a duplicate term -- while generate_eda_report in this
+    # same server used a second formula and MCP_Data_Analyst a third. The three
+    # scored one file 5.6, 41 and 89. Capping the alert term fixed the range;
+    # it did not make the three agree, because they were still three formulas.
+    #
+    # The alerts built above are the valuable part and are unchanged. Only the
+    # arithmetic moved, to shared/quality.py, which is byte-identical with the
+    # sibling repo's copy and has a test asserting so.
+    overall_null_pct = float(df.isnull().sum().sum()) / max(n_rows * max(n_cols, 1), 1) * 100
+    score = quality_score(overall_null_pct, dup_pct, alerts)
 
     # Several checks cannot say anything at one row, and the ones that stay
     # silent are as worth naming as the ones that fire -- a caller reading a
