@@ -49,7 +49,7 @@ def _py_files() -> list[Path]:
 def test_no_module_writes_the_truncated_key_by_hand():
     offenders: list[str] = []
     for path in _py_files():
-        for lineno, line in enumerate(path.read_text().splitlines(), 1):
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             if line.strip().startswith("#"):
                 continue  # several modules quote the banned string while explaining it
             if _HAND_WRITTEN.search(line):

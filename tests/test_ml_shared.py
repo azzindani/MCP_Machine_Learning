@@ -1351,7 +1351,15 @@ class TestReceiptAppend:
 
         records = _json.loads(receipt_file.read_text(encoding="utf-8"))
         assert isinstance(records, list)
-        assert len(records) == 1
+        # Index 0 is the scope header, which says the log holds writes only --
+        # the fix for a review that read two entries after twenty calls and
+        # concluded eighteen operations had vanished. MCP_Data_Analyst writes
+        # this same file with the same header, so reading past it is not
+        # optional here: before this, one real operation read as two and the
+        # extra had no `tool` field.
+        assert records[0]["_scope"].startswith("mutations only")
+        assert len(records) == 2, "header plus one entry"
+        assert [e["tool"] for e in read_receipt_log(csv_path)] == ["test_tool"]
 
     def test_append_receipt_to_existing_file_appends(self, tmp_path):
         """Lines 38-41: receipt file already exists — reads and appends."""
