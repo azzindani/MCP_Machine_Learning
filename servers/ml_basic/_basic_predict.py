@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 
+from shared.counts import counted
 from shared.file_utils import get_output_dir, resolve_path
 from shared.file_utils import read_csv as _read_csv
 from shared.handover import make_context, make_handover
@@ -135,9 +136,8 @@ def get_predictions(
             "model_path": pname(model_path),
             "task": task,
             "predictions": predictions,
-            "returned": len(predictions),
             "total_rows": len(x),
-            "truncated": truncated,
+            **counted(len(predictions), len(x)),
             "progress": progress,
         }
         if truncated:
