@@ -700,6 +700,20 @@ def evaluate_model(
                 "token_estimate": 30,
             }
 
+        # Leakage is measured here, on the raw frame, and deliberately before
+        # the encoding loop below. That loop does `.fillna(-1)`, which turns a
+        # null into the number -1 -- and one of the three signals is that a
+        # column's *missingness* tracks the target (`last_payment_date` is null
+        # exactly when nothing was ever repaid). Run after encoding, that signal
+        # can never fire again, and the check would quietly lose a third of its
+        # reach while still reporting a result.
+        #
+        # Only the columns this model actually uses are examined. The question
+        # is not "is anything in this file suspicious" but "did the score below
+        # come from a feature that already knows the answer".
+        candidates = [c for c in (feature_columns or list(df.columns)) if c in df.columns and c != target_column]
+        suspects = leakage_suspects(df, target_column, candidates)
+
         # Encode categoricals using stored map
         for col, mapping in encoding_map.items():
             if col in df.columns and col != target_column:
@@ -776,6 +790,21 @@ def evaluate_model(
         progress.append(
             ok("Evaluated model", ", ".join(f"{k}={v}" for k, v in metrics.items() if not isinstance(v, dict))[:80])
         )
+        if suspects:
+            progress.append(
+                warn(
+                    f"{len(suspects)} possible leakage suspect(s)",
+                    ", ".join(str(s["feature"]) for s in suspects[:3]),
+                )
+            )
+
+        # The note is built here rather than beside the measurement, because
+        # `leakage_note` reads better with the number it is casting doubt on:
+        # "Score 0.9628 may not be real: 'total_payment' ... already contains
+        # the outcome." That sentence is the review's own complaint, and it only
+        # exists once the score does.
+        headline = metrics.get("accuracy") if task == "classification" else metrics.get("r2")
+        leak_note = leakage_note(suspects, headline if isinstance(headline, int | float) else None)
 
         resp = {
             "success": True,
@@ -786,13 +815,36 @@ def evaluate_model(
             "target_column": target_column,
             "test_rows": len(df),
             "metrics": metrics,
+            "leakage_suspects": suspects[:10],
+            "leakage_count": len(suspects),
+            "leakage_note": leak_note
+            or (
+                f"No feature this model uses looks like it already contains '{target_column}'. "
+                "Measured: single-feature separation, missingness that tracks the target, and "
+                "post-outcome column names."
+            ),
             "progress": progress,
             "token_estimate": 0,
         }
+
+        # A model can arrive here without its training warning ever having been
+        # seen -- exported, shipped, evaluated by someone else on a fresh test
+        # file. The warning travels in the manifest, so carry it rather than
+        # letting the reader assume this is the first time the question came up.
+        if metadata.get("leakage_warning"):
+            resp["training_leakage_warning"] = str(metadata["leakage_warning"])
+
+        summary = (
+            f"Evaluated {mp.name} on {dp.name}: "
+            + ", ".join(f"{k}={v}" for k, v in metrics.items() if not isinstance(v, dict))[:80]
+        )
+        if suspects:
+            # A handover that carries only the score carries the half that looks
+            # fine. Same reason as check_data_quality's context line.
+            summary += f"; {len(suspects)} possible leakage suspect(s) for '{target_column}'"
         resp["context"] = make_context(
             "evaluate_model",
-            f"Evaluated {mp.name} on {dp.name}: "
-            + ", ".join(f"{k}={v}" for k, v in metrics.items() if not isinstance(v, dict))[:80],
+            summary,
             [{"type": "model", "path": str(mp), "role": "evaluated_model"}],
         )
         resp["handover"] = make_handover(
