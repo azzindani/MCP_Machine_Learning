@@ -80,6 +80,76 @@ def resolve_model_path(output_path: str, source: Path, default_name: str, progre
     return default_models_dir(source) / default_name
 
 
+# The megabyte, moved out of the readable file. A user review measured it:
+# "Model `Credit_Risk_dtc_best_*.pkl` (882 KB) + manifest (1,017 KB, 29,129
+# lines) -- CORRECT, LEAKY, BLOATED... AGI: split `manifest.json` (KBs) +
+# `encoding_map.parquet` (MBs)".
+ENCODING_MAP_SUFFIX = ".encoding_map.json"
+
+# Below this many encoded values the map is not the problem, and a second file
+# for eleven entries is noise. `emp_title` alone was 28,000 on the review's file.
+ENCODING_MAP_SPLIT_ABOVE = 200
+
+
+def encoding_map_path(model_path: Path) -> Path:
+    """The sidecar that holds a split-out encoding map."""
+    return model_path.with_suffix(ENCODING_MAP_SUFFIX)
+
+
+def split_encoding_map(metadata: dict, model_path: Path) -> tuple[dict, str]:
+    """Return (manifest without the big map, sidecar path or "").
+
+    JSON rather than the parquet the review named, and the reason is the shape
+    rather than the size. An encoding map is `{column: {value: code}}` -- ragged,
+    string-keyed, and read as a lookup. Parquet would need it flattened into
+    (column, value, code) triples, which is a re-shape every reader would have to
+    undo, in exchange for a dependency this repo does not otherwise carry. The
+    ask was that the manifest stop costing a megabyte to read; moving the map to
+    its own file is what does that, in either format.
+
+    The .pkl is untouched and still carries the full metadata, so a saved model
+    stays usable on new data without its sidecars. That is the split: the model
+    is self-contained, the manifest is the part a human or an agent reads.
+    """
+    raw = metadata.get("encoding_map")
+    if not isinstance(raw, dict) or not raw:
+        return metadata, ""
+
+    per_column = {col: len(vals) if hasattr(vals, "__len__") else 1 for col, vals in raw.items()}
+    total = sum(per_column.values())
+    summary = {
+        "columns": sorted(per_column),
+        "entries_per_column": per_column,
+        "entries_total": total,
+    }
+    if total <= ENCODING_MAP_SPLIT_ABOVE:
+        manifest = dict(metadata)
+        manifest["encoding_map_summary"] = summary
+        return manifest, ""
+
+    from shared.file_utils import atomic_write_json
+
+    sidecar = encoding_map_path(model_path)
+    try:
+        atomic_write_json(sidecar, raw)
+    except OSError:
+        # A manifest that still holds the map is worse than one that does not,
+        # but it is not wrong -- and a training run must not fail because a
+        # sidecar could not be written.
+        return metadata, ""
+
+    manifest = {k: v for k, v in metadata.items() if k != "encoding_map"}
+    summary["path"] = str(sidecar)
+    summary["note"] = (
+        f"{total:,} encoded values across {len(per_column)} column(s) live in "
+        f"{sidecar.name} rather than here. The .pkl still carries the full map, so the "
+        "model works without this file; read_model_report(skip_encoding_map=False) inlines it."
+    )
+    manifest["encoding_map_summary"] = summary
+    manifest["encoding_map_path"] = str(sidecar)
+    return manifest, str(sidecar)
+
+
 def save_model(model_obj: object, path: Path, metadata: dict) -> Path:
     """Write the signed model and its manifest atomically. Returns the manifest.
 
@@ -93,6 +163,9 @@ def save_model(model_obj: object, path: Path, metadata: dict) -> Path:
 
     One function, in shared, next to the path rules the same tools already
     share. It returns the manifest path so a caller can name both files.
+
+    A large encoding map goes to its own sidecar on the way through -- see
+    `split_encoding_map`. The .pkl keeps everything.
     """
     import shutil
     import tempfile
@@ -109,5 +182,6 @@ def save_model(model_obj: object, path: Path, metadata: dict) -> Path:
     apply_default_mode(tmp_path)
     shutil.move(tmp_path, str(path))
     manifest_path = path.with_suffix(".manifest.json")
-    atomic_write_json(manifest_path, metadata)
+    manifest, _sidecar = split_encoding_map(metadata, path)
+    atomic_write_json(manifest_path, manifest)
     return manifest_path
