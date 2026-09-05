@@ -26,7 +26,7 @@ from shared.leakage import split_provenance
 from shared.ml_utils import leakage_warning, typical_row
 from shared.model_js import ModelNotEmbeddable, prediction_panel
 from shared.model_js import build_payload as build_model_payload
-from shared.model_output import resolve_model_path
+from shared.model_output import encoding_map_path, resolve_model_path, split_encoding_map
 from shared.platform_utils import (
     get_cv_folds,
     get_max_columns,
@@ -347,8 +347,34 @@ def export_model(
 
     if dst_path != src_path:
         shutil.copy2(src_path, dst_path)
+        # The map is a sidecar now, so an export that leaves it behind ships a
+        # manifest pointing at a file that did not travel. The .pkl still
+        # carries the map and still predicts; what breaks is reading the export.
+        src_map = encoding_map_path(src_path)
+        if src_map.exists():
+            try:
+                shutil.copy2(src_map, encoding_map_path(dst_path))
+                progress.append(ok("Copied encoding map", encoding_map_path(dst_path).name))
+            except OSError as exc:
+                progress.append(warn("Encoding map not copied", str(exc)))
 
+    # Exporting in place -- no output_dir -- makes manifest_dst the TRAINING
+    # manifest, and this used to replace it wholesale with the export
+    # descriptor below. Everything the training run recorded was destroyed, with
+    # no snapshot: the snapshot guard above skips the same-path case. Gone were
+    # `split` (how the score was produced, which a user review asked for by
+    # name), `encoding_map_path` (which orphans the split-out map so
+    # read_model_report can no longer find it), `feature_defaults`,
+    # `hyperparameters`, `leakage_warning`, `n_classes`, `scaler` and
+    # `model_key`.
+    #
+    # An export descriptor is extra information about a file, not a replacement
+    # for its provenance. So the training metadata is carried through and the
+    # export fields are layered on top. Same encoding-map rule as save_model, so
+    # exporting does not re-inline the megabyte either.
+    carried, _sidecar = split_encoding_map(dict(metadata), dst_path)
     manifest_data = {
+        **carried,
         "model_type": metadata.get("model_type", "unknown"),
         "task": metadata.get("task", "unknown"),
         "trained_on": metadata.get("trained_on", "unknown"),
@@ -359,6 +385,8 @@ def export_model(
         "python_version": metadata.get("python_version", sys.version),
         "sklearn_version": metadata.get("sklearn_version", sklearn.__version__),
         "xgboost_version": xgb.__version__,
+        "exported_from": str(src_path),
+        "exported_at": datetime.now(UTC).isoformat(),
         # The file is not a plain pickle and pickle.load() refuses it with
         # KeyError: 170. Every model this server writes is HMAC-signed, because
         # unpickling a caller-supplied path is a remote-code-execution vector;
