@@ -223,6 +223,11 @@ def train_with_cv(
         "encoding_map": encoding_map,
         "cv_splits": n_splits,
         "cv_mean_metrics": mean_metrics,
+        # Scored by cross-validation, so there is no holdout: test_size 0 says
+        # that rather than leaving a reader to assume one. The review asked for
+        # split/seed/CV in the manifest, and a CV mean and a holdout score are
+        # not the same claim.
+        "split": split_provenance(test_size=0.0, random_state=random_state, cv_folds=n_splits),
         "feature_defaults": typical_row(df_raw, list(df.drop(columns=[target_column]).columns)),
         "python_version": sys.version,
         "sklearn_version": sklearn.__version__,
@@ -447,6 +452,11 @@ def compare_models(
             "target_column": target_column,
             "encoding_map": encoding_map,
             "metrics": metrics_best,
+            # This is the model the review measured -- "dtc 0.9628" came from
+            # here. The split reached the response and never the manifest, so
+            # the file that outlives the response could not say how the number
+            # was produced.
+            "split": split_provenance(test_size=test_size, random_state=random_state),
             "feature_defaults": typical_row(df_raw, list(df.drop(columns=[target_column]).columns)),
             "python_version": sys.version,
             "sklearn_version": sklearn.__version__,
