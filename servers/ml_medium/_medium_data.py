@@ -10,6 +10,7 @@ import pandas as pd
 
 from shared.file_utils import embed_content
 from shared.handover import make_context, make_handover
+from shared.leakage import leakage_note, leakage_suspects
 from shared.quality import quality_score
 from shared.small_sample import rounded
 
@@ -1035,8 +1036,26 @@ def batch_predict(
 # ---------------------------------------------------------------------------
 
 
-def check_data_quality(file_path: str) -> dict:
-    """Return JSON data quality summary with score 0-100. No HTML."""
+def check_data_quality(file_path: str, target_column: str = "") -> dict:
+    """Return JSON data quality summary with score 0-100. No HTML.
+
+    `target_column` turns on the leakage check. A user review trained on a loan
+    book, scored 0.9628, and found the top three features were all recorded
+    after the loan resolved -- the model was reading repayment history, not
+    predicting default. Its request was for this tool to say so *before* a model
+    is fit, since by the time `compare_models` ranks three of them the wasted
+    work is already done:
+
+        Suggest check_data_quality add a "possible leakage: post-outcome
+        column" hint when target is loan_status.
+
+    Leakage is a question about a target, so it is only asked when one is named.
+    Without `target_column` the response says the check did not run rather than
+    staying silent: a quality report that scores 96 and mentions no leakage
+    reads as "no leakage found", and the review's verdict on the receipt log --
+    a record that silently holds a subset cannot be trusted -- applies exactly
+    as well here.
+    """
     from shared.file_utils import resolve_path
     from shared.progress import fail, ok
 
@@ -1086,6 +1105,20 @@ def check_data_quality(file_path: str) -> dict:
             "columns": n_cols,
             "rows": 0,
             "progress": progress + [fail("Nothing to score", "0 data rows")],
+            "token_estimate": 40,
+        }
+
+    # Checked here rather than where the leakage block runs, so a typo costs one
+    # cheap retry instead of a full scan of the file. Refused rather than
+    # ignored: a caller who asks about one column and is answered about the file
+    # in general has been told something they did not ask, quietly.
+    if target_column and target_column not in df.columns:
+        return {
+            "success": False,
+            "op": "check_data_quality",
+            "error": f"target_column '{target_column}' not found in {path.name}",
+            "hint": f"Available: {', '.join(map(str, df.columns[:40]))}",
+            "progress": progress + [fail("Column not found", target_column)],
             "token_estimate": 40,
         }
 
@@ -1287,6 +1320,25 @@ def check_data_quality(file_path: str) -> dict:
             "describes the row count, not the distribution"
         )
 
+    # Leakage suspects, deliberately outside `alerts` and outside the score.
+    #
+    # Putting them in `alerts` would dock the quality score, and then the same
+    # file would score two ways depending on whether the caller happened to name
+    # a target -- a number that moves with the question asked rather than with
+    # the data. That is the defect that had run_eda saying 77 and this tool 53,
+    # fixed once already; it is not worth reintroducing from the other side.
+    #
+    # It is also a different kind of finding. A null column is wrong with the
+    # data. A post-outcome feature is perfectly good data that is wrong for
+    # *this target*, and it would still be wrong after every alert here was
+    # cleared.
+    suspects: list = []
+    leak_note = ""
+    if target_column:
+        features = [c for c in df.columns if c != target_column]
+        suspects = leakage_suspects(df, target_column, features)
+        leak_note = leakage_note(suspects)
+
     # Summarize null cols with high missing
     high_missing_cols = [c["column"] for c in alerts if c.get("type") == "high_missing"]
     constant_cols = [c["column"] for c in alerts if c.get("type") == "constant_column"]
@@ -1321,10 +1373,30 @@ def check_data_quality(file_path: str) -> dict:
         "progress": progress,
         "token_estimate": 0,
     }
-    resp["context"] = make_context(
-        "check_data_quality",
-        f"Quality score {round(score, 1)}/100 for {path.name}: {len(alerts)} alert(s) ({sum(1 for a in alerts if a.get('severity') == 'high')} high)",
+    if target_column:
+        resp["target_column"] = target_column
+        resp["leakage_suspects"] = suspects[:10]
+        resp["leakage_count"] = len(suspects)
+        resp["leakage_note"] = leak_note or (
+            f"No feature looks like it already contains '{target_column}'. Measured: "
+            "single-feature separation, missingness that tracks the target, and "
+            "post-outcome column names."
+        )
+    else:
+        # Short, but never absent. See the docstring: silence here reads as a
+        # clean bill of health for a check that was never run.
+        resp["leakage_check"] = "not run — pass target_column to test whether a feature already contains the outcome"
+
+    summary = (
+        f"Quality score {round(score, 1)}/100 for {path.name}: {len(alerts)} alert(s) "
+        f"({sum(1 for a in alerts if a.get('severity') == 'high')} high)"
     )
+    if suspects:
+        # The score is about the data and stays where it was; the leakage count
+        # rides alongside it, because a handover that carries only the score
+        # carries the half that looks fine.
+        summary += f"; {len(suspects)} possible leakage suspect(s) for '{target_column}'"
+    resp["context"] = make_context("check_data_quality", summary)
     resp["handover"] = make_handover(
         "INSPECT",
         ["run_preprocessing", "generate_eda_report", "detect_outliers"],

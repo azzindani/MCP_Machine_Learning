@@ -228,9 +228,12 @@ def anomaly_detection(
 @mcp.tool(
     annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 )
-def check_data_quality(file_path: str) -> dict:
-    """Return JSON quality score 0-100 with typed alerts per column."""
-    return engine.check_data_quality(file_path)
+def check_data_quality(file_path: str, target_column: str = "") -> dict:
+    """Quality score 0-100, typed alerts. Pass target_column for leakage."""
+    # The leakage half is explained on engine.check_data_quality, not here:
+    # this string IS the MCP tool description and every client pays for it on
+    # every tools/list, which is what the 80-character census cap protects.
+    return engine.check_data_quality(file_path, target_column)
 
 
 @mcp.tool(
