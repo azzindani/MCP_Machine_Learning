@@ -18,6 +18,10 @@ A self-hosted MCP server that gives local LLMs structured access to the full sup
 - **3 clustering algorithms** — K-Means, Mean-Shift, DBSCAN
 - **Dimensionality reduction** — PCA and ICA
 - **Hyperparameter tuning** — GridSearch and RandomSearch
+- **Leakage detection on every tool that takes a target** — `train_classifier`, `train_regressor`, `train_with_cv`, `compare_models`, `check_data_quality` and `evaluate_model` all name features that may already contain the outcome, with the evidence: how well a feature separates the classes alone, whether its *missingness* tracks the target, and whether it is named like a post-outcome field. Suspects, never verdicts — nothing is dropped and no training is refused
+- **Split provenance in the manifest** — test size, seed, stratification, CV folds and whether the split was time-ordered, because a 0.9628 from a random split of time-ordered rows is not the same number as one from a forward-chained split
+- **Split manifests** — a 28,000-category encoding map moves to a `.encoding_map.json` sidecar so the manifest stays kilobytes; the `.pkl` keeps the full metadata, so a model shipped alone still predicts
+- **Quality score with a breakdown** — `{completeness, validity, uniqueness, drift}`, from a scorer byte-identical with MCP_Data_Analyst's, so the same file cannot score two ways across the two servers
 - **Dark / light / device theme** — all HTML outputs accept `theme: "dark" | "light" | "device"`
 - **Mobile-responsive HTML** — viewport meta + CSS breakpoints on every report
 - **Modular architecture** — each engine split into focused sub-modules, all under 1 000 lines
@@ -183,7 +187,7 @@ Replace the `"command"` and `"args"` in each entry with the bash equivalent:
 | `list_models` | List all saved `.pkl` models with metadata |
 | `split_dataset` | Split CSV into train/test files |
 
-### Tier 2 — ml-medium (14 tools)
+### Tier 2 — ml-medium (12 tools)
 
 | Tool | Purpose |
 |---|---|
@@ -194,21 +198,26 @@ Replace the `"command"` and `"args"` in each entry with the bash equivalent:
 | `run_clustering` | K-Means / Mean-Shift / DBSCAN — returns silhouette score |
 | `read_receipt` | Read operation history for a file |
 | `generate_eda_report` | Interactive HTML EDA with quality score + 8-alert panel |
-| `filter_rows` | Filter rows by column condition, save new CSV |
-| `merge_datasets` | Merge two CSVs on a key column |
 | `find_optimal_clusters` | Elbow + silhouette chart to find best K |
 | `anomaly_detection` | Isolation Forest or LOF anomaly detection |
-| `check_data_quality` | JSON quality score 0–100 with typed alerts (model-readable) |
-| `evaluate_model` | Score a saved model on an external labeled test CSV |
+| `check_data_quality` | JSON quality score 0–100 with typed alerts (model-readable). Pass `target_column` to add the leakage check |
+| `evaluate_model` | Score a saved model on an external labeled test CSV, and flag features that may already contain the outcome |
 | `batch_predict` | Predict all rows and save predictions CSV — no row limit |
+
+> Earlier versions of this table listed `filter_rows` and `merge_datasets`.
+> Both exist in the engine but neither is registered as an MCP tool, so a
+> caller who read this table and tried them burned a loop iteration on a tool
+> that was never there. Filtering and merging belong to
+> [MCP_Data_Analyst](https://github.com/azzindani/MCP_Data_Analyst)
+> (`filter_dataset`, `merge_datasets`), which shares this workspace.
 
 ### Tier 3 — ml-advanced (10 tools)
 
 | Tool | Purpose |
 |---|---|
 | `tune_hyperparameters` | GridSearch or RandomSearch hyperparameter tuning |
-| `export_model` | Export `.pkl` with metadata manifest |
-| `read_model_report` | Feature importance, confusion matrix, metrics from saved model |
+| `export_model` | Export `.pkl` with metadata manifest — the training record is carried through, never replaced |
+| `read_model_report` | Feature importance, confusion matrix, metrics from saved model. `skip_encoding_map` defaults to **True**; pass `top_n` for a bounded slice of the map |
 | `run_profiling_report` | Interactive Plotly HTML profile: distributions, correlations, summary stats |
 | `apply_dimensionality_reduction` | PCA or ICA — returns reduced dataset path |
 | `generate_training_report` | Full HTML training report: metrics, confusion matrix, feature importance |
