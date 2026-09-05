@@ -248,10 +248,13 @@ if [ "$MANIFEST_BYTES" -gt 0 ] && [ "$MANIFEST_BYTES" -lt 200000 ]; then
 else
   fail "manifest is $MANIFEST_BYTES bytes at $MANIFEST"
 fi
-if docker exec "$CONTAINER" grep -q '"split"' "$MANIFEST"; then
+MANIFEST_KEYS=$(docker exec "$CONTAINER" cat "$MANIFEST" 2>/dev/null | grep -oE '^  "[a-z_]+"' | tr -d ' "' | tr '\n' ' ')
+if [ -z "$MANIFEST_KEYS" ]; then
+  fail "could not read $MANIFEST (exists, $MANIFEST_BYTES bytes) — not the same thing as a missing key"
+elif echo "$MANIFEST_KEYS" | grep -q "split"; then
   pass "the manifest records how the score was split"
 else
-  fail "no split provenance in $MANIFEST"
+  fail "no split provenance in $MANIFEST; its keys are: $MANIFEST_KEYS"
 fi
 
 echo '== prompt: "generate a full profiling report for this dataset" -> run_profiling_report =='
