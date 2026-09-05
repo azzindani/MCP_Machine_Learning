@@ -226,10 +226,22 @@ class TestTheWeighingItselfWorks:
         assert growth > 150, f"300 MB allocated, {growth:.0f} MB seen"
 
     def test_it_would_fail_on_the_regression_this_file_exists_for(self):
-        """dbscan grew by roughly 660 MB in one call and reached 962 MB."""
+        """dbscan grew by roughly 660 MB in one call and reached 962 MB.
+
+        Allocates three times the ceiling rather than two. RSS is not a faithful
+        report of what a process asked for: a macOS runner under memory pressure
+        reported 355 MB of an 800 MB allocation even with incompressible bytes,
+        because what compression cannot squeeze the pager evicts. Twice the
+        ceiling left no margin for that and failed on a machine where nothing was
+        wrong; three times clears it at the worst ratio observed.
+
+        The margin is in the allocation, never in the assertion -- lowering
+        GROWTH_CEILING_MB to make this pass would loosen the guard the whole file
+        exists to enforce.
+        """
         holder: list[bytearray] = []
         try:
-            _, growth = rss_growth_during(lambda: holder.append(_resident(GROWTH_CEILING_MB * 2)))
+            _, growth = rss_growth_during(lambda: holder.append(_resident(GROWTH_CEILING_MB * 3)))
         finally:
             holder.clear()
         assert growth >= GROWTH_CEILING_MB, f"{growth:.0f} MB did not trip a {GROWTH_CEILING_MB} MB ceiling"
