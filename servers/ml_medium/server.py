@@ -245,7 +245,7 @@ def evaluate_model(
     target_column: str = "",
     file_path: str = "",
 ) -> dict:
-    """Score model on a labeled CSV. test_file_path= or file_path=."""
+    """Score model on a labeled CSV, flag leakage. test_file_path= or file_path=."""
     # get_predictions and batch_predict both name this `file_path`, so a caller
     # chaining train -> evaluate writes that and pydantic refuses the call
     # before this server can say which name it wanted. test_file_path keeps its
