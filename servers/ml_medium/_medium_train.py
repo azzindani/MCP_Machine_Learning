@@ -12,6 +12,7 @@ import sklearn
 
 from shared.file_utils import apply_default_mode, atomic_write_json
 from shared.handover import make_context, make_handover
+from shared.leakage import leakage_note, leakage_suspects, split_provenance
 from shared.model_output import resolve_model_path
 from shared.model_signing import dump_signed
 
@@ -490,9 +491,21 @@ def compare_models(
     # not 1.0 at perfection.
     top = results[0] if results else {}
     best_fit = float(top.get("accuracy", top.get("r2", 0.0)) or 0.0)
-    leakage = leakage_warning(df, target_column, [c for c in df.columns if c != target_column], best_fit)
+    feature_cols = [c for c in df.columns if c != target_column]
+    leakage = leakage_warning(df, target_column, feature_cols, best_fit)
     if leakage:
         progress.append(warn("Suspiciously perfect scores", leakage))
+
+    # `leakage_warning` above fires at 0.999 and needs a feature that determines
+    # the target exactly. The review's case scored 0.9628 with `installment`,
+    # `total_payment` and `last_payment_date` at the top -- all recorded after
+    # the loan resolves -- and no single column determined anything. That guard
+    # is tuned for "obviously impossible"; this one is for "quietly
+    # meaningless", which is the one that gets shipped.
+    suspects = leakage_suspects(df, target_column, feature_cols)
+    leak_note = leakage_note(suspects, best_fit)
+    if leak_note:
+        progress.append(warn("Possible target leakage", leak_note))
 
     resp = {
         "success": True,
@@ -501,10 +514,17 @@ def compare_models(
         "results": results,
         "best_model": best,
         "best_model_path": best_model_path,
+        # How the score was produced, beside the score. A 0.9628 from a random
+        # split of time-ordered rows is not the same claim as one from a
+        # forward-chained split, and nothing here used to let a reader tell.
+        "split": split_provenance(test_size=test_size, random_state=random_state),
+        "leakage_suspects": suspects,
         "backup": backup,
         "progress": progress,
         "token_estimate": 0,
     }
+    if leak_note:
+        resp["leakage_note"] = leak_note
     if leakage:
         resp["warning"] = leakage
     resp["context"] = make_context(

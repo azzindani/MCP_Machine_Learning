@@ -98,9 +98,14 @@ def export_model(
 @mcp.tool(
     annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 )
-def read_model_report(model_path: str) -> dict:
-    """Read model metrics, feature importance, confusion matrix."""
-    return engine.read_model_report(model_path)
+def read_model_report(model_path: str, top_n: int = 0, skip_encoding_map: bool = True) -> dict:
+    """Model metrics, feature importance, confusion matrix. Map summarised."""
+    # The long version lives on engine.read_model_report, which is not a tool.
+    # This string IS the MCP tool description: every client pays for it on every
+    # tools/list, which is why the census caps it at 80 characters -- and why
+    # documenting a token-cost fix in a place that costs tokens was the wrong
+    # place for it.
+    return engine.read_model_report(model_path, top_n, skip_encoding_map)
 
 
 @mcp.tool(

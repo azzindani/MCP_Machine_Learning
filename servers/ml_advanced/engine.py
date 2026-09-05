@@ -405,8 +405,21 @@ def export_model(
 # ---------------------------------------------------------------------------
 
 
-def read_model_report(model_path: str) -> dict:
-    """Read model metrics, feature importance, confusion matrix summary."""
+def read_model_report(model_path: str, top_n: int = 0, skip_encoding_map: bool = True) -> dict:
+    """Read model metrics, feature importance, confusion matrix summary.
+
+    `skip_encoding_map` defaults to **True**, which deliberately changes what
+    this returns. A user review reported: *"Report returned full `emp_title`
+    encoding_map (1,000+ entries inline, ~1 MB manifest). Correct but
+    token-heavy; truncated output warning fired."* Its fix was
+    `top_n` / `skip_encoding_map`, **importance-only by default** -- so the
+    default is now the one that does not cost a megabyte to answer "how did
+    this model do". The map is untouched on disk, and the response says how
+    many entries it has and how to ask for it.
+
+    `top_n` overrides how many features are listed by importance. 0 keeps the
+    deployment's own limit, which is what this did before.
+    """
     progress: list[dict] = []
     try:
         path = resolve_path(model_path)
@@ -434,7 +447,7 @@ def read_model_report(model_path: str) -> dict:
     # were listed, and their importances sum to 0.9456 -- which reads as 5.4%
     # of unexplained noise in the model rather than as five features nobody was
     # told about.
-    shown = get_max_feature_importance()
+    shown = int(top_n) if top_n and top_n > 0 else get_max_feature_importance()
     feature_importance: list[dict] = []
     fi_total = 0
     if model_obj is not None and hasattr(model_obj, "feature_importances_"):
@@ -458,11 +471,35 @@ def read_model_report(model_path: str) -> dict:
 
     manifest_path = path.with_suffix(".manifest.json")
     manifest_data: dict = {}
+    encoding_map_summary: dict = {}
     if manifest_path.exists():
         try:
             manifest_data = json.loads(manifest_path.read_text())
         except Exception:
             pass
+
+    # The megabyte. `emp_title` alone was 28,000 categories on the review's
+    # file, and every call to "read the model report" carried all of them.
+    # Summarised by default, never deleted: the map is what makes a saved model
+    # usable on new data, so the response says how big it is and how to get it
+    # rather than pretending it is not there.
+    raw_map = manifest_data.get("encoding_map")
+    if isinstance(raw_map, dict) and raw_map:
+        per_column = {col: len(vals) if hasattr(vals, "__len__") else 1 for col, vals in raw_map.items()}
+        encoding_map_summary = {
+            "columns": sorted(per_column),
+            "entries_per_column": per_column,
+            "entries_total": sum(per_column.values()),
+            "manifest_path": str(manifest_path),
+        }
+        if skip_encoding_map:
+            manifest_data = {k: v for k, v in manifest_data.items() if k != "encoding_map"}
+            encoding_map_summary["note"] = (
+                f"{encoding_map_summary['entries_total']:,} encoded values across "
+                f"{len(per_column)} column(s) were not inlined. Call "
+                "read_model_report(model_path, skip_encoding_map=False) for the full map, "
+                "or read manifest_path directly."
+            )
 
     resp: dict = {
         "success": True,
@@ -484,6 +521,9 @@ def read_model_report(model_path: str) -> dict:
         "progress": progress,
         "token_estimate": 0,
     }
+    if encoding_map_summary:
+        resp["encoding_map_summary"] = encoding_map_summary
+        resp["encoding_map_inlined"] = not skip_encoding_map
     if fi_total > len(feature_importance):
         listed = sum(d["importance"] for d in feature_importance)
         resp["feature_importance_note"] = (
