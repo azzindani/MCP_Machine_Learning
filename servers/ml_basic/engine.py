@@ -6,6 +6,7 @@ import logging
 
 import pandas as pd
 
+from shared.counts import counted
 from shared.file_utils import read_csv as _read_csv
 from shared.file_utils import resolve_path
 from shared.handover import make_context, make_handover
@@ -63,7 +64,6 @@ def inspect_dataset(file_path: str) -> dict:
 
         max_cols = get_max_columns()
         all_columns = list(df.columns)
-        truncated = len(all_columns) > max_cols
         display_cols = all_columns[:max_cols]
 
         col_info = []
@@ -80,6 +80,11 @@ def inspect_dataset(file_path: str) -> dict:
 
         # target candidates: ≤20 unique values or bool dtype
         target_candidates = [c for c in all_columns if df[c].dtype == bool or df[c].nunique() <= 20]
+        # Cut by get_max_results() while `truncated` above was derived from
+        # get_max_columns(). Two lists, two caps, one flag: a caller whose
+        # columns all fitted read `truncated: false` and could still be missing
+        # target candidates, which is the field they came here to read.
+        candidates_shown = target_candidates[: get_max_results()]
 
         response = {
             "success": True,
@@ -89,8 +94,10 @@ def inspect_dataset(file_path: str) -> dict:
             "column_count": len(all_columns),
             "file_size_kb": size_kb(path.stat().st_size),
             "columns": col_info,
-            "target_candidates": target_candidates[: get_max_results()],
-            "truncated": truncated,
+            "target_candidates": candidates_shown,
+            "target_candidates_total": len(target_candidates),
+            "target_candidates_truncated": len(candidates_shown) < len(target_candidates),
+            **counted(len(col_info), len(all_columns)),
             "progress": progress,
         }
         response["context"] = make_context(
@@ -309,15 +316,14 @@ def search_columns(
                 continue
             matches.append(col)
 
-        truncated = len(matches) > cap
+        shown = matches[:cap]
         response = {
             "success": True,
             "op": "search_columns",
             "file": pname(file_path),
-            "columns": matches[:cap],
-            "returned": len(matches[:cap]),
+            "columns": shown,
             "total_matched": len(matches),
-            "truncated": truncated,
+            **counted(len(shown), len(matches)),
             "progress": progress,
         }
         response["context"] = make_context(
@@ -367,16 +373,21 @@ def read_rows(file_path: str, start: int, end: int) -> dict:
         slice_df = df.iloc[start : start + actual]
         rows = slice_df.where(slice_df.notna(), other=None).to_dict(orient="records")
 
+        # What the caller could have had from this window: their own range,
+        # bounded by where the file ends. Running out of rows is not truncation
+        # -- asking for 200 from a 50-row file and getting 50 is the complete
+        # answer -- so the denominator is the window, not the file.
+        eligible = min(requested, max(0, total - start))
+
         response = {
             "success": True,
             "op": "read_rows",
             "file": pname(file_path),
             "rows": rows,
-            "returned": len(rows),
             "total_available": total,
             "start": start,
             "end": start + len(rows),
-            "truncated": truncated,
+            **counted(len(rows), eligible),
             "progress": progress,
         }
         if truncated:
