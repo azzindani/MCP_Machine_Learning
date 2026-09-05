@@ -28,6 +28,7 @@ a container sized for a tool.
 
 from __future__ import annotations
 
+import random
 import shutil
 import sys
 import threading
@@ -169,16 +170,32 @@ class TestTheHelperBoundsWhatItAllocates:
         assert bounded_silhouette(rng.rand(100, 2), labels, cap=1) is None
 
 
+_MIB = 1024 * 1024
+
+
 def _resident(mb: int) -> bytearray:
-    """Allocate `mb` megabytes and fault every page of it in.
+    """Allocate `mb` megabytes of incompressible bytes and fault them all in.
 
     bytearray(n) is zero-filled, and a page of zeros is the easiest thing in
-    the world for a kernel not to make resident. Writing one distinct byte per
-    page forces the mapping to exist before RSS is read.
+    the world for a kernel not to make resident, so this used to write one
+    distinct byte per page to force the mapping to exist.
+
+    That is not enough on macOS. Its memory compressor collapses a page holding
+    4,095 zeros and one marker byte into almost nothing, so 800 MB allocated
+    reported 286 MB resident and the canary below failed on a machine where
+    nothing was wrong -- twice, on two unrelated commits. Random bytes do not
+    compress, so RSS reflects the allocation on every platform.
+
+    One random megabyte is generated and copied across the buffer rather than
+    generating `mb` of randomness, which would dominate the test's runtime; the
+    first byte of each block is varied so no two blocks are identical.
     """
-    buf = bytearray(mb * 1024 * 1024)
-    for offset in range(0, len(buf), 4096):
-        buf[offset] = (offset // 4096) % 251 + 1
+    block = random.randbytes(_MIB)
+    buf = bytearray(mb * _MIB)
+    for i in range(mb):
+        start = i * _MIB
+        buf[start : start + _MIB] = block
+        buf[start] = i % 251 + 1
     return buf
 
 
