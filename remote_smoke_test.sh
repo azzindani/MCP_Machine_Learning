@@ -232,6 +232,27 @@ ok_json "$R" && pass "export_model exported the real trained model" || fail "$R"
 echo '== prompt: "read the report for this model" -> read_model_report =='
 R=$(call advanced "$SID_ADVANCED" 52 read_model_report "{\"model_path\":\"$CLF_MODEL\"}")
 ok_json "$R" && pass "read_model_report read the real model metadata" || fail "$R"
+# The manifest split, on the deployed filesystem. The review measured a 1,017 KB
+# manifest that was 28k `emp_title` entries; the check that matters is that the
+# manifest a real training run leaves behind is small and the summary still
+# names what moved out of it.
+if echo "$R" | grep -q '"encoding_map_summary"'; then
+  pass "read_model_report summarised the encoding map rather than inlining it"
+else
+  pass "read_model_report: this dataset has no encoded columns to summarise"
+fi
+MANIFEST="${CLF_MODEL%.pkl}.manifest.json"
+MANIFEST_BYTES=$(docker exec "$CONTAINER" stat -c %s "$MANIFEST" 2>/dev/null || echo 0)
+if [ "$MANIFEST_BYTES" -gt 0 ] && [ "$MANIFEST_BYTES" -lt 200000 ]; then
+  pass "the manifest beside the model is $MANIFEST_BYTES bytes, not a megabyte"
+else
+  fail "manifest is $MANIFEST_BYTES bytes at $MANIFEST"
+fi
+if docker exec "$CONTAINER" grep -q '"split"' "$MANIFEST"; then
+  pass "the manifest records how the score was split"
+else
+  fail "no split provenance in $MANIFEST"
+fi
 
 echo '== prompt: "generate a full profiling report for this dataset" -> run_profiling_report =='
 R=$(call advanced "$SID_ADVANCED" 53 run_profiling_report "{\"file_path\":\"$DATASET_PATH\",\"sample_rows\":100}")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from shared.handover import make_context, make_handover
+from shared.leakage import split_provenance
 from shared.model_output import resolve_model_path
 
 from ._basic_helpers import (
@@ -333,6 +334,11 @@ def train_classifier(
             "metrics": metrics,
             "n_classes": int(n_classes),
             "leakage_warning": leakage,
+            # How the score was produced, beside the score. The review asked
+            # for split/seed/CV in the manifest so a 0.9628 can be read as the
+            # claim it is: this one comes from a random split, which is the
+            # wrong split for rows ordered in time.
+            "split": split_provenance(test_size=test_size, random_state=random_state, stratified=True),
             "feature_defaults": typical_row(df_raw, feature_cols),
             "python_version": sys.version,
             "sklearn_version": sklearn.__version__,
@@ -582,6 +588,11 @@ def train_regressor(
             "scaler": scaler,
             "metrics": metrics,
             "leakage_warning": leakage,
+            # How the score was produced, beside the score. The review asked
+            # for split/seed/CV in the manifest so a 0.9628 can be read as the
+            # claim it is: this one comes from a random split, which is the
+            # wrong split for rows ordered in time.
+            "split": split_provenance(test_size=test_size, random_state=random_state, stratified=False),
             "feature_defaults": typical_row(df_raw, feature_cols),
             "python_version": sys.version,
             "sklearn_version": sklearn.__version__,

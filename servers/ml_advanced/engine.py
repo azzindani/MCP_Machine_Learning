@@ -22,6 +22,7 @@ from shared.file_utils import atomic_write_json, atomic_write_text, embed_conten
 from shared.file_utils import read_csv as _read_csv
 from shared.handover import make_context, make_handover
 from shared.html_layout import get_output_path as _get_output_path
+from shared.leakage import split_provenance
 from shared.ml_utils import leakage_warning, typical_row
 from shared.model_js import ModelNotEmbeddable, prediction_panel
 from shared.model_js import build_payload as build_model_payload
@@ -231,6 +232,10 @@ def tune_hyperparameters(
         "best_params": searcher.best_params_,
         "best_score": float(searcher.best_score_),
         "search_type": search,
+        # A tuned score comes from cross-validation, not a holdout, and the
+        # manifest has to say which: `best_score` is a mean over `cv` folds of
+        # the training data, so test_size is 0 here rather than absent.
+        "split": split_provenance(test_size=0.0, random_state=42 if search == "random" else None, cv_folds=cv),
         "metrics": {"best_score": float(searcher.best_score_)},
         "feature_defaults": typical_row(df_raw, list(df.drop(columns=[target_column]).columns)),
         "python_version": sys.version,
@@ -483,7 +488,21 @@ def read_model_report(model_path: str, top_n: int = 0, skip_encoding_map: bool =
     # Summarised by default, never deleted: the map is what makes a saved model
     # usable on new data, so the response says how big it is and how to get it
     # rather than pretending it is not there.
+    #
+    # Two shapes arrive here now. A manifest written since the split holds only
+    # `encoding_map_summary` plus `encoding_map_path`; one written before it
+    # holds the map inline. Reading both is not optional -- models on disk
+    # outlive the code that wrote them, and a report that only understood the
+    # new shape would answer "no encoding map" about every model trained last
+    # month.
     raw_map = manifest_data.get("encoding_map")
+    sidecar = manifest_data.get("encoding_map_path", "")
+    if not isinstance(raw_map, dict) and sidecar:
+        try:
+            loaded = json.loads(Path(sidecar).read_text(encoding="utf-8"))
+            raw_map = loaded if isinstance(loaded, dict) else None
+        except Exception:
+            raw_map = None
     if isinstance(raw_map, dict) and raw_map:
         per_column = {col: len(vals) if hasattr(vals, "__len__") else 1 for col, vals in raw_map.items()}
         encoding_map_summary = {
@@ -492,14 +511,19 @@ def read_model_report(model_path: str, top_n: int = 0, skip_encoding_map: bool =
             "entries_total": sum(per_column.values()),
             "manifest_path": str(manifest_path),
         }
+        if sidecar:
+            encoding_map_summary["encoding_map_path"] = sidecar
         if skip_encoding_map:
             manifest_data = {k: v for k, v in manifest_data.items() if k != "encoding_map"}
+            where = Path(sidecar).name if sidecar else "manifest_path"
             encoding_map_summary["note"] = (
                 f"{encoding_map_summary['entries_total']:,} encoded values across "
                 f"{len(per_column)} column(s) were not inlined. Call "
-                "read_model_report(model_path, skip_encoding_map=False) for the full map, "
-                "or read manifest_path directly."
+                f"read_model_report(model_path, skip_encoding_map=False) for the full map, "
+                f"or read {where} directly."
             )
+        else:
+            manifest_data = {**manifest_data, "encoding_map": raw_map}
 
     resp: dict = {
         "success": True,
