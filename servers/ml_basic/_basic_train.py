@@ -167,7 +167,16 @@ def train_classifier(
         y = df[target_column].values
 
         if dry_run:
-            return {
+            # The leakage check used to run only after training, so the one
+            # mode a caller uses to see what a run WOULD do was the only mode
+            # that withheld the warning -- and it printed `link_clicks` among
+            # feature_columns beside `would_train: true`, which reads as
+            # approval. Everything the check needs is already in hand here.
+            suspects = leakage_suspects(df, target_column, feature_cols)
+            note = leakage_note(suspects)
+            if note:
+                progress.append(warn("Possible target leakage", note))
+            dry: dict = {
                 "success": True,
                 "dry_run": True,
                 "op": "train_classifier",
@@ -176,9 +185,13 @@ def train_classifier(
                 "feature_columns": feature_cols,
                 "row_count": len(df),
                 "would_train": True,
+                "leakage_suspects": suspects,
                 "progress": progress,
-                "token_estimate": 80,
             }
+            if note:
+                dry["leakage_note"] = note
+            dry["token_estimate"] = len(str(dry)) // 4
+            return dry
 
         x_train, x_test, y_train, y_test = train_test_split(
             x, y, test_size=test_size, random_state=random_state, stratify=y
@@ -495,7 +508,16 @@ def train_regressor(
         y = df[target_column].values.astype(float)
 
         if dry_run:
-            return {
+            # The leakage check used to run only after training, so the one
+            # mode a caller uses to see what a run WOULD do was the only mode
+            # that withheld the warning -- and it printed `link_clicks` among
+            # feature_columns beside `would_train: true`, which reads as
+            # approval. Everything the check needs is already in hand here.
+            suspects = leakage_suspects(df, target_column, feature_cols)
+            note = leakage_note(suspects)
+            if note:
+                progress.append(warn("Possible target leakage", note))
+            dry: dict = {
                 "success": True,
                 "dry_run": True,
                 "op": "train_regressor",
@@ -504,9 +526,13 @@ def train_regressor(
                 "feature_columns": feature_cols,
                 "row_count": len(df),
                 "would_train": True,
+                "leakage_suspects": suspects,
                 "progress": progress,
-                "token_estimate": 80,
             }
+            if note:
+                dry["leakage_note"] = note
+            dry["token_estimate"] = len(str(dry)) // 4
+            return dry
 
         x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=test_size, random_state=random_state)
         progress.append(ok("Split dataset", f"{len(x_train):,} train / {len(x_test):,} test"))

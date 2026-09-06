@@ -276,6 +276,21 @@ def plot_learning_curve(
 ) -> dict:
     """Plot learning curve (train vs val score vs training size). HTML output."""
     progress = []
+    # `task` decides whether the curve is scored with r2 or accuracy, and this
+    # was the one tool in the family that never checked it: an unknown task
+    # fell through to the regression path and returned an r2 curve labelled
+    # scoring="r2", answering a different question than the one asked. Its
+    # siblings -- train_with_cv, compare_models, tune_hyperparameters -- all
+    # refuse with this same sentence.
+    if task not in ("classification", "regression"):
+        return {
+            "success": False,
+            "op": "plot_learning_curve",
+            "error": f"Unknown task: '{task}'.",
+            "hint": "Use 'classification' or 'regression'.",
+            "progress": [],
+            "token_estimate": 30,
+        }
     try:
         dp = resolve_path(file_path, (".csv",))
     except ValueError as exc:
