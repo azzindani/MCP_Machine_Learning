@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import sklearn
 
+from shared.feature_select import select_features
 from shared.file_utils import apply_default_mode, atomic_write_json
 from shared.handover import make_context, make_handover
 from shared.leakage import leakage_note, leakage_suspects, split_provenance
@@ -36,6 +37,7 @@ from ._medium_helpers import (
     get_cv_folds,
     get_max_models,
     get_output_dir,
+    info,
     leakage_warning,
     mean_squared_error,
     ok,
@@ -63,6 +65,8 @@ def train_with_cv(
     random_state: int = 42,
     dry_run: bool = False,
     output_path: str = "",
+    feature_columns: list[str] = None,
+    exclude_columns: list[str] = None,
 ) -> dict:
     """Train with K-fold cross-validation. Returns per-fold and mean scores."""
     progress: list[dict] = []
@@ -127,7 +131,12 @@ def train_with_cv(
     # the dataset's own labels ("Google Ads"), not the integers encoding made.
     df_raw = df
     df, encoding_map, _ = _auto_preprocess(df, target_column)
-    x = df.drop(columns=[target_column]).values
+    feature_cols, feature_note, feature_error = select_features(df, target_column, feature_columns, exclude_columns)
+    if feature_error:
+        return feature_error
+    if feature_note:
+        progress.append(info("Feature set narrowed", feature_note))
+    x = df[feature_cols].values
     y = df[target_column].values
 
     if task == "classification":
@@ -218,7 +227,7 @@ def train_with_cv(
         "task": task,
         "trained_on": path.name,
         "training_date": datetime.now(UTC).isoformat(),
-        "feature_columns": list(df.drop(columns=[target_column]).columns),
+        "feature_columns": feature_cols,
         "target_column": target_column,
         "encoding_map": encoding_map,
         "cv_splits": n_splits,
@@ -228,7 +237,7 @@ def train_with_cv(
         # split/seed/CV in the manifest, and a CV mean and a holdout score are
         # not the same claim.
         "split": split_provenance(test_size=0.0, random_state=random_state, cv_folds=n_splits),
-        "feature_defaults": typical_row(df_raw, list(df.drop(columns=[target_column]).columns)),
+        "feature_defaults": typical_row(df_raw, feature_cols),
         "python_version": sys.version,
         "sklearn_version": sklearn.__version__,
     }
@@ -269,7 +278,7 @@ def train_with_cv(
     # on every fold with nothing to say the number was meaningless.
     # accuracy_mean and r2_mean are both 1.0 at perfection.
     cv_score = mean_metrics.get("accuracy_mean", mean_metrics.get("r2_mean", 0.0))
-    leakage = leakage_warning(df, target_column, [c for c in df.columns if c != target_column], float(cv_score))
+    leakage = leakage_warning(df, target_column, feature_cols, float(cv_score))
     if leakage:
         progress.append(warn("Suspiciously perfect score", leakage))
 
@@ -321,6 +330,8 @@ def compare_models(
     random_state: int = 42,
     dry_run: bool = False,
     output_path: str = "",
+    feature_columns: list[str] = None,
+    exclude_columns: list[str] = None,
 ) -> dict:
     """Train multiple models, return sorted comparison table."""
     progress: list[dict] = []
@@ -387,7 +398,12 @@ def compare_models(
     # the dataset's own labels ("Google Ads"), not the integers encoding made.
     df_raw = df
     df, encoding_map, _ = _auto_preprocess(df, target_column)
-    x = df.drop(columns=[target_column]).values
+    feature_cols, feature_note, feature_error = select_features(df, target_column, feature_columns, exclude_columns)
+    if feature_error:
+        return feature_error
+    if feature_note:
+        progress.append(info("Feature set narrowed", feature_note))
+    x = df[feature_cols].values
     y = df[target_column].values
 
     if task == "classification":
@@ -448,7 +464,7 @@ def compare_models(
             "task": task,
             "trained_on": path.name,
             "training_date": datetime.now(UTC).isoformat(),
-            "feature_columns": list(df.drop(columns=[target_column]).columns),
+            "feature_columns": feature_cols,
             "target_column": target_column,
             "encoding_map": encoding_map,
             "metrics": metrics_best,
@@ -457,7 +473,7 @@ def compare_models(
             # the file that outlives the response could not say how the number
             # was produced.
             "split": split_provenance(test_size=test_size, random_state=random_state),
-            "feature_defaults": typical_row(df_raw, list(df.drop(columns=[target_column]).columns)),
+            "feature_defaults": typical_row(df_raw, feature_cols),
             "python_version": sys.version,
             "sklearn_version": sklearn.__version__,
         }
@@ -501,7 +517,6 @@ def compare_models(
     # not 1.0 at perfection.
     top = results[0] if results else {}
     best_fit = float(top.get("accuracy", top.get("r2", 0.0)) or 0.0)
-    feature_cols = [c for c in df.columns if c != target_column]
     leakage = leakage_warning(df, target_column, feature_cols, best_fit)
     if leakage:
         progress.append(warn("Suspiciously perfect scores", leakage))
