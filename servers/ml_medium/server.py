@@ -19,6 +19,7 @@ try:
     from shared.arg_errors import contract_errors
     from shared.deploy_auth import build_auth, build_oauth_bridge
     from shared.progress import info
+    from shared.strict_args import enforce_known_arguments
     from shared.token_estimate import measure_responses
 
     from . import engine
@@ -28,6 +29,7 @@ except ImportError:
     from shared.arg_errors import contract_errors
     from shared.deploy_auth import build_auth, build_oauth_bridge
     from shared.progress import info
+    from shared.strict_args import enforce_known_arguments
     from shared.token_estimate import measure_responses
 
 _VERSION = "0.1.2"  # keep in sync with pyproject.toml [project].version
@@ -111,9 +113,14 @@ def train_with_cv(
     random_state: int = 42,
     dry_run: bool = False,
     output_path: str = "",
+    feature_columns: list[str] = None,
+    exclude_columns: list[str] = None,
 ) -> dict:
     """Train with K-fold CV. Returns per-fold and mean scores."""
-    return engine.train_with_cv(file_path, target_column, model, task, n_splits, random_state, dry_run, output_path)
+    return engine.train_with_cv(
+        file_path, target_column, model, task, n_splits, random_state, dry_run, output_path,
+        feature_columns, exclude_columns,
+    )
 
 
 @mcp.tool(
@@ -128,9 +135,14 @@ def compare_models(
     random_state: int = 42,
     dry_run: bool = False,
     output_path: str = "",
+    feature_columns: list[str] = None,
+    exclude_columns: list[str] = None,
 ) -> dict:
     """Train multiple models, return sorted comparison table."""
-    return engine.compare_models(file_path, target_column, task, models, test_size, random_state, dry_run, output_path)
+    return engine.compare_models(
+        file_path, target_column, task, models, test_size, random_state, dry_run, output_path,
+        feature_columns, exclude_columns,
+    )
 
 
 @mcp.tool(
@@ -282,6 +294,11 @@ measure_responses(mcp)
 # this runs, and used to escape as a raw dump with no success/hint/token_estimate
 # and a pydantic.dev URL. Give it the fleet's failure shape instead.
 contract_errors(mcp)
+
+# An argument name no tool declares is dropped by the bundled FastMCP's
+# pydantic model (extra="ignore") and the call succeeds anyway. Installed
+# last so it wraps the guards above and answers first.
+enforce_known_arguments(mcp)
 
 
 def main() -> None:

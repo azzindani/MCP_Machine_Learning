@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from shared.feature_select import select_features
 from shared.handover import make_context, make_handover
-from shared.leakage import split_provenance
+from shared.leakage import leakage_note, leakage_suspects, split_provenance
 from shared.model_output import resolve_model_path
 
 from ._basic_helpers import (
@@ -42,6 +43,7 @@ from ._basic_helpers import (
     datetime,
     f1_score,
     get_output_dir,
+    info,
     leakage_warning,
     logger,
     mean_squared_error,
@@ -88,6 +90,8 @@ def train_classifier(
     return_train_score: bool = False,
     dry_run: bool = False,
     output_path: str = "",
+    feature_columns: list[str] = None,
+    exclude_columns: list[str] = None,
 ) -> dict:
     """Train classifier on CSV. model: lr svm rf dtc knn nb xgb."""
     progress: list[dict] = []
@@ -154,7 +158,13 @@ def train_classifier(
                 "Choose a column with at least 2 distinct class values.",
             )
 
-        feature_cols = [c for c in df.columns if c != target_column]
+        feature_cols, feature_note, feature_error = select_features(
+            df, target_column, feature_columns, exclude_columns
+        )
+        if feature_error:
+            return feature_error
+        if feature_note:
+            progress.append(info("Feature set narrowed", feature_note))
         x = df[feature_cols].values
         y = df[target_column].values
 
@@ -290,6 +300,13 @@ def train_classifier(
         leakage = leakage_warning(df, target_column, feature_cols, acc)
         if leakage:
             progress.append(warn("Suspiciously perfect score", leakage))
+        # See the regressor path below: the 0.999 determination check alone let
+        # a leaking model through, and the evidence-based check ran only in
+        # ml_medium. Both trainers now run both.
+        suspects = leakage_suspects(df, target_column, feature_cols)
+        leak_note = leakage_note(suspects, acc)
+        if leak_note:
+            progress.append(warn("Possible target leakage", leak_note))
 
         # The opposite caveat, and the commoner one: an accuracy that is really
         # just the base rate. Only one of the two can apply to a given fit.
@@ -334,6 +351,8 @@ def train_classifier(
             "metrics": metrics,
             "n_classes": int(n_classes),
             "leakage_warning": leakage,
+            "leakage_suspects": suspects,
+            "leakage_note": leak_note,
             # How the score was produced, beside the score. The review asked
             # for split/seed/CV in the manifest so a 0.9628 can be read as the
             # claim it is: this one comes from a random split, which is the
@@ -369,10 +388,13 @@ def train_classifier(
             "model_path": str(model_path),
             "manifest_path": str(manifest_path),
             "backup": backup or "",
+            "leakage_suspects": suspects,
             "progress": progress,
         }
         if leakage:
             response["warning"] = leakage
+        if leak_note:
+            response["leakage_note"] = leak_note
         response["context"] = make_context(
             "train_classifier",
             f"Trained {model_class_name} on {pname(file_path)}: accuracy={metrics.get('accuracy', 0):.3f}",
@@ -409,6 +431,8 @@ def train_regressor(
     random_state: int = 42,
     dry_run: bool = False,
     output_path: str = "",
+    feature_columns: list[str] = None,
+    exclude_columns: list[str] = None,
 ) -> dict:
     """Train regressor on CSV. model: lir pr lar rr dtr rfr xgb."""
     progress: list[dict] = []
@@ -464,7 +488,13 @@ def train_regressor(
                 "Provide a dataset with more samples before training.",
             )
 
-        feature_cols = [c for c in df.columns if c != target_column]
+        feature_cols, feature_note, feature_error = select_features(
+            df, target_column, feature_columns, exclude_columns
+        )
+        if feature_error:
+            return feature_error
+        if feature_note:
+            progress.append(info("Feature set narrowed", feature_note))
         x = df[feature_cols].values.astype(float)
         y = df[target_column].values.astype(float)
 
@@ -556,6 +586,16 @@ def train_regressor(
         leakage = leakage_warning(df, target_column, feature_cols, r2)
         if leakage:
             progress.append(warn("Suspiciously perfect score", leakage))
+        # `leakage_warning` fires at 0.999 and needs one feature to determine the
+        # target exactly. ml_medium has run the evidence-based check beside it
+        # since the credit-risk review; ml_basic never did, so `train_regressor`
+        # returned an empty `leakage_warning` on a clicks model scoring r2 0.983
+        # whose feature set contained `link_clicks` -- a strict subset of the
+        # target in 100% of rows. Both checks, on both trainers, from here.
+        suspects = leakage_suspects(df, target_column, feature_cols)
+        leak_note = leakage_note(suspects, r2)
+        if leak_note:
+            progress.append(warn("Possible target leakage", leak_note))
 
         ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
         model_path = resolve_model_path(output_path, path, f"{path.stem}_{model}_{ts}.pkl", progress)
@@ -588,6 +628,8 @@ def train_regressor(
             "scaler": scaler,
             "metrics": metrics,
             "leakage_warning": leakage,
+            "leakage_suspects": suspects,
+            "leakage_note": leak_note,
             # How the score was produced, beside the score. The review asked
             # for split/seed/CV in the manifest so a 0.9628 can be read as the
             # claim it is: this one comes from a random split, which is the
@@ -624,10 +666,13 @@ def train_regressor(
             "model_path": str(model_path),
             "manifest_path": str(manifest_path),
             "backup": backup or "",
+            "leakage_suspects": suspects,
             "progress": progress,
         }
         if leakage:
             response["warning"] = leakage
+        if leak_note:
+            response["leakage_note"] = leak_note
         response["context"] = make_context(
             "train_regressor",
             f"Trained {model_class_name} on {pname(file_path)}: r2={metrics.get('r2', 0):.3f}, rmse={metrics.get('rmse', 0):.3f}",

@@ -114,23 +114,62 @@ class TestTheDefaultIsUnchanged:
         assert written.name.startswith("data_dtc_"), written.name
         assert written.suffix == ".pkl"
 
-    def test_output_path_is_the_last_parameter(self):
-        # Appending it keeps every existing parameter in position; putting a new
-        # name where an old one sat silently rebinds positional callers, which
-        # has shipped once already in a sibling repo.
+    # The rule is that a new parameter is APPENDED, never inserted: putting a
+    # new name where an old one sat silently rebinds positional callers, which
+    # has shipped once already in a sibling repo. This was written as
+    # "output_path is last", which held only while output_path happened to be
+    # the most recent addition. Round 27 appended feature_columns and
+    # exclude_columns after it -- correct by this very rule -- and the proxy
+    # failed while the rule it stood for was kept. So assert the rule itself.
+    ORDER_BEFORE_R27 = {
+        "train_classifier": [
+            "file_path",
+            "target_column",
+            "model",
+            "test_size",
+            "random_state",
+            "class_weight",
+            "return_train_score",
+            "dry_run",
+            "output_path",
+        ],
+        "train_regressor": [
+            "file_path",
+            "target_column",
+            "model",
+            "degree",
+            "alpha",
+            "n_estimators",
+            "test_size",
+            "random_state",
+            "dry_run",
+            "output_path",
+        ],
+    }
+
+    def test_no_existing_parameter_ever_changes_position(self):
         import inspect
 
-        for fn in (engine.train_classifier, engine.train_regressor):
-            assert list(inspect.signature(fn).parameters)[-1] == "output_path"
+        for name, expected in self.ORDER_BEFORE_R27.items():
+            params = list(inspect.signature(getattr(engine, name)).parameters)
+            assert params[: len(expected)] == expected, f"{name} reordered: {params}"
 
-    def test_the_wrapper_offers_it_too(self):
+    def test_the_wrapper_keeps_the_same_prefix(self):
         import inspect
 
         sys.path.insert(0, str(ROOT / "servers" / "ml_basic"))
         from servers.ml_basic import server
 
-        for name in ("train_classifier", "train_regressor"):
+        for name, expected in self.ORDER_BEFORE_R27.items():
             fn = getattr(server, name)
             fn = getattr(fn, "fn", fn)
             params = list(inspect.signature(fn).parameters)
-            assert params[-1] == "output_path", params
+            assert params[: len(expected)] == expected, f"{name} reordered: {params}"
+
+    def test_and_the_new_parameters_really_are_appended(self):
+        """The other half: they exist, and they sit after every older one."""
+        import inspect
+
+        for name in self.ORDER_BEFORE_R27:
+            params = list(inspect.signature(getattr(engine, name)).parameters)
+            assert params[-2:] == ["feature_columns", "exclude_columns"], params

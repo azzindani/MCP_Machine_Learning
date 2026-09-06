@@ -17,6 +17,7 @@ from starlette.responses import JSONResponse
 try:
     from shared.arg_errors import contract_errors
     from shared.deploy_auth import build_auth, build_oauth_bridge
+    from shared.strict_args import enforce_known_arguments
     from shared.token_estimate import measure_responses
 
     from . import engine
@@ -24,6 +25,7 @@ except ImportError:
     from servers.ml_basic import engine
     from shared.arg_errors import contract_errors
     from shared.deploy_auth import build_auth, build_oauth_bridge
+    from shared.strict_args import enforce_known_arguments
     from shared.token_estimate import measure_responses
 
 _VERSION = "0.1.2"  # keep in sync with pyproject.toml [project].version
@@ -111,8 +113,10 @@ def train_classifier(
     return_train_score: bool = False,
     dry_run: bool = False,
     output_path: str = "",
+    feature_columns: list[str] = None,
+    exclude_columns: list[str] = None,
 ) -> dict:
-    """Train classifier on CSV. model: lr svm rf dtc knn nb xgb."""
+    """Train classifier. model: lr svm rf dtc knn nb xgb. Picks features too."""
     return engine.train_classifier(
         file_path,
         target_column,
@@ -123,6 +127,8 @@ def train_classifier(
         return_train_score,
         dry_run,
         output_path,
+        feature_columns,
+        exclude_columns,
     )
 
 
@@ -140,8 +146,10 @@ def train_regressor(
     random_state: int = 42,
     dry_run: bool = False,
     output_path: str = "",
+    feature_columns: list[str] = None,
+    exclude_columns: list[str] = None,
 ) -> dict:
-    """Train regressor on CSV. model: lir pr lar rr dtr rfr xgb."""
+    """Train regressor. model: lir pr lar rr dtr rfr xgb. Picks features too."""
     return engine.train_regressor(
         file_path,
         target_column,
@@ -153,6 +161,8 @@ def train_regressor(
         random_state,
         dry_run,
         output_path,
+        feature_columns,
+        exclude_columns,
     )
 
 
@@ -209,6 +219,11 @@ measure_responses(mcp)
 # this runs, and used to escape as a raw dump with no success/hint/token_estimate
 # and a pydantic.dev URL. Give it the fleet's failure shape instead.
 contract_errors(mcp)
+
+# An argument name no tool declares is dropped by the bundled FastMCP's
+# pydantic model (extra="ignore") and the call succeeds anyway. Installed
+# last so it wraps the guards above and answers first.
+enforce_known_arguments(mcp)
 
 
 def main() -> None:
