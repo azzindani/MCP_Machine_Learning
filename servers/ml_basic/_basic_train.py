@@ -158,9 +158,7 @@ def train_classifier(
                 "Choose a column with at least 2 distinct class values.",
             )
 
-        feature_cols, feature_note, feature_error = select_features(
-            df, target_column, feature_columns, exclude_columns
-        )
+        feature_cols, feature_note, feature_error = select_features(df, target_column, feature_columns, exclude_columns)
         if feature_error:
             return feature_error
         if feature_note:
@@ -488,9 +486,7 @@ def train_regressor(
                 "Provide a dataset with more samples before training.",
             )
 
-        feature_cols, feature_note, feature_error = select_features(
-            df, target_column, feature_columns, exclude_columns
-        )
+        feature_cols, feature_note, feature_error = select_features(df, target_column, feature_columns, exclude_columns)
         if feature_error:
             return feature_error
         if feature_note:

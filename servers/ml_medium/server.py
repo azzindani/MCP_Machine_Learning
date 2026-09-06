@@ -118,8 +118,16 @@ def train_with_cv(
 ) -> dict:
     """Train with K-fold CV. Returns per-fold and mean scores."""
     return engine.train_with_cv(
-        file_path, target_column, model, task, n_splits, random_state, dry_run, output_path,
-        feature_columns, exclude_columns,
+        file_path,
+        target_column,
+        model,
+        task,
+        n_splits,
+        random_state,
+        dry_run,
+        output_path,
+        feature_columns,
+        exclude_columns,
     )
 
 
@@ -140,8 +148,16 @@ def compare_models(
 ) -> dict:
     """Train multiple models, return sorted comparison table."""
     return engine.compare_models(
-        file_path, target_column, task, models, test_size, random_state, dry_run, output_path,
-        feature_columns, exclude_columns,
+        file_path,
+        target_column,
+        task,
+        models,
+        test_size,
+        random_state,
+        dry_run,
+        output_path,
+        feature_columns,
+        exclude_columns,
     )
 
 
