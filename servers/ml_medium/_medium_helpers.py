@@ -301,7 +301,7 @@ OP_FIELDS: dict[str, frozenset[str]] = {
     "bin_numeric": frozenset({"bins", "column", "labels", "new_column"}),
     "clip_column": frozenset({"column", "lower", "upper"}),
     "convert_dtype": frozenset({"column", "to"}),
-    "drop_column": frozenset({"column"}),
+    "drop_column": frozenset({"column", "columns"}),
     "drop_duplicates": frozenset({"subset"}),
     "drop_null_rows": frozenset({"column"}),
     # threshold: read now (IQR multiplier, or sigma count for method=std)
@@ -370,6 +370,14 @@ def _normalize_op(op: dict) -> dict:
         normalized["op"] = _OP_NAME_ALIASES.get(normalized["op"], normalized["op"])
     if normalized.get("op") == "fill_nulls":
         normalized = {_FILL_KEY_ALIASES.get(k, k): v for k, v in normalized.items()}
+    # `drop_column` takes `column` here and `columns` (a list) at the two
+    # Data_Analyst tools that run the same-named op -- apply_patch and
+    # run_cleaning_pipeline. A caller who dropped a column there and came here
+    # was told "missing required field: 'column'", while going the other way
+    # was told "did you mean columns?": two servers, one op name, each
+    # confidently correcting the other. Both spellings work at all three now.
+    if normalized.get("op") == "drop_column" and "columns" in normalized and "column" not in normalized:
+        normalized["column"] = normalized.pop("columns")
     return _apply_op_aliases(normalized)
 
 
@@ -578,11 +586,22 @@ def _apply_op(df: pd.DataFrame, op: dict) -> tuple[pd.DataFrame, dict]:
         return df, {"op": op_name, "removed": before - len(df)}
 
     elif op_name == "drop_column":
-        col = op["column"]
-        if col not in df.columns:
-            return df, {"op": op_name, "column": col, "error": "column not found"}
-        df = df.drop(columns=[col])
-        return df, {"op": op_name, "column": col}
+        # A list arrives whenever the caller used the Data_Analyst spelling
+        # `columns=[...]`, normalized onto `column` above. Dropping one of them
+        # and reporting success on the rest would be the silent-partial-write
+        # this repo has closed twice; so all or none, and the response names
+        # exactly what went.
+        wanted = op["column"]
+        cols = list(wanted) if isinstance(wanted, (list, tuple)) else [wanted]
+        absent = [c for c in cols if c not in df.columns]
+        if absent:
+            return df, {
+                "op": op_name,
+                "column": wanted,
+                "error": f"column not found: {', '.join(map(str, absent))}",
+            }
+        df = df.drop(columns=cols)
+        return df, {"op": op_name, "column": wanted, "dropped": cols}
 
     elif op_name == "rename_column":
         from_col, to_col = op["from"], op["to"]
