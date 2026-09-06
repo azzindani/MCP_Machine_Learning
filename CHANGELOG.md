@@ -17,6 +17,34 @@ the best at 0.9628, and then noticed its top three features were all recorded
 *after* the loan resolved. Every tool involved had been honest; none of them had
 been useful about it.
 
+### Fixed — sweep round 24, "believe the description"
+
+- **`search_columns`' `dtype` filter did not filter.** The value was compared
+  against four literal group names in an if/elif chain with no else, so anything
+  else matched no branch, filtered nothing, and the whole frame came back under
+  `success: true`. On `Ad_Data.csv`, `dtype="float64"` returned all 16 columns —
+  `Date`, `product` and `phase` included — and `dtype="object"` did the same,
+  while `has_nulls=True` correctly returned 1.
+
+  `float64` is not an exotic input: it is the string `inspect_dataset` prints in
+  its own `dtype` field, so it is exactly what a caller reads off one tool and
+  hands to the next.
+
+  **The sibling settled it.** MCP_Data_Analyst exposes `search_columns` with the
+  same name and the same description and answered `dtype="float64"` with the
+  four numeric columns, because that repo hit this first and fixed it. Two
+  identically-described tools disagreed, both said `success: true`, and nothing
+  told the caller which one they were holding. The alias table is now ported
+  here, an unlisted value is refused with a hint naming the vocabulary, and an
+  alias that widens the filter says so — `float64` means `numeric`, which also
+  matches integer columns, and a count quietly including them would disagree
+  with the word the caller typed. The description names the vocabulary, none of
+  which was discoverable before.
+
+  One deliberate divergence, asserted by a test so it cannot become accidental:
+  this tier keeps `bool` as its own group where the sibling sorts booleans into
+  numeric or object.
+
 ### Added
 
 - **Leakage detection on every tool that takes a target.** `train_classifier`,

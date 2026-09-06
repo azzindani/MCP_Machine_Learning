@@ -177,7 +177,7 @@ Replace the `"command"` and `"args"` in each entry with the bash equivalent:
 |---|---|
 | `inspect_dataset` | Schema, row count, dtypes, null summary |
 | `read_column_profile` | Stats for one column: mean, std, nulls, unique, top values |
-| `search_columns` | Find columns by criteria: has_nulls, dtype, name_contains |
+| `search_columns` | Find columns by criteria: has_nulls, name_contains, and `dtype` — one of `numeric` `categorical` `bool` `datetime`, or a concrete pandas name (`float64`, `object`, …) which is widened to its group |
 | `read_rows` | Bounded row slice |
 | `train_classifier` | Train classifier: `lr svm rf dtc knn nb xgb` — AUC-ROC, class_weight, train_score |
 | `train_regressor` | Train regressor: `lir pr lar rr dtr rfr xgb` |
