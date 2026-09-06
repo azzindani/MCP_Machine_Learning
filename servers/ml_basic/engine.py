@@ -42,6 +42,32 @@ __all__ = [
     "_confusion_dict",
 ]
 
+# The vocabulary search_columns' `dtype` actually filters by, and the concrete
+# pandas names a caller reads off inspect_dataset mapped onto it. Kept
+# deliberately in step with MCP_Data_Analyst's DTYPE_FILTER_ALIASES, because
+# the two repos expose a tool of the same name with the same description and a
+# caller cannot tell which one they are holding. The groups differ -- this tier
+# separates `bool` and calls the string group `categorical` -- so the alias
+# targets differ, but every pandas name accepted there is accepted here.
+DTYPE_FILTERS: frozenset[str] = frozenset({"numeric", "categorical", "bool", "datetime"})
+DTYPE_FILTER_ALIASES: dict[str, str] = {
+    "float": "numeric",
+    "float64": "numeric",
+    "int": "numeric",
+    "int64": "numeric",
+    "number": "numeric",
+    "numerical": "numeric",
+    "category": "categorical",
+    "object": "categorical",
+    "str": "categorical",
+    "string": "categorical",
+    "text": "categorical",
+    "boolean": "bool",
+    "date": "datetime",
+    "datetime64": "datetime",
+    "timestamp": "datetime",
+}
+
 
 # ---------------------------------------------------------------------------
 # 1. inspect_dataset
@@ -279,7 +305,7 @@ def search_columns(
     name_contains: str = "",
     max_results: int = 20,
 ) -> dict:
-    """Search columns by condition. Returns names only, no data."""
+    """Search columns: dtype numeric/categorical/bool/datetime. Names only."""
     progress: list[dict] = []
     try:
         path = resolve_path(file_path, (".csv",))
@@ -294,6 +320,36 @@ def search_columns(
         df = _read_csv(str(path))
         progress.append(ok(f"Loaded {pname(file_path)}", f"{len(df.columns)} columns"))
 
+        # A dtype this tool cannot filter by used to fall through every branch
+        # of the chain below and therefore filter NOTHING, so the ordinary
+        # pandas name a caller reads off inspect_dataset came back as a clean
+        # pass over the whole frame:
+        #
+        #     search_columns(f, dtype="float64")  -> all 16 columns, success
+        #
+        # Refuse an unlisted value and name the vocabulary, and accept the
+        # concrete pandas names as aliases so the obvious call works. The
+        # sibling tool in MCP_Data_Analyst answers dtype="float64" with the
+        # four numeric columns; a caller cannot be expected to know which of
+        # two identically-described tools they are holding.
+        dtype_key = DTYPE_FILTER_ALIASES.get(dtype.strip().lower(), dtype.strip().lower()) if dtype else ""
+        if dtype and dtype_key not in DTYPE_FILTERS:
+            return _error(
+                f"Cannot filter by dtype '{dtype}'.",
+                f"Use one of: {', '.join(sorted(DTYPE_FILTERS))}. "
+                f"Concrete pandas names are accepted too ({', '.join(sorted(DTYPE_FILTER_ALIASES))}).",
+            )
+        # An alias widens the filter -- float64 means "numeric", which also
+        # matches int columns. Say so, or the count disagrees with the name
+        # the caller used and nothing explains why.
+        if dtype and dtype_key != dtype.strip().lower():
+            progress.append(
+                warn(
+                    f"Filtered by '{dtype_key}', not '{dtype.strip()}' exactly",
+                    f"this tool groups dtypes into {', '.join(sorted(DTYPE_FILTERS))}",
+                )
+            )
+
         cap = min(max_results, get_max_results())
         matches: list[str] = []
 
@@ -301,16 +357,16 @@ def search_columns(
             series = df[col]
             if has_nulls and not bool(series.isnull().any()):
                 continue
-            if dtype:
-                if dtype == "numeric" and not pd.api.types.is_numeric_dtype(series):
+            if dtype_key:
+                if dtype_key == "numeric" and not pd.api.types.is_numeric_dtype(series):
                     continue
-                elif dtype == "categorical" and (
+                elif dtype_key == "categorical" and (
                     pd.api.types.is_numeric_dtype(series) or pd.api.types.is_bool_dtype(series)
                 ):
                     continue
-                elif dtype == "bool" and not pd.api.types.is_bool_dtype(series):
+                elif dtype_key == "bool" and not pd.api.types.is_bool_dtype(series):
                     continue
-                elif dtype == "datetime" and not pd.api.types.is_datetime64_any_dtype(series):
+                elif dtype_key == "datetime" and not pd.api.types.is_datetime64_any_dtype(series):
                     continue
             if name_contains and name_contains.lower() not in col.lower():
                 continue

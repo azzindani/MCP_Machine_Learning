@@ -86,7 +86,7 @@ def search_columns(
     name_contains: str = "",
     max_results: int = 20,
 ) -> dict:
-    """Search columns by condition. Returns names only, no data."""
+    """Search columns: dtype numeric/categorical/bool/datetime. Names only."""
     return engine.search_columns(file_path, has_nulls, dtype, name_contains, max_results)
 
 
