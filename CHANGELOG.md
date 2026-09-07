@@ -9,7 +9,41 @@ guess dressed as a record.
 
 ---
 
-## [Unreleased]
+## [0.2.0] — 2026-09-07
+
+Source-only release: no wheel and no container image are published. Build the
+image from the `Dockerfile` here, or install from the tag.
+
+### Added
+
+- **Every dispatch parameter declares an `enum`.** `model`, `models`, `task`,
+  `method`, `algorithm` and `format` publish their legal values in
+  `tools/list`, rendered from `ALLOWED_CLASSIFIERS` / `ALLOWED_REGRESSORS` and
+  the runtime's own tables rather than a second copy of them.
+- The enum advertises rather than enforces, so `train_regressor(model="lr")`
+  still answers *"'lr' is a `train_classifier()` model. Pick one listed above,
+  or call `train_classifier()`"* instead of pydantic's generic literal error.
+
+### Fixed
+
+- **`dry_run` withheld the leakage warning.** Both `train_classifier` and
+  `train_regressor` returned from the dry-run branch before leakage detection
+  ran, so the one call a caller makes to check a setup before spending the
+  compute was the one call that would not tell them the target was in the
+  features. `leakage_suspects` and `leakage_note` are now computed and returned
+  on the dry-run path too.
+- **`plot_learning_curve` accepted any `task`** and silently fell through to
+  regression.
+- **`detect_outliers` and `drop_column` now take their sibling repo's
+  spelling**, so a vocabulary learned in Data_Analyst carries over.
+
+### Changed
+
+- 1,951 tests.
+
+---
+
+## [0.2.0] — 2026-09-07 · part two: the tool-user review
 
 Twelve commits since `0.1.2`, most of them driven by a tool user's written
 review of a 38,576-row credit-risk sweep. The review trained three models, took

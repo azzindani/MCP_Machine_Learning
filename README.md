@@ -2,7 +2,7 @@
 
 A self-hosted MCP server that gives local LLMs structured access to the full supervised + unsupervised machine learning pipeline. No cloud APIs, no API keys — everything runs on your machine.
 
-**Release [`v0.1.2`](https://github.com/azzindani/MCP_Machine_Learning/releases/tag/v0.1.2)** — source only. No wheel and no container image are published: install from the tag with the bundled installer, or build the image yourself from the `Dockerfile` in this repo.
+**Release [`v0.2.0`](https://github.com/azzindani/MCP_Machine_Learning/releases/tag/v0.2.0)** — source only. No wheel and no container image are published: install from the tag with the bundled installer, or build the image yourself from the `Dockerfile` in this repo.
 
 ## Features
 
