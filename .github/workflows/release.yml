@@ -110,8 +110,13 @@ jobs:
           else
             LOG=$(git log --oneline --no-decorate "${PREV_TAG}..HEAD" | head -50)
           fi
-          # Write to file to preserve multiline
-          echo "$LOG" > /tmp/changelog.txt
+          # Write to file to preserve multiline. Headed and bulleted, so the
+          # release page reads as a list rather than as bare hashes.
+          {
+            echo "## What's Changed"
+            echo ""
+            echo "$LOG" | sed 's/^/- /'
+          } > /tmp/changelog.txt
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
