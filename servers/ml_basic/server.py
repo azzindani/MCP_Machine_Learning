@@ -6,6 +6,7 @@ import argparse
 import logging
 import os
 import sys
+from typing import TYPE_CHECKING
 
 logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
 
@@ -15,16 +16,20 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 try:
+    from servers.ml_medium._medium_helpers import ALLOWED_CLASSIFIERS, ALLOWED_REGRESSORS
     from shared.arg_errors import contract_errors
     from shared.deploy_auth import build_auth, build_oauth_bridge
+    from shared.schema_enum import any_of, one_of
     from shared.strict_args import enforce_known_arguments
     from shared.token_estimate import measure_responses
 
     from . import engine
 except ImportError:
     from servers.ml_basic import engine
+    from servers.ml_medium._medium_helpers import ALLOWED_CLASSIFIERS, ALLOWED_REGRESSORS
     from shared.arg_errors import contract_errors
     from shared.deploy_auth import build_auth, build_oauth_bridge
+    from shared.schema_enum import any_of, one_of
     from shared.strict_args import enforce_known_arguments
     from shared.token_estimate import measure_responses
 
@@ -33,6 +38,17 @@ _VERSION = "0.1.2"  # keep in sync with pyproject.toml [project].version
 _oauth_bridge = build_oauth_bridge(
     "ML", state_dir=os.environ.get("ML_BASIC_OAUTH_STATE_DIR", "/tmp/ml-basic-oauth-state")
 )
+
+# The legal values each dispatch parameter names in its schema. Rendered
+# from the table the runtime switches on -- never a second copy -- and split
+# on TYPE_CHECKING because a call expression is not a type expression to a
+# static checker, while a checker only needs to know these are strings.
+if TYPE_CHECKING:
+    TrainClassifierModel = str
+    TrainRegressorModel = str
+else:
+    TrainClassifierModel = any_of(ALLOWED_CLASSIFIERS)
+    TrainRegressorModel = any_of(ALLOWED_REGRESSORS)
 _public_origin = os.environ.get("ML_PUBLIC_URL", "").rstrip("/")
 _base_url = f"{_public_origin}/basic" if _public_origin else None
 _HOST = os.environ.get("ML_BASIC_HOST", "127.0.0.1")
@@ -106,7 +122,7 @@ def read_rows(file_path: str, start: int, end: int) -> dict:
 def train_classifier(
     file_path: str,
     target_column: str,
-    model: str,
+    model: TrainClassifierModel,
     test_size: float = 0.2,
     random_state: int = 42,
     class_weight: str = "",
@@ -138,7 +154,7 @@ def train_classifier(
 def train_regressor(
     file_path: str,
     target_column: str,
-    model: str,
+    model: TrainRegressorModel,
     degree: int = 5,
     alpha: float = 0.01,
     n_estimators: int = 10,

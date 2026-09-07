@@ -6,6 +6,7 @@ import argparse
 import logging
 import os
 import sys
+from typing import TYPE_CHECKING
 
 logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
 
@@ -15,16 +16,20 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 try:
+    from servers.ml_medium._medium_helpers import ALLOWED_CLASSIFIERS, ALLOWED_REGRESSORS
     from shared.arg_errors import contract_errors
     from shared.deploy_auth import build_auth, build_oauth_bridge
+    from shared.schema_enum import any_of, one_of
     from shared.strict_args import enforce_known_arguments
     from shared.token_estimate import measure_responses
 
     from . import engine
 except ImportError:
     from servers.ml_advanced import engine
+    from servers.ml_medium._medium_helpers import ALLOWED_CLASSIFIERS, ALLOWED_REGRESSORS
     from shared.arg_errors import contract_errors
     from shared.deploy_auth import build_auth, build_oauth_bridge
+    from shared.schema_enum import any_of, one_of
     from shared.strict_args import enforce_known_arguments
     from shared.token_estimate import measure_responses
 
@@ -33,6 +38,21 @@ _VERSION = "0.1.2"  # keep in sync with pyproject.toml [project].version
 _oauth_bridge = build_oauth_bridge(
     "ML", state_dir=os.environ.get("ML_ADVANCED_OAUTH_STATE_DIR", "/tmp/ml-advanced-oauth-state")
 )
+
+# The legal values each dispatch parameter names in its schema. Rendered
+# from the table the runtime switches on -- never a second copy -- and split
+# on TYPE_CHECKING because a call expression is not a type expression to a
+# static checker, while a checker only needs to know these are strings.
+if TYPE_CHECKING:
+    Model = str
+    Task = str
+    Format = str
+    Method = str
+else:
+    Model = any_of(set(ALLOWED_CLASSIFIERS) | set(ALLOWED_REGRESSORS))
+    Task = one_of("classification", "regression")
+    Format = one_of("pickle")
+    Method = one_of("pca", "ica")
 _public_origin = os.environ.get("ML_PUBLIC_URL", "").rstrip("/")
 _base_url = f"{_public_origin}/advanced" if _public_origin else None
 _HOST = os.environ.get("ML_ADVANCED_HOST", "127.0.0.1")
@@ -68,8 +88,8 @@ async def version(request: Request) -> JSONResponse:
 def tune_hyperparameters(
     file_path: str,
     target_column: str,
-    model: str,
-    task: str,
+    model: Model,
+    task: Task,
     search: str = "grid",
     param_grid: str = "",
     cv: int = 5,
@@ -89,7 +109,7 @@ def tune_hyperparameters(
 def export_model(
     model_path: str,
     output_dir: str = "",
-    format: str = "pickle",
+    format: Format = "pickle",
     dry_run: bool = False,
     return_content: bool = False,
 ) -> dict:
@@ -132,7 +152,7 @@ def run_profiling_report(
 def apply_dimensionality_reduction(
     file_path: str,
     feature_columns: list[str],
-    method: str,
+    method: Method,
     n_components: int = 2,
     output_path: str = "",
     dry_run: bool = False,
@@ -181,8 +201,8 @@ def plot_roc_curve(
 def plot_learning_curve(
     file_path: str,
     target_column: str,
-    model: str,
-    task: str,
+    model: Model,
+    task: Task,
     cv: int = 5,
     theme: str = "device",
     output_path: str = "",
