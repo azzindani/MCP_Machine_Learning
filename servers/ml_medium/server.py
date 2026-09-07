@@ -6,6 +6,7 @@ import argparse
 import logging
 import os
 import sys
+from typing import TYPE_CHECKING
 
 logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
 
@@ -15,20 +16,24 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 try:
+    from servers.ml_medium._medium_helpers import ALLOWED_CLASSIFIERS, ALLOWED_REGRESSORS
     from shared.arg_alias import missing, missing_list, pick, pick_list
     from shared.arg_errors import contract_errors
     from shared.deploy_auth import build_auth, build_oauth_bridge
     from shared.progress import info
+    from shared.schema_enum import any_of, one_of
     from shared.strict_args import enforce_known_arguments
     from shared.token_estimate import measure_responses
 
     from . import engine
 except ImportError:
     from servers.ml_medium import engine
+    from servers.ml_medium._medium_helpers import ALLOWED_CLASSIFIERS, ALLOWED_REGRESSORS
     from shared.arg_alias import missing, missing_list, pick, pick_list
     from shared.arg_errors import contract_errors
     from shared.deploy_auth import build_auth, build_oauth_bridge
     from shared.progress import info
+    from shared.schema_enum import any_of, one_of
     from shared.strict_args import enforce_known_arguments
     from shared.token_estimate import measure_responses
 
@@ -37,6 +42,25 @@ _VERSION = "0.1.2"  # keep in sync with pyproject.toml [project].version
 _oauth_bridge = build_oauth_bridge(
     "ML", state_dir=os.environ.get("ML_MEDIUM_OAUTH_STATE_DIR", "/tmp/ml-medium-oauth-state")
 )
+
+# The legal values each dispatch parameter names in its schema. Rendered
+# from the table the runtime switches on -- never a second copy -- and split
+# on TYPE_CHECKING because a call expression is not a type expression to a
+# static checker, while a checker only needs to know these are strings.
+if TYPE_CHECKING:
+    DetectOutliersMethod = str
+    Model = str
+    Task = str
+    Models = str
+    Algorithm = str
+    AnomalyDetectionMethod = str
+else:
+    DetectOutliersMethod = one_of("iqr", "std")
+    Model = any_of(set(ALLOWED_CLASSIFIERS) | set(ALLOWED_REGRESSORS))
+    Task = one_of("classification", "regression")
+    Models = any_of(set(ALLOWED_CLASSIFIERS) | set(ALLOWED_REGRESSORS))
+    Algorithm = one_of("kmeans", "dbscan", "meanshift")
+    AnomalyDetectionMethod = one_of("isolation_forest", "lof")
 _public_origin = os.environ.get("ML_PUBLIC_URL", "").rstrip("/")
 _base_url = f"{_public_origin}/medium" if _public_origin else None
 _HOST = os.environ.get("ML_MEDIUM_HOST", "127.0.0.1")
@@ -86,7 +110,7 @@ def run_preprocessing(
 def detect_outliers(
     file_path: str,
     columns: list[str] = [],
-    method: str = "iqr",
+    method: DetectOutliersMethod = "iqr",
     th1: float = 0.25,
     th3: float = 0.75,
     feature_columns: list[str] = [],
@@ -107,8 +131,8 @@ def detect_outliers(
 def train_with_cv(
     file_path: str,
     target_column: str,
-    model: str,
-    task: str,
+    model: Model,
+    task: Task,
     n_splits: int = 5,
     random_state: int = 42,
     dry_run: bool = False,
@@ -137,8 +161,8 @@ def train_with_cv(
 def compare_models(
     file_path: str,
     target_column: str,
-    task: str,
-    models: list[str],
+    task: Task,
+    models: list[Models],
     test_size: float = 0.2,
     random_state: int = 42,
     dry_run: bool = False,
@@ -167,7 +191,7 @@ def compare_models(
 def run_clustering(
     file_path: str,
     feature_columns: list[str],
-    algorithm: str,
+    algorithm: Algorithm,
     n_clusters: int = 3,
     eps: float = 3.0,
     min_samples: int = 5,
@@ -241,7 +265,7 @@ def find_optimal_clusters(
 def anomaly_detection(
     file_path: str,
     feature_columns: list[str],
-    method: str = "isolation_forest",
+    method: AnomalyDetectionMethod = "isolation_forest",
     contamination: float = 0.05,
     save_labels: bool = False,
     output_path: str = "",
