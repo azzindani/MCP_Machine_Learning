@@ -11,6 +11,17 @@ guess dressed as a record.
 
 ## [Unreleased]
 
+### Added — upload URLs, off by default
+
+- With `MCP_UPLOAD_URLS=1` and `MCP_UPLOAD_BASE_URL`, a path from the caller's
+  sandbox is refused with a single-use URL minted for that file, and one
+  `curl -T` from the sandbox writes it to the inbox -- no bytes through the
+  model. The token is HMAC-signed (`MCP_UPLOAD_SECRET`), fixes the file name,
+  expires in 15 minutes, writes once, and is capped at `MCP_MAX_UPLOAD_MB`; a
+  forged, re-signed, expired or spent one writes nothing. The route,
+  `/upload/<token>`, is mounted at the root outside the API key and answers
+  404 while uploads are off.
+
 ### Added — one endpoint, four tools
 
 - `/mcp` serves the whole surface as four domain tools -- `ml_data`,

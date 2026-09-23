@@ -33,6 +33,7 @@ from servers.ml_basic.server import mcp as basic_mcp
 from servers.ml_domain.server import _oauth_bridge as _domain_bridge
 from servers.ml_domain.server import mcp as domain_mcp
 from servers.ml_medium.server import mcp as medium_mcp
+from shared.exchange import upload_route
 
 _VERSION = "0.2.0"
 
@@ -156,6 +157,10 @@ app = Starlette(
         Route("/health", _root_health),
         Route("/version", _root_version),
         Route("/", _root),
+        # Off unless MCP_UPLOAD_URLS=1 and MCP_UPLOAD_BASE_URL are set, and then
+        # outside the tiers' bearer auth: the signed, single-use token in the
+        # path is the credential (shared/exchange.py, upload URLs).
+        Route("/upload/{token}", upload_route, methods=["PUT", "POST"]),
         *_discovery_redirects,
         *_domain_discovery,
         *(Mount(f"/{name}", app=sub_app) for name, sub_app in _sub_apps.items()),
