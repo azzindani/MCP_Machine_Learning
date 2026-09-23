@@ -20,6 +20,7 @@ try:
     from shared.arg_alias import missing, missing_list, pick, pick_list
     from shared.arg_errors import contract_errors
     from shared.deploy_auth import build_auth, build_oauth_bridge
+    from shared.missing_file import suggest_missing_files
     from shared.progress import info
     from shared.schema_enum import any_of, one_of
     from shared.strict_args import enforce_known_arguments
@@ -32,6 +33,7 @@ except ImportError:
     from shared.arg_alias import missing, missing_list, pick, pick_list
     from shared.arg_errors import contract_errors
     from shared.deploy_auth import build_auth, build_oauth_bridge
+    from shared.missing_file import suggest_missing_files
     from shared.progress import info
     from shared.schema_enum import any_of, one_of
     from shared.strict_args import enforce_known_arguments
@@ -329,6 +331,9 @@ def batch_predict(
 
 # Every tool above reports what its response actually costs; see
 # shared/token_estimate.py for why this is a choke point and not 101 edits.
+# A missing file or model is answered with the nearest files that exist;
+# see shared/missing_file.py for why this is a choke point.
+suggest_missing_files(mcp)
 measure_responses(mcp)
 # A known argument with the WRONG TYPE is rejected by pydantic before any of
 # this runs, and used to escape as a raw dump with no success/hint/token_estimate
