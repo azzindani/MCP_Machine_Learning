@@ -11,6 +11,18 @@ guess dressed as a record.
 
 ## [Unreleased]
 
+### Added — one endpoint, four tools
+
+- `/mcp` serves the whole surface as four domain tools -- `ml_data`,
+  `ml_train`, `ml_predict`, `ml_report` -- each an `action` (one of the 33
+  tier tools, by its own name) plus an `args` object whose properties say
+  which actions take them, in the Pipeline server's shape. A model connected
+  to every tier read 33 tool names on every turn; here it reads four. Each
+  action runs the tier tool itself (`shared/domain_tools.py`, byte-identical
+  with MCP_Data_Analyst's and MCP_Microsoft_Office's), so validation, inline
+  files, model signing and answers are identical. Discovery for `/mcp` goes
+  to the OAuth bridge. The tier endpoints keep serving unchanged.
+
 ### Added — a file too big for one call arrives in parts
 
 - Each part is an inline file with `part=<i>/<n>;sha256=<of the whole file>`

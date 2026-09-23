@@ -30,6 +30,8 @@ from starlette.routing import Mount, Route
 
 from servers.ml_advanced.server import mcp as advanced_mcp
 from servers.ml_basic.server import mcp as basic_mcp
+from servers.ml_domain.server import _oauth_bridge as _domain_bridge
+from servers.ml_domain.server import mcp as domain_mcp
 from servers.ml_medium.server import mcp as medium_mcp
 
 _VERSION = "0.2.0"
@@ -54,16 +56,19 @@ _TIERS = {
 # a 421 "Invalid Host header" -- healthy container, working /health, and every
 # tool call refused. Caddy is already the trust boundary, so disable it for the
 # mounted sub-apps. Same fix as MCP_Microsoft_Office, which hit this first.
-for _sub_mcp in _TIERS.values():
+for _sub_mcp in (*_TIERS.values(), domain_mcp):
     _sub_mcp.settings.transport_security = TransportSecuritySettings(enable_dns_rebinding_protection=False)
 
 _sub_apps = {name: mcp.streamable_http_app() for name, mcp in _TIERS.items()}
+# The four domain tools, served at the root: /mcp. Every tier above keeps its
+# own endpoint; see servers/ml_domain/server.py.
+_domain_app = domain_mcp.streamable_http_app()
 
 
 @asynccontextmanager
 async def _combined_lifespan(app):
     async with AsyncExitStack() as stack:
-        for sub_app in _sub_apps.values():
+        for sub_app in (*_sub_apps.values(), _domain_app):
             await stack.enter_async_context(sub_app.router.lifespan_context(sub_app))
         yield
 
@@ -82,6 +87,7 @@ async def _root(request: Request) -> JSONResponse:
     return JSONResponse(
         {
             "server": "MCP_Machine_Learning",
+            "mcp": "/mcp",
             "tiers": {name: f"/{name}/mcp" for name in _TIERS},
         }
     )
@@ -120,13 +126,33 @@ _discovery_redirects = [
     )
 ]
 
+# Discovery for /mcp. A client connecting https://host/mcp asks, per RFC 9728,
+# for /.well-known/oauth-protected-resource/mcp, and the 401 names the bare
+# /.well-known/oauth-protected-resource. Mounted at the root, the SDK's own
+# metadata route would answer the second with the origin as the resource (not
+# .../mcp), and nothing would answer the first -- found live on
+# MCP_Data_Analyst. The bridge's metadata is the one consistent with its
+# authorization server at the root, so both paths go to it.
+_domain_discovery = (
+    []
+    if _domain_bridge is None
+    else [
+        Route("/.well-known/oauth-protected-resource/mcp", _domain_bridge.protected_resource),
+        Route("/.well-known/oauth-protected-resource", _domain_bridge.protected_resource),
+    ]
+)
+
 app = Starlette(
     routes=[
         Route("/health", _root_health),
         Route("/version", _root_version),
         Route("/", _root),
         *_discovery_redirects,
+        *_domain_discovery,
         *(Mount(f"/{name}", app=sub_app) for name, sub_app in _sub_apps.items()),
+        # Last, so every route above wins: /mcp and the domain server's own
+        # OAuth routes answer at the root.
+        Mount("", app=_domain_app),
     ],
     lifespan=_combined_lifespan,
 )

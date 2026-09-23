@@ -236,6 +236,13 @@ writing. The `"backup"` key must appear in every write tool's success response.
 
 ### 4.6 Token Budget Discipline
 
+Two surfaces, two budgets. The limits below bind the **tier endpoints**
+(`/basic/mcp`, `/medium/mcp`, `/advanced/mcp`), which serve local models with
+small context windows. The **domain endpoint** (`/mcp`, `servers/ml_domain/`)
+serves capable models: four tools whose descriptions list every action,
+generated from the tiers by `shared/domain_tools.py` and never hand-written. A
+new tier tool must be added to a domain in `DOMAINS`; a test fails until it is.
+
 Rules:
 - Tool docstrings ≤ 80 characters (enforced by `verify_tool_docstrings.py`)
 - Read tool responses ≤ 500 tokens
