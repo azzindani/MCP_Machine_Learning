@@ -81,7 +81,9 @@ def get_output_path(
       3. ~/Downloads/<stem>_<suffix>.<ext>  (pure generation, no input file)
     """
     if output_path:
-        return Path(output_path).resolve()
+        from shared.file_utils import resolve_path
+
+        return resolve_path(output_path)
     base_dir = get_default_output_dir(str(input_path) if input_path is not None else None)
     stem = input_path.stem if input_path is not None else stem_suffix
     return base_dir / f"{stem}_{stem_suffix}.{ext}"

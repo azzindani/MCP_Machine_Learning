@@ -800,7 +800,9 @@ def build_html_report(
     sb_meta_html = f'<p class="meta">{sidebar_meta}</p>' if sidebar_meta else ""
     # Resolved before the page is assembled, because the <head> is built
     # around it.
-    out = Path(output_path).resolve() if output_path else None
+    from shared.file_utils import resolve_path
+
+    out = resolve_path(output_path) if output_path else None
     if needs_plotly(sections_html):
         plotly_js = plotly_script_tag(out.parent) if out is not None else get_plotlyjs_script()
     else:

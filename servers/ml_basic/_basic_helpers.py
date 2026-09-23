@@ -165,7 +165,7 @@ def _save_model(model: Any, path: Path, metadata: dict) -> Path:
 
 
 def _load_model(model_path: str) -> tuple[Any, dict]:
-    path = Path(model_path).resolve()
+    path = resolve_path(model_path)
     if not path.exists():
         raise FileNotFoundError(f"Model file not found: {model_path}")
     with open(path, "rb") as f:

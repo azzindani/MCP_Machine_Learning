@@ -119,7 +119,7 @@ def run_preprocessing(
         progress.append(ok(f"Applied {op['op']}", str(summary.get("filled", summary.get("removed", "")))))
 
     if output_path:
-        out_path = Path(output_path)
+        out_path = resolve_path(output_path)
     else:
         out_path = path.parent / f"{path.stem}_preprocessed{path.suffix}"
     try:
