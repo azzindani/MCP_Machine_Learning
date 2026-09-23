@@ -47,6 +47,7 @@ services:
       ML_BASIC_OAUTH_STATE_DIR: /home/app/.oauth-state/basic
       ML_MEDIUM_OAUTH_STATE_DIR: /home/app/.oauth-state/medium
       ML_ADVANCED_OAUTH_STATE_DIR: /home/app/.oauth-state/advanced
+      ML_DOMAIN_OAUTH_STATE_DIR: /home/app/.oauth-state/domain
       ML_OAUTH_CLIENT_ID: ${ML_OAUTH_CLIENT_ID:-}
       ML_OAUTH_CLIENT_SECRET: ${ML_OAUTH_CLIENT_SECRET:-}
       # Hybrid file exchange — see README "Hybrid local + remote file handling".

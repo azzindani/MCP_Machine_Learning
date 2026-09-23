@@ -6,6 +6,7 @@ A self-hosted MCP server that gives local LLMs structured access to the full sup
 
 ## Features
 
+- **One endpoint, four tools** — `/mcp` serves the whole surface as four domain tools: `ml_data`, `ml_train`, `ml_predict`, `ml_report`. Each takes an `action` (one of the 33 tools below, by its own name) and an `args` object whose every property says which actions take it. Same validation and answers as the tiers; the three tier endpoints keep serving for small local models and existing connections
 - **33 tools** across 3 tiers: basic (11), medium (12), advanced (10)
 - **LOCATE → INSPECT → PATCH → VERIFY** workflow for surgical ML operations
 - **Automatic version control** — every write is snapshotted and fully restorable
@@ -170,6 +171,28 @@ Replace the `"command"` and `"args"` in each entry with the bash equivalent:
 ```
 
 ## Available Tools
+
+### One endpoint: four domain tools at `/mcp`
+
+For a capable model, connect `/mcp` instead of the three tiers: four tools
+instead of 33. `action` names a tool below; `args` holds its arguments.
+
+```json
+{"action": "train_classifier",
+ "args": {"file_path": "train.csv", "target_column": "churned", "model": "rf"}}
+```
+
+| Tool | Actions |
+|---|---|
+| `ml_data` | inspect_dataset, read_column_profile, search_columns, read_rows, check_data_quality, detect_outliers, split_dataset, run_preprocessing, apply_dimensionality_reduction, restore_version, read_receipt |
+| `ml_train` | train_classifier, train_regressor, train_with_cv, compare_models, tune_hyperparameters, run_clustering, find_optimal_clusters, anomaly_detection |
+| `ml_predict` | get_predictions, predict_single, batch_predict, evaluate_model, list_models, export_model, read_model_report |
+| `ml_report` | generate_eda_report, run_profiling_report, generate_training_report, generate_cluster_report, plot_roc_curve, plot_learning_curve, plot_predictions_vs_actual |
+
+An action asked of the wrong tool is pointed at the right one; an argument
+the action does not take is refused by name.
+
+### The tiers
 
 ### Tier 1 — ml-basic (11 tools)
 
