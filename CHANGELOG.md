@@ -23,6 +23,11 @@ guess dressed as a record.
   and a relative output lands in the data folder. Found by driving the deployed
   server directly: `batch_predict(output_path="sweep/preds.csv")` tried to
   create `/app/sweep`.
+- A refused path is now an answer in the usual failure shape (`success: false`,
+  `op`, `error`, `hint`) from every tool. Clustering and anomaly labels,
+  `split_dataset`, the HTML reports and model outputs let the refusal escape,
+  so the caller saw "Error executing tool" with no hint. Nothing was written
+  either way.
 
 ### Security — a deployed server reads and writes only inside the folders it serves
 

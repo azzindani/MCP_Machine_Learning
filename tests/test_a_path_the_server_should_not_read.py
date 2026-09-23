@@ -199,3 +199,40 @@ class TestReceiptsLandBesideTheFile:
         assert b.train_regressor("train.csv", "y", "lir", feature_columns=["x"], output_path="m.pkl")["success"]
         assert (served / "train.csv.mcp_receipt.json").exists()
         assert not list(elsewhere.iterdir()), "nothing belongs in the process's working directory"
+
+
+class TestARefusedPathIsAnAnswer:
+    """A refusal comes back in the fleet's failure shape, whichever resolver raised it.
+
+    Eight output resolvers let PathOutsideRootError propagate. Nothing was
+    written -- the confinement held -- but the caller got "Error executing tool
+    anomaly_detection: Path ... is outside" with no success, op or hint. Found
+    live on the deployed server; the per-tool wrapper now answers it.
+    """
+
+    CASES = [
+        ("ml_medium", "anomaly_detection", {"feature_columns": ["x", "y"]}, "output_path", "labels.csv"),
+        (
+            "ml_medium",
+            "run_clustering",
+            {"feature_columns": ["x", "y"], "algorithm": "kmeans", "n_clusters": 2},
+            "output_path",
+            "labels.csv",
+        ),
+        ("ml_basic", "split_dataset", {}, "output_dir", "splits"),
+        ("ml_medium", "generate_eda_report", {}, "output_path", "eda.html"),
+    ]
+
+    @pytest.mark.parametrize(("tier", "tool", "args", "key", "leaf"), CASES, ids=[c[1] for c in CASES])
+    def test_the_refusal_is_a_response(self, served, tmp_path, tier, tool, args, key, leaf):
+        import importlib
+
+        fn = importlib.import_module(f"servers.{tier}.server").mcp._tool_manager._tools[tool].fn
+        target = tmp_path / "elsewhere" / leaf
+        r = fn(file_path="train.csv", **args, **{key: str(target)})
+        assert isinstance(r, dict), r
+        assert r["success"] is False, r
+        assert r["op"] == tool
+        assert "outside the folders" in r["error"]
+        assert "data folder" in r["hint"]
+        assert not target.exists(), "a refused output must not be written"
