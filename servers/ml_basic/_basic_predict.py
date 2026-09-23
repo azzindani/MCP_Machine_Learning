@@ -14,6 +14,7 @@ from shared.counts import counted
 from shared.file_utils import get_output_dir, resolve_path
 from shared.file_utils import read_csv as _read_csv
 from shared.handover import make_context, make_handover
+from shared.ml_utils import label_for, target_labels
 from shared.model_signing import is_signed_by_us
 from shared.platform_utils import get_max_rows
 from shared.progress import info, ok, warn
@@ -124,7 +125,14 @@ def get_predictions(
             else:
                 preds_list = [float(p) for p in raw]
 
-        predictions = [{"row": i, "prediction": preds_list[i]} for i in range(len(preds_list))]
+        labels = target_labels(metadata) if task == "classification" else None
+        if labels:
+            predictions = [
+                {"row": i, "prediction": label_for(code, labels), "class_code": code}
+                for i, code in enumerate(preds_list)
+            ]
+        else:
+            predictions = [{"row": i, "prediction": preds_list[i]} for i in range(len(preds_list))]
         if proba_list:
             for i, entry in enumerate(predictions):
                 entry["probabilities"] = proba_list[i]
@@ -137,6 +145,8 @@ def get_predictions(
             "task": task,
             "predictions": predictions,
             "total_rows": len(x),
+            # Position i is class i: it names a class_code and a probabilities entry alike.
+            **({"class_labels": labels} if labels else {}),
             **counted(len(predictions), len(x)),
             "progress": progress,
         }
@@ -304,7 +314,11 @@ def predict_single(model_path: str, input_data: str) -> dict:
                 f"ignored: {', '.join(extras[:8])}",
             )
         )
-    progress.append(ok("Predicted", f"result={prediction}"))
+    labels = target_labels(metadata) if task == "classification" else None
+    code = int(prediction) if task == "classification" else None
+    if labels and prob is not None:
+        prob = {str(label_for(k, labels)): v for k, v in prob.items()}
+    progress.append(ok("Predicted", f"result={label_for(code, labels) if labels else prediction}"))
 
     resp: dict = {
         "success": True,
@@ -312,7 +326,8 @@ def predict_single(model_path: str, input_data: str) -> dict:
         "model_path": str(mp),
         "task": task,
         "input": record,
-        "prediction": int(prediction) if task == "classification" else float(prediction),
+        "prediction": label_for(code, labels) if task == "classification" else float(prediction),
+        **({"class_code": code, "class_labels": labels} if labels else {}),
         "probabilities": prob,
         "feature_columns": feature_columns,
         "ignored_fields": extras,

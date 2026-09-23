@@ -189,6 +189,40 @@ def _auto_preprocess(df: pd.DataFrame, target_column: str) -> tuple[pd.DataFrame
     return df, encoding_map, encoded_cols
 
 
+def target_labels(metadata: dict) -> list[str] | None:
+    """A classifier's class names in code order, or None when its target was already numeric.
+
+    Training label-encodes a text target ('Google Ads', 'Facebook Ads' -> 0, 1)
+    and saves the map under `__target__<column>`. Prediction answered with the
+    codes, so `prediction: 1` and `probabilities: {'0': 0.0, '1': 1.0}` could not
+    say which platform was predicted. Position i here is class i, so these
+    names read a prediction code and a probability row alike.
+    """
+    encoding = metadata.get("encoding_map") or {}
+    target = metadata.get("target_column")
+    mapping = encoding.get(f"__target__{target}") if target else None
+    if mapping is None:
+        found = [m for key, m in encoding.items() if str(key).startswith("__target__")]
+        mapping = found[0] if len(found) == 1 else None
+    if not mapping:
+        return None
+    by_code = {int(code): str(label) for label, code in mapping.items()}
+    if sorted(by_code) != list(range(len(by_code))):
+        return None
+    return [by_code[i] for i in range(len(by_code))]
+
+
+def label_for(code: object, labels: list[str] | None) -> object:
+    """The class name for a prediction code, or the code itself when there is no name for it."""
+    if labels is None:
+        return code
+    try:
+        index = int(code)  # type: ignore[call-overload]
+    except TypeError, ValueError:
+        return code
+    return labels[index] if 0 <= index < len(labels) else code
+
+
 def bounded_silhouette(x, labels, cap: int | None = None, random_state: int = 42) -> float | None:
     """silhouette_score with both of its costs bounded, or None if not scoreable.
 

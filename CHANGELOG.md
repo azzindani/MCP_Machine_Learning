@@ -11,6 +11,19 @@ guess dressed as a record.
 
 ## [Unreleased]
 
+### Fixed — a prediction names its class
+
+- `get_predictions`, `predict_single` and `batch_predict` answer a classifier
+  trained on a text target with the class name (`prediction: "Facebook Ads"`),
+  the code beside it (`class_code`), and `class_labels` in code order, which
+  also names each probability; `predict_single` keys its probabilities by
+  name and `batch_predict` writes names to the CSV and its distribution. They
+  answered bare codes (`prediction: 1`, `probabilities: {'0': 0.0, '1': 1.0}`).
+  A numeric target is unchanged.
+- `evaluate_model` encodes a text target with the model's own map. It fitted
+  a new encoder to the evaluation file, so a file holding one class scored
+  every row against the wrong code.
+
 ### Added — upload URLs, off by default
 
 - With `MCP_UPLOAD_URLS=1` and `MCP_UPLOAD_BASE_URL`, a path from the caller's
