@@ -11,6 +11,19 @@ guess dressed as a record.
 
 ## [Unreleased]
 
+### Fixed — dates, and a quality score that shows its parts
+
+- `search_columns(dtype="datetime")` finds a date column stored as text
+  (`shared/dates.py`, Data_Analyst's rule); it found none in Ad_Data.csv,
+  whose `Date` holds 257 ISO dates. `categorical` no longer includes it.
+- `check_data_quality` answers `quality_breakdown` -- completeness, validity,
+  uniqueness, the weights and what validity prices -- beside the bare score.
+- A duplicate-rows or missing-values alert no longer costs `validity`: dup_pct
+  and null_pct already price them through uniqueness and completeness
+  (`shared/quality.py`, byte-identical with Data_Analyst's).
+- `generate_eda_report` alerts a constant column once, not again as a 100%
+  class imbalance.
+
 ### Fixed — a prediction names its class
 
 - `get_predictions`, `predict_single` and `batch_predict` answer a classifier

@@ -7,6 +7,7 @@ import logging
 import pandas as pd
 
 from shared.counts import counted
+from shared.dates import date_like
 from shared.file_utils import read_csv as _read_csv
 from shared.file_utils import resolve_path
 from shared.handover import make_context, make_handover
@@ -361,12 +362,14 @@ def search_columns(
                 if dtype_key == "numeric" and not pd.api.types.is_numeric_dtype(series):
                     continue
                 elif dtype_key == "categorical" and (
-                    pd.api.types.is_numeric_dtype(series) or pd.api.types.is_bool_dtype(series)
+                    pd.api.types.is_numeric_dtype(series) or pd.api.types.is_bool_dtype(series) or date_like(series)
                 ):
                     continue
                 elif dtype_key == "bool" and not pd.api.types.is_bool_dtype(series):
                     continue
-                elif dtype_key == "datetime" and not pd.api.types.is_datetime64_any_dtype(series):
+                # By what the column holds: a CSV's dates arrive as text, so the
+                # dtype alone never matched one (Ad_Data.csv's Date: 0 found).
+                elif dtype_key == "datetime" and not date_like(series):
                     continue
             if name_contains and name_contains.lower() not in col.lower():
                 continue

@@ -117,6 +117,11 @@ def _run_quality_alerts(df: pd.DataFrame, target_column: str = "") -> list[dict]
     # 5. Class imbalance (>90% dominance) — only for target or low-cardinality cols
     check_imbal = [target_column] if target_column and target_column in df.columns else []
     check_imbal += [c for c in cat_cols if df[c].nunique() <= 10]
+    # A constant column is 100% one value, so it also cleared this bar: every
+    # constant column was alerted twice, as constant AND as imbalanced, and
+    # priced twice. It is the constant alert that says what is wrong.
+    constant = {a["column"] for a in alerts if a.get("type") == "constant_column"}
+    check_imbal = [c for c in check_imbal if c not in constant]
     for col in check_imbal[:5]:  # cap to 5
         vc = df[col].value_counts(normalize=True)
         if len(vc) > 0 and vc.iloc[0] > 0.90:
