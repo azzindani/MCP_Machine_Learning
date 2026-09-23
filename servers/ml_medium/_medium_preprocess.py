@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from shared.file_utils import embed_content
+from shared.file_utils import PathOutsideRootError, embed_content
 from shared.handover import make_context, make_handover
 from shared.small_sample import MIN_N_IQR, min_n_for_zscore, rounded
 
@@ -118,14 +118,14 @@ def run_preprocessing(
             )
         progress.append(ok(f"Applied {op['op']}", str(summary.get("filled", summary.get("removed", "")))))
 
-    if output_path:
-        out_path = resolve_path(output_path)
-    else:
-        out_path = path.parent / f"{path.stem}_preprocessed{path.suffix}"
+    out_path = output_path or str(path.parent / f"{path.stem}_preprocessed{path.suffix}")
+    # One resolve, inside the handler: an explicit output_path used to be
+    # resolved on the line above this block, where a refusal escaped the tool as
+    # an exception, and the second resolve fell back to the raw path.
     try:
-        out_path_resolved = resolve_path(str(out_path))
-    except ValueError:
-        out_path_resolved = out_path
+        out_path_resolved = resolve_path(out_path)
+    except PathOutsideRootError as exc:
+        return _error(str(exc), "Pass an output path inside the data folder; a relative path is written there.")
     out_path_resolved.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(out_path_resolved, index=False)
     progress.append(ok("Saved output", out_path_resolved.name))

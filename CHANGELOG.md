@@ -11,6 +11,19 @@ guess dressed as a record.
 
 ## [Unreleased]
 
+### Security — five output paths still wrote wherever they were pointed
+
+- The confinement below covered what tools read and missed five places they
+  write. `batch_predict` resolved its output with a bare `Path(...).resolve()`,
+  so a relative path landed beside the process and an absolute one anywhere.
+  `export_model`, `run_preprocessing` and the filter and merge outputs wrapped
+  `resolve_path` in `except ValueError: use the raw path` -- written before
+  confinement existed, and since the refusal is a `ValueError` here, it turned
+  every refused output into a write. All five now refuse, with nothing written,
+  and a relative output lands in the data folder. Found by driving the deployed
+  server directly: `batch_predict(output_path="sweep/preds.csv")` tried to
+  create `/app/sweep`.
+
 ### Security — a deployed server reads and writes only inside the folders it serves
 
 - Every tool resolved its path with `Path(raw).resolve()`, so any authenticated

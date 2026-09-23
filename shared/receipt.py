@@ -63,7 +63,15 @@ _MAX_HASH_BYTES = 64 * 1024 * 1024
 
 
 def _receipt_path(file_path: str) -> Path:
-    p = Path(file_path).resolve()
+    """Where a file's receipt lives: beside the file, found the way tools find it.
+
+    A bare Path(...).resolve() read a relative name from the process cwd --
+    /app on a deployed server -- so a caller that passed what the user typed
+    wrote the receipt into the wrong place, or lost it where that failed.
+    """
+    from shared.file_utils import resolve_path
+
+    p = resolve_path(str(file_path))
     return p.parent / (p.name + ".mcp_receipt.json")
 
 

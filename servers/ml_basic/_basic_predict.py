@@ -517,7 +517,7 @@ def split_dataset(
     progress.append(ok("Saved test", test_path.name))
 
     append_receipt(
-        file_path,
+        str(path),
         "split_dataset",
         {"test_size": test_size, "stratify_column": stratify_column},
         "success",

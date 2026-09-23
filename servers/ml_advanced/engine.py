@@ -18,7 +18,14 @@ from sklearn.decomposition import PCA, FastICA
 from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
 from sklearn.preprocessing import StandardScaler
 
-from shared.file_utils import atomic_write_json, atomic_write_text, embed_content, get_output_dir, resolve_path
+from shared.file_utils import (
+    PathOutsideRootError,
+    atomic_write_json,
+    atomic_write_text,
+    embed_content,
+    get_output_dir,
+    resolve_path,
+)
 from shared.file_utils import read_csv as _read_csv
 from shared.handover import make_context, make_handover
 from shared.html_layout import get_output_path as _get_output_path
@@ -309,10 +316,12 @@ def export_model(
         return _error(f"Expected .pkl file, got {src_path.suffix!r}", "Provide a path to a .pkl model file.")
 
     out_dir = Path(output_dir) if output_dir else src_path.parent
+    # No fallback to the raw path: PathOutsideRootError is a ValueError, so
+    # the old `except ValueError: use out_dir` exported a model wherever asked.
     try:
         out_dir_resolved = resolve_path(str(out_dir))
-    except ValueError:
-        out_dir_resolved = out_dir
+    except PathOutsideRootError as exc:
+        return _error(str(exc), "Pass an output_dir inside the data folder; a relative path is written there.")
 
     dst_path = out_dir_resolved / src_path.name
     manifest_dst = dst_path.with_suffix(".manifest.json")
