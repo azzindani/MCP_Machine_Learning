@@ -11,6 +11,7 @@ import pandas as pd
 from shared.file_utils import PathOutsideRootError, embed_content
 from shared.handover import make_context, make_handover
 from shared.leakage import leakage_note, leakage_suspects
+from shared.ml_utils import label_for, target_labels
 from shared.quality import quality_score
 from shared.small_sample import rounded
 
@@ -742,13 +743,21 @@ def evaluate_model(
 
         y_true = df[target_column].values
 
-        # Encode target if categorical
+        # Encode a text target with the model's OWN map. A LabelEncoder fitted
+        # here numbered the classes this file happens to hold: evaluated on rows
+        # of one class, that class became 0 whatever the model calls it, and
+        # every metric compared codes that did not match.
         from sklearn.preprocessing import LabelEncoder
 
         le = None
+        labels = target_labels(metadata) if task == "classification" else None
         if not pd.api.types.is_numeric_dtype(y_true):
-            le = LabelEncoder()
-            y_true = le.fit_transform(y_true)
+            if labels:
+                code_of = {label: i for i, label in enumerate(labels)}
+                y_true = np.array([code_of.get(str(v), -1) for v in y_true])
+            else:
+                le = LabelEncoder()
+                y_true = le.fit_transform(y_true)
 
         model_key = metadata.get("model_key", "")
         if model_key == "xgb" or isinstance(model_obj, xgb.Booster):
@@ -1007,7 +1016,8 @@ def batch_predict(
         else:
             preds = model_obj.predict(X)
 
-        df["prediction"] = preds
+        labels = target_labels(metadata) if task == "classification" else None
+        df["prediction"] = [label_for(int(code), labels) for code in preds] if labels else preds
         progress.append(ok("Generated predictions", f"{len(preds):,} rows"))
 
         out_path_str = output_path or str(get_output_dir() / f"{dp.stem}_predictions.csv")
@@ -1044,7 +1054,9 @@ def batch_predict(
 
         # Distribution summary
         if task == "classification":
-            dist = {str(k): int(v) for k, v in pd.Series(preds).value_counts().sort_index().items()}
+            dist = {
+                str(label_for(int(k), labels)): int(v) for k, v in pd.Series(preds).value_counts().sort_index().items()
+            }
         else:
             dist = {
                 "n": int(len(preds)),
@@ -1066,6 +1078,7 @@ def batch_predict(
             "task": task,
             "unmapped_categories": unmapped,
             "prediction_distribution": dist,
+            **({"class_labels": labels} if task == "classification" and labels else {}),
             "backup": backup,
             "progress": progress,
             "token_estimate": 0,
