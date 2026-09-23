@@ -12,7 +12,7 @@ from shared.file_utils import PathOutsideRootError, embed_content
 from shared.handover import make_context, make_handover
 from shared.leakage import leakage_note, leakage_suspects
 from shared.ml_utils import label_for, target_labels
-from shared.quality import quality_score
+from shared.quality import quality_report
 from shared.small_sample import rounded
 
 from ._medium_helpers import (
@@ -1377,7 +1377,8 @@ def check_data_quality(file_path: str, target_column: str = "") -> dict:
     # arithmetic moved, to shared/quality.py, which is byte-identical with the
     # sibling repo's copy and has a test asserting so.
     overall_null_pct = float(df.isnull().sum().sum()) / max(n_rows * max(n_cols, 1), 1) * 100
-    score = quality_score(overall_null_pct, dup_pct, alerts)
+    breakdown = quality_report(overall_null_pct, dup_pct, alerts)
+    score = breakdown["quality_score"]
 
     # Several checks cannot say anything at one row, and the ones that stay
     # silent are as worth naming as the ones that fire -- a caller reading a
@@ -1425,6 +1426,16 @@ def check_data_quality(file_path: str, target_column: str = "") -> dict:
         "row_count": n_rows,
         "column_count": n_cols,
         "quality_score": round(score, 1),
+        # The number with its parts. A bare 59.3 could not say that completeness
+        # and uniqueness were near 100 and every point was lost to alerts.
+        "quality_breakdown": {
+            **breakdown,
+            "validity_note": (
+                "validity is 100 minus each alert's cost (high 50, medium 25, low 10), duplicate and "
+                "missing-value alerts excepted -- those are priced by uniqueness and completeness. "
+                "Distribution alerts (skew, zeros, correlated columns) count here too."
+            ),
+        },
         "checks_skipped": checks_skipped,
         # A score of 100 out of a reduced set of checks is not the same claim as
         # 100 out of all of them, and nothing else in the response says which
