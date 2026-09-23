@@ -109,3 +109,93 @@ class TestLocal:
         monkeypatch.setenv("MCP_WORKSPACE_DIR", str(tmp_path))
         with pytest.raises(ValueError, match="not a plain name"):
             get_workspace_dir(name)
+
+
+class TestOutputsConfined:
+    """Where a tool WRITES is held to the served folders too.
+
+    A5-sec confined the paths tools read and missed five they write: batch_predict
+    resolved its output with a bare `Path(...).resolve()` (a relative path landed
+    beside the process, an absolute one anywhere), and four sites wrapped
+    resolve_path in `except ValueError: use the raw path` -- which predates
+    confinement and, because PathOutsideRootError is a ValueError here, turned
+    every refused output into a write wherever it pointed. Found by driving the
+    deployed server directly: batch_predict(output_path="sweep/preds.csv") tried
+    to create /app/sweep.
+    """
+
+    @pytest.fixture
+    def model(self, served):
+        from servers.ml_basic import engine as b
+
+        r = b.train_regressor("train.csv", "y", "lir", feature_columns=["x"], output_path="m.pkl")
+        assert r["success"] is True, r
+        return "m.pkl"
+
+    def _refused(self, r: dict, target: Path) -> None:
+        assert r["success"] is False, r
+        assert "outside the folders" in r["error"]
+        assert not target.exists(), "a refused output must not be written"
+
+    def test_batch_predict_refuses_an_outside_output(self, served, model, tmp_path):
+        from servers.ml_medium import engine as m
+
+        target = tmp_path / "elsewhere" / "preds.csv"
+        self._refused(m.batch_predict(model, "train.csv", output_path=str(target)), target)
+
+    def test_batch_predict_writes_a_relative_output_into_the_data_folder(self, served, model):
+        from servers.ml_medium import engine as m
+
+        r = m.batch_predict(model, "train.csv", output_path="out/preds.csv")
+        assert r["success"] is True, r
+        assert (served / "out" / "preds.csv").exists()
+
+    def test_run_preprocessing_refuses_an_outside_output(self, served, tmp_path):
+        from servers.ml_medium import engine as m
+
+        target = tmp_path / "elsewhere.csv"
+        ops = [{"op": "fill_nulls", "column": "x", "strategy": "mean"}]
+        self._refused(m.run_preprocessing("train.csv", ops, output_path=str(target)), target)
+
+    def test_filter_rows_refuses_an_outside_output(self, served, tmp_path):
+        from servers.ml_medium import engine as m
+
+        target = tmp_path / "filtered.csv"
+        self._refused(m.filter_rows("train.csv", "x", "gt", "5", output_path=str(target)), target)
+
+    def test_merge_datasets_refuses_an_outside_output(self, served, tmp_path):
+        from servers.ml_medium import engine as m
+
+        target = tmp_path / "merged.csv"
+        self._refused(m.merge_datasets("train.csv", "train.csv", "x", output_path=str(target)), target)
+
+    def test_export_model_refuses_an_outside_output_dir(self, served, model, tmp_path):
+        from servers.ml_advanced import engine as a
+
+        target = tmp_path / "exported"
+        r = a.export_model(model, output_dir=str(target))
+        assert r["success"] is False, r
+        assert "outside the folders" in r["error"]
+        assert not target.exists()
+
+
+class TestReceiptsLandBesideTheFile:
+    """Three tools wrote their receipt beside the caller's raw string.
+
+    train_classifier, train_regressor and split_dataset passed `file_path` --
+    what the caller typed -- to append_receipt instead of the resolved path, so
+    a relative name put `<name>.mcp_receipt.json` in the process's working
+    directory (unwritable /app on a deployed server, where the receipt was
+    silently lost) instead of beside the data. Found as a stray receipt in the
+    repo root after a test run.
+    """
+
+    def test_a_training_receipt_is_written_beside_the_data(self, served, monkeypatch, tmp_path):
+        from servers.ml_basic import engine as b
+
+        elsewhere = tmp_path / "cwd"
+        elsewhere.mkdir()
+        monkeypatch.chdir(elsewhere)
+        assert b.train_regressor("train.csv", "y", "lir", feature_columns=["x"], output_path="m.pkl")["success"]
+        assert (served / "train.csv.mcp_receipt.json").exists()
+        assert not list(elsewhere.iterdir()), "nothing belongs in the process's working directory"

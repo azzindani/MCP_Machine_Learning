@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from shared.file_utils import embed_content
+from shared.file_utils import PathOutsideRootError, embed_content
 from shared.handover import make_context, make_handover
 from shared.leakage import leakage_note, leakage_suspects
 from shared.quality import quality_score
@@ -135,10 +135,13 @@ def filter_rows(
         return resp
 
     out_path = Path(output_path) if output_path else get_output_dir() / f"{path.stem}_filtered.csv"
+    # No fallback to the raw path: that `except ValueError` predates path
+    # confinement, and PathOutsideRootError is a ValueError here, so it turned
+    # every refused output into a write wherever the caller pointed.
     try:
         out_resolved = resolve_path(str(out_path))
-    except ValueError:
-        out_resolved = out_path
+    except PathOutsideRootError as exc:
+        return _error(str(exc), "Pass an output path inside the data folder; a relative path is written there.")
 
     backup = ""
     if out_resolved.exists():
@@ -247,10 +250,13 @@ def merge_datasets(
     progress.append(ok("Merged", f"{len(df_merged):,} rows × {len(df_merged.columns)} cols"))
 
     out_path = Path(output_path) if output_path else get_output_dir() / f"{p1.stem}_merged.csv"
+    # No fallback to the raw path: that `except ValueError` predates path
+    # confinement, and PathOutsideRootError is a ValueError here, so it turned
+    # every refused output into a write wherever the caller pointed.
     try:
         out_resolved = resolve_path(str(out_path))
-    except ValueError:
-        out_resolved = out_path
+    except PathOutsideRootError as exc:
+        return _error(str(exc), "Pass an output path inside the data folder; a relative path is written there.")
 
     backup = ""
     if out_resolved.exists():
@@ -1005,9 +1011,13 @@ def batch_predict(
         progress.append(ok("Generated predictions", f"{len(preds):,} rows"))
 
         out_path_str = output_path or str(get_output_dir() / f"{dp.stem}_predictions.csv")
-        from pathlib import Path
-
-        out = Path(out_path_str).resolve()
+        # Through the resolver like every input: a bare Path(...).resolve()
+        # read a relative path from the process cwd and wrote an absolute one
+        # wherever it pointed, on a server whose inputs are confined.
+        try:
+            out = resolve_path(out_path_str)
+        except PathOutsideRootError as exc:
+            return _error(str(exc), "Pass an output path inside the data folder; a relative path is written there.")
 
         backup = ""
         if out.exists():

@@ -377,7 +377,7 @@ def train_classifier(
         progress.append(ok("Saved model", pname(str(model_path))))
 
         append_receipt(
-            file_path,
+            str(path),
             "train_classifier",
             {"target": target_column, "model": model},
             f"accuracy={acc:.3f}",
@@ -665,7 +665,7 @@ def train_regressor(
         progress.append(ok("Saved model", pname(str(model_path))))
 
         append_receipt(
-            file_path,
+            str(path),
             "train_regressor",
             {"target": target_column, "model": model},
             f"r2={r2:.3f}",
