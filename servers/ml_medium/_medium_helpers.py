@@ -707,7 +707,7 @@ def receipt_for_created(output_path: str, source_path: object, tool: str, args: 
     """
     if not output_path:
         return
-    out = Path(output_path)
+    out = resolve_path(output_path)
     src = Path(str(source_path))
     if out == src:
         return  # in place: the input's own receipt already covers it

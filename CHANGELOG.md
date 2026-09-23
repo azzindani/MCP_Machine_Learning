@@ -9,6 +9,24 @@ guess dressed as a record.
 
 ---
 
+## [Unreleased]
+
+### Security — a deployed server reads and writes only inside the folders it serves
+
+- Every tool resolved its path with `Path(raw).resolve()`, so any authenticated
+  caller of an HTTP deployment could name any file the container could read: a
+  dataset anywhere, a model file (a pickle, loaded as code), or
+  `/proc/self/environ` with the API keys. Model paths, the HTML layout/theme
+  outputs and several preprocessing outputs skipped the resolver entirely.
+- With `MCP_CONFINE_PATHS` on (set by the HTTP transport and compose) a path
+  must lie inside `MCP_OUTPUT_DIR`, the workspace root or `MCP_ALLOWED_ROOTS`,
+  judged after symlinks resolve. A relative path is read from the data folder.
+  A local stdio install is unchanged, except that `~` now expands.
+- A workspace `base_dir` outside the served folders is refused, and a workspace
+  *name* such as `../../etc` is always refused, confined or not.
+
+---
+
 ## [0.2.0] — 2026-09-07
 
 Source-only release: no wheel and no container image are published. Build the

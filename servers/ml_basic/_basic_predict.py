@@ -43,7 +43,7 @@ def get_predictions(
     """Run predictions with saved model. Returns bounded prediction list."""
     progress: list[dict] = []
     try:
-        mpath = Path(model_path).resolve()
+        mpath = resolve_path(model_path)
         if not mpath.exists():
             return _error(
                 f"Model file not found: {model_path}",

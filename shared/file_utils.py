@@ -56,6 +56,64 @@ __all__ = [
 ]
 
 
+class PathOutsideRootError(ValueError):
+    """A path outside every folder this server may read or write.
+
+    A ValueError, because that is what the tools here catch around resolve_path
+    (thirty-one sites): a PermissionError escaped them and failed the call raw.
+    """
+
+
+def paths_confined() -> bool:
+    """True when paths are held to the served folders (every HTTP deployment).
+
+    A remote caller shares no filesystem with this server. Unconfined, any
+    authenticated caller could name any file the container could read -- a
+    dataset, a model file (a pickle) or /proc/self/environ with the API keys.
+    A local stdio install is the caller's own machine and stays unrestricted.
+    """
+    return os.environ.get("MCP_CONFINE_PATHS", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def data_root() -> Path:
+    """Where a relative path is read from: MCP_DATA_ROOT, else the data folder when confined, else the cwd."""
+    for var in ("MCP_DATA_ROOT", "MCP_OUTPUT_DIR" if paths_confined() else ""):
+        raw = os.environ.get(var, "").strip() if var else ""
+        if raw:
+            return Path(raw).expanduser().resolve()
+    return Path.cwd()
+
+
+def allowed_roots() -> list[Path]:
+    """The folders a confined server serves: the data folder, the workspaces, and MCP_ALLOWED_ROOTS."""
+    from shared.workspace_utils import get_workspace_root
+
+    raws = [os.environ.get("MCP_OUTPUT_DIR", ""), os.environ.get("MCP_DATA_ROOT", "")]
+    raws += os.environ.get("MCP_ALLOWED_ROOTS", "").split(os.pathsep)
+    roots = [Path(r).expanduser().resolve() for r in raws if r.strip()]
+    roots.append(get_workspace_root("", confine=False).expanduser().resolve())
+    return roots
+
+
+def confine(path: Path, what: str = "Path") -> Path:
+    """Return `path` resolved, or refuse it when paths are confined and it lies outside every served folder.
+
+    Judged after symlinks resolve, so a link inside the data folder that points
+    out of it is refused for where it leads.
+    """
+    resolved = path.expanduser().resolve()
+    if not paths_confined():
+        return resolved
+    roots = allowed_roots()
+    if any(resolved == root or resolved.is_relative_to(root) for root in roots):
+        return resolved
+    shown = ", ".join(str(r) for r in roots[:3])
+    raise PathOutsideRootError(
+        f"{what} {str(path)!r} is outside the folders this server can use ({shown}). "
+        "Pass a path inside the data folder -- a relative path is read from it -- or a URL."
+    )
+
+
 def resolve_path(
     file_path: str,
     allowed_extensions: tuple[str, ...] = (),
@@ -90,9 +148,13 @@ def resolve_path(
         raw = str(file_path)
         if "\x00" in raw:
             raise ValueError(f"Invalid path (null byte): {file_path}")
-        path = Path(raw).resolve()
+        path = Path(raw).expanduser()
+        if not path.is_absolute():
+            path = data_root() / path
+        path = path.resolve()
         if path.parent == path:
             raise ValueError(f"Path resolves to filesystem root: {file_path}")
+    path = confine(path)
 
     if allowed_extensions and path.suffix.lower() not in allowed_extensions:
         raise ValueError(f"Extension {path.suffix!r} not allowed. Expected one of: {', '.join(allowed_extensions)}")

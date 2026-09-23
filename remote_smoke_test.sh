@@ -117,6 +117,16 @@ extract_path() {
 }
 
 echo
+echo "== paths are held to the served folders =="
+# Unconfined, any authenticated caller could read any file in the container.
+R=$(call basic "$SID_BASIC" 9 inspect_dataset '{"file_path":"/etc/hostname"}')
+if ok_json "$R"; then
+  fail "read /etc/hostname -- paths are not confined"
+fi
+echo "$R" | grep -q 'outside the folders' && pass "/etc/hostname refused as outside the served folders" \
+  || fail "/etc/hostname refused without naming why: $(echo "$R" | head -c 300)"
+
+echo
 echo "===== ml_basic (11 tools) ====="
 
 echo '== prompt: "what columns does this dataset have?" -> inspect_dataset =='
