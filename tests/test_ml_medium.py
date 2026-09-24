@@ -2269,8 +2269,9 @@ class TestCheckDataQualityCoverage:
         ).to_csv(csv_path, index=False)
         r = check_data_quality(str(csv_path))
         assert r["success"] is True
-        # Two constant columns → -30 penalty from 100
-        assert r["quality_score"] <= 70
+        # Two constant columns of three: validity keeps a third of itself (#22)
+        assert abs(r["quality_breakdown"]["components"]["validity"] - 100 / 3) < 0.1
+        assert r["quality_score"] < 75
 
     # Score decreases from high missing data
     def test_quality_score_decreases_for_high_missing(self, tmp_path):
@@ -2302,7 +2303,11 @@ class TestCheckDataQualityCoverage:
         ).to_csv(csv_path, index=False)
         r = check_data_quality(str(csv_path))
         assert r["success"] is True
-        assert r["quality_score"] < 100
+        # Correlated columns are advice since #22: still alerted, counted as not
+        # scored, and the score does not move.
+        assert any(a["type"] == "multicollinearity" for a in r["alerts"])
+        assert r["quality_breakdown"]["not_scored"]["advice"] >= 1
+        assert r["quality_score"] == 100
 
 
 # ---------------------------------------------------------------------------

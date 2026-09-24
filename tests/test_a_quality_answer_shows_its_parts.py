@@ -13,7 +13,7 @@ import pandas as pd
 import pytest
 
 from servers.ml_medium._medium_data import check_data_quality
-from servers.ml_medium._medium_eda import _run_quality_alerts
+from servers.ml_medium._medium_eda import _quality_score_html, _run_quality_alerts
 
 
 @pytest.fixture
@@ -44,7 +44,8 @@ class TestTheBreakdownIsInTheAnswer:
         breakdown = check_data_quality(str(path))["quality_breakdown"]
         assert breakdown["components"]["completeness"] == 100.0
         assert breakdown["components"]["uniqueness"] == 100.0
-        assert breakdown["components"]["validity"] == 50.0
+        # One constant column of three costs validity that column's share (#22).
+        assert breakdown["components"]["validity"] == pytest.approx(100 - 100 / 3, abs=0.1)
 
 
 class TestAConstantColumnIsAlertedOnce:
@@ -56,3 +57,15 @@ class TestAConstantColumnIsAlertedOnce:
         skewed = pd.DataFrame({"flag": ["a"] * 38 + ["b"] * 2, "units": list(range(40))})
         types = [a["type"] for a in _run_quality_alerts(skewed, "") if a.get("column") == "flag"]
         assert types == ["class_imbalance"]
+
+
+class TestThePageSaysWhatWasNotScored:
+    def test_the_advice_card_counts_the_advice(self):
+        """Advice costs nothing since #22 (2026-09-24), so a high score can sit
+        above a long list of alerts; the card says how many of them it left out."""
+        skewed = pd.DataFrame({"x": list(range(40)), "y": [v * 3 for v in range(40)], "z": [0] * 36 + [1, 2, 3, 4]})
+        alerts = _run_quality_alerts(skewed, "")
+        advice = sum(1 for a in alerts if a["type"] in {"multicollinearity", "zero_inflated", "extreme_skewness"})
+        assert advice > 0, "the fixture raises advice"
+        html = _quality_score_html(100.0, alerts, {})
+        assert f'<div class="num">{advice}</div><div class="lbl">Advice, not scored</div>' in html

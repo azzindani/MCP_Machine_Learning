@@ -334,6 +334,8 @@ Pass an `ops` array to apply a pipeline in one call:
 
 Each alert includes a **recommendation** — actionable next steps to fix the issue.
 
+What the score counts (shared with MCP_Data_Analyst): `validity` counts what breaks a rule. A constant column costs its share of the columns (100 / columns each). Missing values and duplicate rows are priced by `completeness` and `uniqueness`. The distribution advice (`zero_inflated`, `high_cardinality`, `class_imbalance`, `extreme_skewness`, `multicollinearity`) is reported, counted in `quality_breakdown.not_scored`, and not scored.
+
 ## Usage Examples
 
 ### Inspect a dataset
