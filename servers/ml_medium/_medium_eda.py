@@ -6,7 +6,7 @@ import pandas as pd
 
 from shared.file_utils import atomic_write_text, embed_content
 from shared.handover import make_context, make_handover
-from shared.quality import quality_report, quality_score
+from shared.quality import is_advice, quality_report, quality_score
 from shared.version_control import size_kb
 
 from ._medium_helpers import (
@@ -39,7 +39,7 @@ def _compute_quality_score(df: pd.DataFrame, alerts: list[dict]) -> float:
     cells = max(len(df) * len(df.columns), 1)
     null_pct = df.isnull().sum().sum() / cells * 100
     dup_pct = df.duplicated().sum() / max(len(df), 1) * 100
-    return quality_score(null_pct, dup_pct, alerts)
+    return quality_score(null_pct, dup_pct, alerts, columns=len(df.columns))
 
 
 def _run_quality_alerts(df: pd.DataFrame, target_column: str = "") -> list[dict]:
@@ -236,6 +236,9 @@ def _quality_score_html(score: float, alerts: list[dict], t: dict) -> str:
     high = sum(1 for a in alerts if a.get("severity") == "high")
     med = sum(1 for a in alerts if a.get("severity") == "medium")
     low = sum(1 for a in alerts if a.get("severity") == "low")
+    # Advice about a distribution is shown and not scored; the card says how
+    # many, so a high score above a long list explains itself.
+    advice = sum(1 for a in alerts if is_advice(a))
 
     score_cls = "good" if score >= 80 else ("warn" if score >= 60 else "bad")
     score_card = (
@@ -251,6 +254,9 @@ def _quality_score_html(score: float, alerts: list[dict], t: dict) -> str:
         f"</div>"
         f'<div class="card good">'
         f'  <div class="num">{low}</div><div class="lbl">Low Severity</div>'
+        f"</div>"
+        f'<div class="card">'
+        f'  <div class="num">{advice}</div><div class="lbl">Advice, not scored</div>'
         f"</div>"
         f"</div>"
     )
@@ -347,6 +353,7 @@ def generate_eda_report(
         df.isnull().sum().sum() / _cells * 100,
         df.duplicated().sum() / max(len(df), 1) * 100,
         alerts,
+        columns=len(df.columns),
     )
     progress.append(ok("Quality analysis", f"score={quality_score}/100, {len(alerts)} alerts"))
 

@@ -81,8 +81,12 @@ class TestTheScoreSeparatesDatasets:
         assert check_data_quality(clean_csv)["quality_score"] >= 85
 
     def test_one_constant_column_costs_something_but_not_everything(self, one_constant_csv: str):
-        score = check_data_quality(one_constant_csv)["quality_score"]
-        assert 60 <= score < 85, score
+        # A constant column costs validity its share of the columns (#22,
+        # 2026-09-24): one of three is a third. The a/b correlation is advice
+        # and costs nothing.
+        r = check_data_quality(one_constant_csv)
+        assert r["quality_breakdown"]["components"]["validity"] == pytest.approx(100 - 100 / 3, abs=0.1)
+        assert 60 <= r["quality_score"] < 100, r["quality_score"]
 
     def test_a_frame_with_many_alerts_is_not_pinned_to_zero(self, many_alerts_csv: str):
         """Every alert type at once used to floor at 0.0, taking the ordering
@@ -101,10 +105,18 @@ class TestTheRealAdDataset:
         score = check_data_quality(str(ad_data_full_csv))["quality_score"]
         assert score > 20, score
 
-    def test_it_still_scores_poorly(self, ad_data_full_csv: Path):
-        """Two constant columns, 205 duplicates, four skewed columns: not good
-        data, just not 5.6-out-of-100 data."""
-        assert check_data_quality(str(ad_data_full_csv))["quality_score"] < 60
+    def test_it_does_not_score_as_clean_and_says_why(self, ad_data_full_csv: Path):
+        """Two constant columns, 205 duplicates, four skewed columns: not clean
+        data, and not 5.6-out-of-100 data either. Since #22 (2026-09-24) the
+        constant columns and the duplicates are what cost points -- two of
+        sixteen columns is 12.5 off validity -- and the skew is advice,
+        reported and not scored. It scored under 60 while advice was priced."""
+        r = check_data_quality(str(ad_data_full_csv))
+        parts = r["quality_breakdown"]
+        assert parts["components"]["validity"] == 87.5
+        assert parts["components"]["uniqueness"] < 100
+        assert parts["not_scored"]["advice"] > 0
+        assert r["quality_score"] < 100
 
     def test_the_alerts_are_unchanged(self, ad_data_full_csv: Path):
         r = check_data_quality(str(ad_data_full_csv))
