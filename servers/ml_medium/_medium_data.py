@@ -101,9 +101,9 @@ def filter_rows(
         elif operator == "lte":
             mask = pd.to_numeric(col, errors="coerce") <= float(value)
         elif operator == "contains":
-            mask = col.astype(str).str.contains(str(value), na=False)
+            mask = col.astype(str).str.contains(str(value), regex=False, na=False)
         elif operator == "not_contains":
-            mask = ~col.astype(str).str.contains(str(value), na=False)
+            mask = ~col.astype(str).str.contains(str(value), regex=False, na=False)
         elif operator == "is_null":
             mask = col.isnull()
         elif operator == "not_null":
