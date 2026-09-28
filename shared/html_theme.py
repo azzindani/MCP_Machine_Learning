@@ -14,6 +14,7 @@ Layout philosophy
 
 from __future__ import annotations
 
+import html as _html
 import logging
 import os
 import subprocess
@@ -791,12 +792,15 @@ def build_html_report(
     css_block = report_css(vars_css)
     dev_js = device_mode_js() if theme == "device" else ""
 
-    nav_links = "\n    ".join(f'<a href="#{s["id"]}">{s["heading"]}</a>' for s in sections)
+    # A heading can carry a column name ("Target Column: <name>") and a title a
+    # file name, and either can be spelled with markup in it. Text, always.
+    nav_links = "\n    ".join(f'<a href="#{s["id"]}">{_html.escape(s["heading"])}</a>' for s in sections)
     sections_html = "\n".join(
-        f'<div id="{s["id"]}" class="section">\n  <h2>{s["heading"]}</h2>\n  {s["html"]}\n</div>' for s in sections
+        f'<div id="{s["id"]}" class="section">\n  <h2>{_html.escape(s["heading"])}</h2>\n  {s["html"]}\n</div>'
+        for s in sections
     )
-
-    sb_title = sidebar_title or title
+    title = _html.escape(title)
+    sb_title = _html.escape(sidebar_title) if sidebar_title else title
     sb_meta_html = f'<p class="meta">{sidebar_meta}</p>' if sidebar_meta else ""
     # Resolved before the page is assembled, because the <head> is built
     # around it.
