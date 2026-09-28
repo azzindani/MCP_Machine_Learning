@@ -98,6 +98,7 @@ DOMAINS = {
             (medium, "generate_eda_report"),
             (advanced, "run_profiling_report"),
             (advanced, "generate_training_report"),
+            (advanced, "generate_model_dashboard"),
             (advanced, "generate_cluster_report"),
             (advanced, "plot_roc_curve"),
             (advanced, "plot_learning_curve"),

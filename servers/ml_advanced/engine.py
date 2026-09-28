@@ -47,6 +47,7 @@ from shared.progress import name as pname
 from shared.receipt import append_receipt
 from shared.version_control import snapshot
 
+from ._adv_dashboard import generate_model_dashboard
 from ._adv_helpers import (
     ALLOWED_CLASSIFIERS,
     ALLOWED_REGRESSORS,

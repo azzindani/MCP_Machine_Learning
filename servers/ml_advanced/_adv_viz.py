@@ -3,6 +3,7 @@ plot_predictions_vs_actual, generate_cluster_report."""
 
 from __future__ import annotations
 
+from html import escape as html_escape
 from pathlib import Path
 
 import numpy as np
@@ -754,6 +755,33 @@ def plot_predictions_vs_actual(
 # ---------------------------------------------------------------------------
 
 
+PERSONA_TRAIT = 0.5  # standard deviations from all rows before a feature describes a cluster
+
+
+def _personas(X: pd.DataFrame, labels: pd.Series) -> list[dict]:
+    """Each cluster's size, its centroid in standard deviations from all rows, and a name from its strongest traits."""
+    mean, std = X.mean(), X.std(ddof=0).replace(0, np.nan)
+    out = []
+    for cluster, rows in labels.groupby(labels).groups.items():
+        centre = X.loc[rows].mean()
+        z = ((centre - mean) / std).fillna(0.0)
+        traits = [f for f in z.abs().sort_values(ascending=False).index if abs(z[f]) >= PERSONA_TRAIT][:2]
+        name = ", ".join(f"{'high' if z[f] > 0 else 'low'} {f}" for f in traits) or "close to the average"
+        out.append(
+            {
+                "cluster": str(cluster),
+                "name": name,
+                "rows": len(rows),
+                "share": round(len(rows) / len(X), 4),
+                "traits": [
+                    {"feature": str(f), "z": round(float(z[f]), 3), "mean": round(float(centre[f]), 4)} for f in traits
+                ],
+                "z": {str(f): round(float(v), 3) for f, v in z.items()},
+            }
+        )
+    return sorted(out, key=lambda p: -p["rows"])
+
+
 def generate_cluster_report(
     file_path: str,
     feature_columns: list[str],
@@ -947,6 +975,42 @@ def generate_cluster_report(
             }
         )
 
+        # --- Personas: what sets each cluster apart, in words -----------------
+        # A table of means asks the reader to find the story; a persona says it:
+        # "high charges, low tenure", 18% of customers.
+        personas = _personas(X, labels)
+        z = [[p["z"][f] for f in X.columns] for p in personas]
+        fig_heat = go.Figure(
+            go.Heatmap(
+                z=z,
+                x=[str(c) for c in X.columns],
+                y=[f"{p['cluster']}: {p['name']}" for p in personas],
+                colorscale="RdBu",
+                reversescale=True,
+                zmid=0,
+                text=[[f"{v:+.1f}" for v in row] for row in z],
+                texttemplate="%{text}",
+                hovertemplate="%{y}<br>%{x}: %{z:+.2f} standard deviations from all rows<extra></extra>",
+            )
+        )
+        fig_heat.update_layout(template=tmpl, height=120 + 40 * len(personas), margin=dict(l=10, r=10, t=20, b=10))
+        apply_fig_theme(fig_heat, theme)
+        cards = "".join(
+            f'<div class="persona"><b>{html_escape(str(p["cluster"]))}: {html_escape(p["name"])}</b> '
+            f"— {p['rows']:,} rows, {p['share']:.0%}</div>"
+            for p in personas
+        )
+        sections.append(
+            {
+                "id": "personas",
+                "heading": "Personas",
+                "html": "<p>Each cluster named by the features it sits furthest from the whole on, in standard "
+                "deviations; the heatmap shows them all.</p>"
+                + cards
+                + plotly_div(fig_heat, height=120 + 40 * len(personas), theme=theme),
+            }
+        )
+
         # --- Bar chart: cluster sizes (sorted highest first) ---
         sorted_labels = sorted(label_counts.items(), key=lambda x: x[1], reverse=True)
         bar_x = [str(k) for k, _ in sorted_labels]
@@ -1019,6 +1083,7 @@ def generate_cluster_report(
             "n_samples": len(df),
             "scatter_points_plotted": scatter_points_plotted,
             "scatter_sampled": scatter_sampled,
+            "personas": [{k: v for k, v in p.items() if k != "z"} for p in personas],
             "sections_generated": len(sections),
             "progress": progress,
             "token_estimate": 0,
