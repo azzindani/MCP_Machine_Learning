@@ -6,7 +6,7 @@ import argparse
 import logging
 import os
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 logging.basicConfig(stream=sys.stderr, level=logging.WARNING)
 
@@ -95,7 +95,7 @@ def tune_hyperparameters(
     model: Model,
     task: Task,
     search: str = "grid",
-    param_grid: str = "",
+    param_grid: str | dict[str, list[Any]] = "",
     cv: int = 5,
     n_iter: int = 10,
     dry_run: bool = False,

@@ -5,6 +5,7 @@ from __future__ import annotations
 from shared.feature_select import select_features
 from shared.handover import make_context, make_handover
 from shared.leakage import leakage_note, leakage_suspects, split_provenance
+from shared.ml_utils import encoding_note, one_hot_for_linear
 from shared.model_output import resolve_model_path
 
 from ._basic_helpers import (
@@ -201,11 +202,14 @@ def train_classifier(
         # --- model training ---
         scaler: StandardScaler | None = None
         model_class_name = ""
+        one_hot: list[str] = []
 
         cw = class_weight if class_weight in CLASS_WEIGHTS else None
 
         if model == "lr":
-            clf = LogisticRegression(random_state=42, max_iter=200, class_weight=cw)
+            clf, one_hot = one_hot_for_linear(
+                model, LogisticRegression(random_state=42, max_iter=200, class_weight=cw), feature_cols, encoding_map
+            )
             clf.fit(x_train, y_train)
             y_pred = clf.predict(x_test)
             model_class_name = "LogisticRegression"
@@ -358,6 +362,7 @@ def train_classifier(
             "feature_columns": feature_cols,
             "target_column": target_column,
             "encoding_map": encoding_map,
+            "one_hot_columns": one_hot,
             "scaler": scaler,
             "metrics": metrics,
             "n_classes": int(n_classes),
@@ -395,6 +400,7 @@ def train_classifier(
             "row_count": len(df),
             "train_size": len(x_train),
             "test_size": len(x_test),
+            "feature_encoding": encoding_note(model, one_hot, [c for c in encoded_cols if c in feature_cols]),
             "metrics": metrics,
             "model_path": str(model_path),
             "manifest_path": str(manifest_path),
@@ -540,33 +546,50 @@ def train_regressor(
         poly: PolynomialFeatures | None = None
         model_class_name = ""
         scaler: StandardScaler | None = None
+        one_hot: list[str] = []
 
         if model == "lir":
-            reg = LinearRegression()
+            reg, one_hot = one_hot_for_linear(model, LinearRegression(), feature_cols, encoding_map)
             reg.fit(x_train, y_train)
             y_pred = reg.predict(x_test)
             model_class_name = "LinearRegression"
             trained: Any = reg
 
         elif model == "pr":
-            poly = PolynomialFeatures(degree=degree)
-            x_train_p = poly.fit_transform(x_train)
-            x_test_p = poly.transform(x_test)
-            reg = LinearRegression()
-            reg.fit(x_train_p, y_train)
-            y_pred = reg.predict(x_test_p)
+            from sklearn.pipeline import Pipeline
+
+            expanded = Pipeline([("poly", PolynomialFeatures(degree=degree)), ("model", LinearRegression())])
+            wrapped, one_hot = one_hot_for_linear(model, expanded, feature_cols, encoding_map)
+            if one_hot:
+                # The indicators have to exist before the polynomial expands
+                # them, so the polynomial lives inside the model and no `poly`
+                # step is replayed ahead of it at prediction time.
+                wrapped.fit(x_train, y_train)
+                y_pred = wrapped.predict(x_test)
+                trained = wrapped
+            else:
+                poly = PolynomialFeatures(degree=degree)
+                x_train_p = poly.fit_transform(x_train)
+                x_test_p = poly.transform(x_test)
+                reg = LinearRegression()
+                reg.fit(x_train_p, y_train)
+                y_pred = reg.predict(x_test_p)
+                trained = reg
             model_class_name = "PolynomialRegression"
-            trained = reg
 
         elif model == "lar":
-            reg = Lasso(alpha=alpha, max_iter=200, tol=0.1)
+            reg, one_hot = one_hot_for_linear(
+                model, Lasso(alpha=alpha, max_iter=200, tol=0.1), feature_cols, encoding_map
+            )
             reg.fit(x_train, y_train)
             y_pred = reg.predict(x_test)
             model_class_name = "Lasso"
             trained = reg
 
         elif model == "rr":
-            reg = Ridge(alpha=alpha, max_iter=100, tol=0.1)
+            reg, one_hot = one_hot_for_linear(
+                model, Ridge(alpha=alpha, max_iter=100, tol=0.1), feature_cols, encoding_map
+            )
             reg.fit(x_train, y_train)
             y_pred = reg.predict(x_test)
             model_class_name = "Ridge"
@@ -646,6 +669,7 @@ def train_regressor(
             "feature_columns": feature_cols,
             "target_column": target_column,
             "encoding_map": encoding_map,
+            "one_hot_columns": one_hot,
             "poly": poly,
             "scaler": scaler,
             "metrics": metrics,
@@ -684,6 +708,7 @@ def train_regressor(
             "row_count": len(df),
             "train_size": len(x_train),
             "test_size": len(x_test),
+            "feature_encoding": encoding_note(model, one_hot, [c for c in encoded_cols if c in feature_cols]),
             "metrics": metrics,
             "model_path": str(model_path),
             "manifest_path": str(manifest_path),

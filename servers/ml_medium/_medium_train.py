@@ -14,6 +14,7 @@ from shared.feature_select import select_features
 from shared.file_utils import apply_default_mode, atomic_write_json
 from shared.handover import make_context, make_handover
 from shared.leakage import leakage_note, leakage_suspects, split_provenance
+from shared.ml_utils import LINEAR_MODELS, encoding_note
 from shared.model_output import resolve_model_path
 from shared.model_signing import dump_signed
 
@@ -130,7 +131,7 @@ def train_with_cv(
     # Keep the pre-encoding frame: typical_row() below has to offer the panel
     # the dataset's own labels ("Google Ads"), not the integers encoding made.
     df_raw = df
-    df, encoding_map, _ = _auto_preprocess(df, target_column)
+    df, encoding_map, encoded_cols = _auto_preprocess(df, target_column)
     feature_cols, feature_note, feature_error = select_features(df, target_column, feature_columns, exclude_columns)
     if feature_error:
         return feature_error
@@ -154,7 +155,7 @@ def train_with_cv(
         for i, (tr_idx, te_idx) in enumerate(kf.split(x, y)):
             x_tr, x_te = x[tr_idx], x[te_idx]
             y_tr, y_te = y[tr_idx], y[te_idx]
-            y_pred = _fit_predict_classifier(model, x_tr, x_te, y_tr)
+            y_pred = _fit_predict_classifier(model, x_tr, x_te, y_tr, features=feature_cols, encoding_map=encoding_map)
             acc = float(accuracy_score(y_te, y_pred))
             f1 = float(f1_score(y_te, y_pred, average="weighted", zero_division=0))
             fold_scores.append({"fold": i + 1, "accuracy": acc, "f1_weighted": f1})
@@ -180,7 +181,7 @@ def train_with_cv(
         for i, (tr_idx, te_idx) in enumerate(kf2.split(x)):
             x_tr, x_te = x[tr_idx], x[te_idx]
             y_tr, y_te = y[tr_idx], y[te_idx]
-            y_pred = _fit_predict_regressor(model, x_tr, x_te, y_tr)
+            y_pred = _fit_predict_regressor(model, x_tr, x_te, y_tr, features=feature_cols, encoding_map=encoding_map)
             r2 = float(r2_score(y_te, y_pred))
             rmse = float(np.sqrt(mean_squared_error(y_te, y_pred)))
             fold_scores.append({"fold": i + 1, "r2": r2, "rmse": rmse})
@@ -217,10 +218,14 @@ def train_with_cv(
     # Retrain on full data
     if task == "classification":
         x_tr, x_te, y_tr, y_te = train_test_split(x, y, test_size=0.2, random_state=random_state, stratify=y)
-        _y_pred_final = _fit_predict_classifier(model, x_tr, x_te, y_tr)
+        _y_pred_final = _fit_predict_classifier(
+            model, x_tr, x_te, y_tr, features=feature_cols, encoding_map=encoding_map
+        )
     else:
         x_tr, x_te, y_tr, y_te = train_test_split(x, y, test_size=0.2, random_state=random_state)
-        _y_pred_final = _fit_predict_regressor(model, x_tr, x_te, y_tr)
+        _y_pred_final = _fit_predict_regressor(
+            model, x_tr, x_te, y_tr, features=feature_cols, encoding_map=encoding_map
+        )
 
     metadata = {
         "model_type": model,
@@ -248,7 +253,7 @@ def train_with_cv(
     # downstream use died on 'NoneType' object has no attribute 'predict'.
     # Refit once on the full dataset, which is what the shipped model should be
     # anyway now CV has estimated how well it generalises.
-    final_estimator = fit_final_estimator(model, x, y, task)
+    final_estimator = fit_final_estimator(model, x, y, task, features=feature_cols, encoding_map=encoding_map)
     if final_estimator is None:
         progress.append(
             warn(
@@ -296,6 +301,11 @@ def train_with_cv(
         "model": model,
         "task": task,
         "n_splits": n_splits,
+        "feature_encoding": encoding_note(
+            model,
+            [c for c in feature_cols if c in encoding_map] if model in LINEAR_MODELS else [],
+            [c for c in encoded_cols if c in feature_cols],
+        ),
         "fold_scores": fold_scores,
         "mean_metrics": mean_metrics,
         "model_path": str(model_path),
@@ -397,7 +407,7 @@ def compare_models(
     # Keep the pre-encoding frame: typical_row() below has to offer the panel
     # the dataset's own labels ("Google Ads"), not the integers encoding made.
     df_raw = df
-    df, encoding_map, _ = _auto_preprocess(df, target_column)
+    df, encoding_map, encoded_cols = _auto_preprocess(df, target_column)
     feature_cols, feature_note, feature_error = select_features(df, target_column, feature_columns, exclude_columns)
     if feature_error:
         return feature_error
@@ -415,13 +425,13 @@ def compare_models(
     for m in models:
         try:
             if task == "classification":
-                y_pred = _fit_predict_classifier(m, x_tr, x_te, y_tr)
+                y_pred = _fit_predict_classifier(m, x_tr, x_te, y_tr, features=feature_cols, encoding_map=encoding_map)
                 acc = float(accuracy_score(y_te, y_pred))
                 f1 = float(f1_score(y_te, y_pred, average="weighted", zero_division=0))
                 results.append({"model": m, "accuracy": round(acc, 4), "f1_weighted": round(f1, 4)})
                 progress.append(ok(f"Trained {m}", f"acc={acc:.3f} f1={f1:.3f}"))
             else:
-                y_pred = _fit_predict_regressor(m, x_tr, x_te, y_tr)
+                y_pred = _fit_predict_regressor(m, x_tr, x_te, y_tr, features=feature_cols, encoding_map=encoding_map)
                 r2 = float(r2_score(y_te, y_pred))
                 rmse = float(np.sqrt(mean_squared_error(y_te, y_pred)))
                 results.append({"model": m, "r2": round(r2, 4), "rmse": round(rmse, 4)})
@@ -481,7 +491,7 @@ def compare_models(
         # it, so the winner existed nowhere by the time this ran and {"model":
         # None} was written under a name ending "_best". Refit the winner on the
         # full dataset so the file contains the model its name promises.
-        final_estimator = fit_final_estimator(best, x, y, task)
+        final_estimator = fit_final_estimator(best, x, y, task, features=feature_cols, encoding_map=encoding_map)
         if final_estimator is None:
             progress.append(
                 warn(
@@ -537,6 +547,15 @@ def compare_models(
         "op": "compare_models",
         "task": task,
         "results": results,
+        # Linear models and trees read the same text columns differently, and
+        # the ranking above is between them: say how each side saw them.
+        "feature_encoding": {
+            "one_hot_for": sorted(set(models) & LINEAR_MODELS),
+            "label_codes_for": sorted(set(models) - LINEAR_MODELS),
+            "text_columns": [c for c in encoded_cols if c in feature_cols],
+        }
+        if any(c in feature_cols for c in encoded_cols)
+        else {},
         "best_model": best,
         "best_model_path": best_model_path,
         # How the score was produced, beside the score. A 0.9628 from a random

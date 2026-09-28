@@ -63,14 +63,18 @@ def report(tmp_path, model, name):
 
 class TestAMissingSectionIsReported:
     def test_a_tuned_model_omits_both(self, bench):
-        """The exact call the sweep made."""
+        """The sweep's call, on a model with neither importances nor coefficients.
+
+        The sweep tuned `lr`; a linear model's report now carries its
+        coefficients, so knn is the model that still has nothing to show.
+        """
         tmp_path, csv = bench
         t = adv.tune_hyperparameters(
             str(csv),
             "y",
-            "lr",
+            "knn",
             "classification",
-            param_grid='{"C": [0.1, 1]}',
+            param_grid='{"n_neighbors": [3, 5]}',
             cv=3,
             output_path=str(tmp_path / "tuned.pkl"),
         )
@@ -95,24 +99,24 @@ class TestAMissingSectionIsReported:
 
     def test_the_importance_reason_names_a_model_that_has_them(self, bench):
         tmp_path, csv = bench
-        basic.train_classifier(str(csv), "y", "lr", output_path=str(tmp_path / "lr.pkl"))
-        r, _ = report(tmp_path, tmp_path / "lr.pkl", "lr")
+        basic.train_classifier(str(csv), "y", "knn", output_path=str(tmp_path / "knn.pkl"))
+        r, _ = report(tmp_path, tmp_path / "knn.pkl", "knn")
         why = r["sections_omitted"]["importance"]
-        assert "LogisticRegression" in why, "say which model type this is"
+        assert "KNeighborsClassifier" in why, "say which model type this is"
         assert "rf" in why and "dtr" in why
 
     def test_it_warns_rather_than_only_recording(self, bench):
         tmp_path, csv = bench
-        basic.train_classifier(str(csv), "y", "lr", output_path=str(tmp_path / "lr.pkl"))
-        r, _ = report(tmp_path, tmp_path / "lr.pkl", "lr")
+        basic.train_classifier(str(csv), "y", "knn", output_path=str(tmp_path / "knn.pkl"))
+        r, _ = report(tmp_path, tmp_path / "knn.pkl", "knn")
         warnings = [p for p in r["progress"] if p.get("icon") not in ("✔", "ℹ")]
         assert any("promised section" in p["msg"] for p in warnings), r["progress"]
 
     def test_the_page_itself_says_so(self, bench):
         """Read the artifact, not the response."""
         tmp_path, csv = bench
-        basic.train_classifier(str(csv), "y", "lr", output_path=str(tmp_path / "lr.pkl"))
-        _, html = report(tmp_path, tmp_path / "lr.pkl", "lr")
+        basic.train_classifier(str(csv), "y", "knn", output_path=str(tmp_path / "knn.pkl"))
+        _, html = report(tmp_path, tmp_path / "knn.pkl", "knn")
         assert "Not in this report" in html
         assert "Feature Importance" in html
 
