@@ -997,7 +997,7 @@ def generate_cluster_report(
         apply_fig_theme(fig_heat, theme)
         cards = "".join(
             f'<div class="persona"><b>{html_escape(str(p["cluster"]))}: {html_escape(p["name"])}</b> '
-            f"— {p['rows']:,} rows, {p['share']:.0%}</div>"
+            f"— {p['rows']:,} rows, {p['share']:.1%}</div>"
             for p in personas
         )
         sections.append(
