@@ -289,6 +289,10 @@ echo '== prompt: "plot the ROC curve for the classifier" -> plot_roc_curve =='
 R=$(call advanced "$SID_ADVANCED" 56 plot_roc_curve "{\"model_path\":\"$CLF_MODEL\",\"file_path\":\"$DATASET_PATH\"}")
 ok_json "$R" && pass "plot_roc_curve rendered a real ROC curve from real predictions" || fail "$R"
 
+echo '== prompt: "show me how the classifier does on these rows" -> generate_model_dashboard =='
+R=$(call advanced "$SID_ADVANCED" 60 generate_model_dashboard "{\"model_path\":\"$CLF_MODEL\",\"file_path\":\"$DATASET_PATH\",\"target_column\":\"label\"}")
+ok_json "$R" && pass "generate_model_dashboard read the classifier against a baseline on real rows" || fail "$R"
+
 echo '== prompt: "plot the learning curve for a random forest classifier" -> plot_learning_curve =='
 R=$(call advanced "$SID_ADVANCED" 57 plot_learning_curve "{\"file_path\":\"$DATASET_PATH\",\"target_column\":\"label\",\"model\":\"rf\",\"task\":\"classification\",\"cv\":3}")
 ok_json "$R" && pass "plot_learning_curve ran real CV training at increasing sizes" || fail "$R"

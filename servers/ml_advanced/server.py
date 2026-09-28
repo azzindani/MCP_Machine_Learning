@@ -186,6 +186,42 @@ def generate_training_report(
 @mcp.tool(
     annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 )
+def generate_model_dashboard(
+    model_path: str,
+    file_path: str,
+    target_column: str = "",
+    compare_model_paths: list[str] | None = None,
+    segment_columns: list[str] | None = None,
+    cost_fp: float = 1.0,
+    cost_fn: float = 1.0,
+    train_file_path: str = "",
+    theme: str = "device",
+    output_path: str = "",
+    open_after: bool = True,
+    dry_run: bool = False,
+    return_content: bool = False,
+) -> dict:
+    """Model on labelled rows: baseline, ROC, threshold cost, drivers, errors, drift."""
+    return engine.generate_model_dashboard(
+        model_path,
+        file_path,
+        target_column,
+        compare_model_paths,
+        segment_columns,
+        cost_fp,
+        cost_fn,
+        train_file_path,
+        theme,
+        output_path,
+        open_after,
+        dry_run,
+        return_content,
+    )
+
+
+@mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=True, openWorldHint=False)
+)
 def plot_roc_curve(
     model_path: str,
     file_path: str,
