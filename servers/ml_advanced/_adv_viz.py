@@ -12,6 +12,7 @@ from shared.file_utils import atomic_write_text, embed_content
 from shared.file_utils import read_csv as _read_csv
 from shared.handover import make_context, make_handover
 from shared.html_theme import apply_fig_theme, calc_chart_height, get_theme, plotly_template
+from shared.ml_utils import one_hot_for_linear
 from shared.model_signing import load_signed
 from shared.platform_utils import get_fit_n_jobs, get_learning_curve_row_cap
 from shared.progress import info, ok, warn
@@ -342,9 +343,11 @@ def plot_learning_curve(
         df = df.dropna(subset=[target_column])
         y = df[target_column]
         # Encode categoricals
+        codes: dict = {}
         for col in df.select_dtypes(include=["object", "string"]).columns:
             le = LabelEncoder()
             df[col] = le.fit_transform(df[col].astype(str))
+            codes[col] = {str(c): i for i, c in enumerate(le.classes_)}
         X = df.drop(columns=[target_column]).select_dtypes(include="number").fillna(0)
         n_source_rows = len(X)
 
@@ -373,7 +376,8 @@ def plot_learning_curve(
 
         mod_name, cls_name, kwargs = model_map[model]
         cls = getattr(importlib.import_module(mod_name), cls_name)
-        estimator = cls(**kwargs)
+        # The curve is of the model train_* would fit: a linear one reads text one-hot.
+        estimator, _ = one_hot_for_linear(model, cls(**kwargs), list(X.columns), codes)
 
         scoring = "accuracy" if task == "classification" else "r2"
         train_sizes = np.linspace(0.1, 1.0, 10)
@@ -810,10 +814,17 @@ def generate_cluster_report(
         progress.append(ok("Loaded data", f"{len(df)} rows"))
 
         if label_column not in df.columns:
+            # "Run run_clustering first" was the whole hint, and the sweep had:
+            # it had guessed the column's name. Say what the file does have.
+            shown = ", ".join(str(c) for c in df.columns[:30])
+            written = "cluster_label" in df.columns
             return {
                 "success": False,
-                "error": f"Label column '{label_column}' not found.",
-                "hint": "Use run_clustering(save_labels=True) first.",
+                "error": f"Label column '{label_column}' not found in {dp.name}. Its columns: {shown}.",
+                "hint": "run_clustering wrote its labels as 'cluster_label': pass label_column='cluster_label'."
+                if written
+                else "Run run_clustering with output_path (or save_labels=True) first; it writes the labels "
+                "as 'cluster_label'.",
                 "token_estimate": 30,
             }
 

@@ -227,6 +227,9 @@ def run_clustering(
         # How much of the clustering input was invented rather than measured.
         "imputed_values": imputed_values,
         "output_path": str(out) if (save_labels or output_path) else "",
+        # The column the labels went into, so generate_cluster_report can be
+        # told it: the sweep guessed `cluster` and was refused.
+        "label_column": "cluster_label" if (save_labels or output_path) else "",
         "backup": backup,
         "progress": progress,
         "token_estimate": 0,
@@ -248,7 +251,8 @@ def run_clustering(
     resp["handover"] = make_handover(
         "TRAIN",
         ["find_optimal_clusters", "generate_cluster_report", "generate_eda_report"],
-        {"file_path": file_path, "feature_columns": feature_columns},
+        {"file_path": written or file_path, "feature_columns": feature_columns}
+        | ({"label_column": "cluster_label"} if written else {}),
     )
     resp["token_estimate"] = len(str(resp)) // 4
     return resp

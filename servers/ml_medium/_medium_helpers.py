@@ -37,7 +37,14 @@ from shared.file_utils import get_output_dir, resolve_path
 from shared.file_utils import read_csv as _read_csv
 from shared.html_layout import get_output_path
 from shared.html_theme import _open_file, save_chart
-from shared.ml_utils import _auto_preprocess, baseline_warning, bounded_silhouette, leakage_warning, typical_row
+from shared.ml_utils import (
+    _auto_preprocess,
+    baseline_warning,
+    bounded_silhouette,
+    leakage_warning,
+    one_hot_for_linear,
+    typical_row,
+)
 from shared.platform_utils import get_cv_folds, get_max_models
 from shared.progress import fail, info, ok, warn
 from shared.receipt import append_receipt, read_receipt_log
@@ -155,7 +162,14 @@ def _build_regressor(model: str, degree: int = 5, alpha: float = 0.01, n_estimat
     raise ValueError(f"Unknown regressor: {model!r}")
 
 
-def fit_final_estimator(model_str: str, x: np.ndarray, y: np.ndarray, task: str) -> object:
+def fit_final_estimator(
+    model_str: str,
+    x: np.ndarray,
+    y: np.ndarray,
+    task: str,
+    features: list[str] | None = None,
+    encoding_map: dict | None = None,
+) -> object:
     """Fit one estimator on the whole dataset and return it, ready to save.
 
     Cross-validation fits a throwaway estimator per fold and keeps only its
@@ -181,12 +195,20 @@ def fit_final_estimator(model_str: str, x: np.ndarray, y: np.ndarray, task: str)
 
         _, scaler, inner = estimator
         estimator = Pipeline([("scaler", scaler), ("model", inner)])
+    estimator, _ = one_hot_for_linear(model_str, estimator, features or [], encoding_map or {})
     estimator.fit(x, y)  # type: ignore[attr-defined]
     return estimator
 
 
-def _fit_predict_classifier(model_str: str, x_train: np.ndarray, x_test: np.ndarray, y_train: np.ndarray) -> np.ndarray:
-    """Fit classifier and return predictions on x_test."""
+def _fit_predict_classifier(
+    model_str: str,
+    x_train: np.ndarray,
+    x_test: np.ndarray,
+    y_train: np.ndarray,
+    features: list[str] | None = None,
+    encoding_map: dict | None = None,
+) -> np.ndarray:
+    """Fit classifier and return predictions on x_test; a linear one reads text features one-hot."""
     if model_str == "xgb":
         nc = len(np.unique(y_train))
         dtrain = xgb.DMatrix(x_train, label=y_train)
@@ -212,6 +234,7 @@ def _fit_predict_classifier(model_str: str, x_train: np.ndarray, x_test: np.ndar
         x_te = scaler.transform(x_test)
         clf.fit(x_tr, y_train)
         return clf.predict(x_te)
+    built, _ = one_hot_for_linear(model_str, built, features or [], encoding_map or {})
     built.fit(x_train, y_train)
     return built.predict(x_test)
 
@@ -224,6 +247,8 @@ def _fit_predict_regressor(
     degree: int = 5,
     alpha: float = 0.01,
     n_estimators: int = 10,
+    features: list[str] | None = None,
+    encoding_map: dict | None = None,
 ) -> np.ndarray:
     if model_str == "xgb":
         dtrain = xgb.DMatrix(x_train, label=y_train)
@@ -232,6 +257,7 @@ def _fit_predict_regressor(
         bst = xgb.train(params, dtrain, num_boost_round=5, evals=[], verbose_eval=False)
         return bst.predict(dtest)
     built = _build_regressor(model_str, degree=degree, alpha=alpha, n_estimators=n_estimators)
+    built, _ = one_hot_for_linear(model_str, built, features or [], encoding_map or {})
     built.fit(x_train, y_train)
     return built.predict(x_test)
 

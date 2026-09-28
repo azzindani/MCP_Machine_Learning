@@ -49,11 +49,45 @@ def _node_count(trees: list[dict]) -> int:
     return sum(len(t["left"]) for t in trees)
 
 
+def _fold_one_hot(step: Any, rows: list[list[float]]) -> tuple[list[list[float]], dict]:
+    """Coefficients over the one-hot columns, back onto the label-coded row the page builds.
+
+    A text feature's indicators become one weight per code (0 for the baseline
+    level), which the scorer looks up by the code; every other feature keeps its
+    single coefficient. See shared.ml_utils.one_hot_for_linear.
+    """
+    encoder = step.named_transformers_["one_hot"]
+    nominal = [int(i) for i in step.transformers_[0][2]]
+    remainder = next((list(cols) for name, _, cols in step.transformers_ if name == "remainder"), [])
+    coef = [[0.0] * int(step.n_features_in_) for _ in rows]
+    levels: dict = {}
+    for k, row in enumerate(rows):
+        pos = 0
+        for j, feature in enumerate(nominal):
+            dropped = encoder.drop_idx_[j] if encoder.drop_idx_ is not None else None
+            weights = []
+            for level in range(len(encoder.categories_[j])):
+                if level == dropped:
+                    weights.append(0.0)
+                else:
+                    weights.append(float(row[pos]))
+                    pos += 1
+            levels.setdefault(feature, []).append(weights)
+        for feature in remainder:
+            coef[k][int(feature)] = float(row[pos])
+            pos += 1
+    return coef, levels
+
+
 def extract_model(model: Any, metadata: dict) -> dict:
     """Return a JSON-serialisable description of `model`'s scoring rule.
 
     Raises ModelNotEmbeddable when the estimator has no compact exact form.
     """
+    steps = getattr(model, "named_steps", None) or {}
+    one_hot = steps.get("one_hot")
+    if one_hot is not None:
+        model = steps["model"]
     name = type(model).__name__
     task = metadata.get("task", "classification")
 
@@ -61,10 +95,15 @@ def extract_model(model: Any, metadata: dict) -> dict:
         coef = model.coef_
         intercept = model.intercept_
         multi = getattr(coef, "ndim", 1) > 1
+        rows = [[float(c) for c in row] for row in coef] if multi else [[float(c) for c in coef]]
+        levels: dict = {}
+        if one_hot is not None:
+            rows, levels = _fold_one_hot(one_hot, rows)
         return {
             "kind": "linear",
             "task": task,
-            "coef": [[float(c) for c in row] for row in coef] if multi else [[float(c) for c in coef]],
+            "coef": rows,
+            "levels": levels,
             "intercept": [float(v) for v in intercept] if hasattr(intercept, "__len__") else [float(intercept)],
             "logistic": name == "LogisticRegression",
         }
@@ -166,7 +205,11 @@ _SCORER_JS = """
   function linear(spec, row){
     return spec.coef.map(function(coefs, k){
       let acc = spec.intercept[k] || 0;
-      for (let i = 0; i < coefs.length; i++) acc += coefs[i] * row[i];
+      for (let i = 0; i < coefs.length; i++) {
+        // A text feature read one-hot has a weight per value, looked up by its code.
+        const table = spec.levels && spec.levels[i];
+        acc += table ? (table[k][row[i]] || 0) : coefs[i] * row[i];
+      }
       return spec.logistic ? 1 / (1 + Math.exp(-acc)) : acc;
     });
   }

@@ -9,6 +9,7 @@ import sys
 from datetime import UTC, datetime
 from html import escape as html_escape
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -30,7 +31,7 @@ from shared.file_utils import read_csv as _read_csv
 from shared.handover import make_context, make_handover
 from shared.html_layout import get_output_path as _get_output_path
 from shared.leakage import split_provenance
-from shared.ml_utils import leakage_warning, typical_row
+from shared.ml_utils import encoding_note, leakage_warning, one_hot_for_linear, target_labels, typical_row
 from shared.model_js import ModelNotEmbeddable, prediction_panel
 from shared.model_js import build_payload as build_model_payload
 from shared.model_output import encoding_map_path, resolve_model_path, split_encoding_map
@@ -79,7 +80,7 @@ def tune_hyperparameters(
     model: str,
     task: str,
     search: str = "grid",
-    param_grid: str = "",
+    param_grid: str | dict[str, list[Any]] = "",
     cv: int = 5,
     n_iter: int = 10,
     dry_run: bool = False,
@@ -116,19 +117,27 @@ def tune_hyperparameters(
     if search not in ("grid", "random"):
         return _error(f"Unknown search: '{search}'.", "Use 'grid' or 'random'.")
 
-    if param_grid:
+    # An object is the natural way to write a grid, and the schema said string:
+    # {"max_depth": [2, 4, 8]} was refused before this line ran. Both are read.
+    if isinstance(param_grid, dict):
+        pg = param_grid
+    elif param_grid:
         try:
-            pg: dict = json.loads(param_grid)
+            pg = json.loads(param_grid)
         except json.JSONDecodeError as exc:
-            return _error(f"Invalid param_grid JSON: {exc}", "Provide a valid JSON string for param_grid.")
+            return _error(f"Invalid param_grid JSON: {exc}", 'Pass an object, e.g. {"max_depth": [2, 4, 8]}.')
+        if not isinstance(pg, dict):
+            return _error(
+                f"param_grid must be an object of parameter -> values, got {type(pg).__name__}.",
+                'Pass an object, e.g. {"max_depth": [2, 4, 8]}.',
+            )
     else:
         pg = DEFAULT_PARAMS.get(model, {})
 
     if not pg:
         return _error(
             f"No built-in param grid for '{model}'.",
-            f"These have one: {', '.join(tunable)}. Or pass param_grid as a JSON string, "
-            'e.g. {"alpha": [0.01, 0.1, 1.0]}.',
+            f'These have one: {", ".join(tunable)}. Or pass param_grid, e.g. {{"alpha": [0.01, 0.1, 1.0]}}.',
         )
 
     if model == "xgb":
@@ -179,18 +188,25 @@ def tune_hyperparameters(
     # Keep the pre-encoding frame: typical_row() below has to offer the panel
     # the dataset's own labels ("Google Ads"), not the integers encoding made.
     df_raw = df
-    df, encoding_map, _ = _auto_preprocess(df, target_column)
+    df, encoding_map, encoded_cols = _auto_preprocess(df, target_column)
     x = df.drop(columns=[target_column]).values
     y = df[target_column].values
 
-    estimator = _build_estimator(model, task)
+    features = list(df.drop(columns=[target_column]).columns)
+    estimator, one_hot = one_hot_for_linear(model, _build_estimator(model, task), features, encoding_map)
     scoring = "f1_weighted" if task == "classification" else "r2"
+    # A wrapped model is the pipeline's `model` step, so the grid names its
+    # parameters through it; the answer names them as the caller wrote them.
+    grid = {f"model__{k}": v for k, v in pg.items()} if one_hot else pg
+
+    def unprefixed(params: dict) -> dict:
+        return {k.removeprefix("model__"): v for k, v in params.items()}
 
     if search == "grid":
-        searcher = GridSearchCV(estimator, pg, cv=cv, scoring=scoring, return_train_score=False)
+        searcher = GridSearchCV(estimator, grid, cv=cv, scoring=scoring, return_train_score=False)
     else:
         searcher = RandomizedSearchCV(
-            estimator, pg, cv=cv, n_iter=n_iter, scoring=scoring, random_state=42, return_train_score=False
+            estimator, grid, cv=cv, n_iter=n_iter, scoring=scoring, random_state=42, return_train_score=False
         )
 
     progress.append(info(f"Running {search} search", f"cv={cv}"))
@@ -210,6 +226,11 @@ def tune_hyperparameters(
     results_df = pd.DataFrame(searcher.cv_results_)
     results_df = results_df.sort_values("mean_test_score", ascending=False).head(20)
     top_results = results_df[["mean_test_score", "std_test_score", "params"]].to_dict("records")
+    for row in top_results:
+        row["params"] = unprefixed(row["params"])
+    best_params = unprefixed(searcher.best_params_)
+    best = searcher.best_estimator_
+    best_type = type(best.named_steps["model"] if one_hot else best).__name__
 
     ts = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
     import os as _os
@@ -229,14 +250,15 @@ def tune_hyperparameters(
             pass
 
     metadata = {
-        "model_type": type(searcher.best_estimator_).__name__,
+        "model_type": best_type,
         "task": task,
         "trained_on": path.name,
         "training_date": datetime.now(UTC).isoformat(),
         "feature_columns": list(df.drop(columns=[target_column]).columns),
         "target_column": target_column,
         "encoding_map": encoding_map,
-        "best_params": searcher.best_params_,
+        "one_hot_columns": one_hot,
+        "best_params": best_params,
         "best_score": float(searcher.best_score_),
         "search_type": search,
         # A tuned score comes from cross-validation, not a holdout, and the
@@ -248,7 +270,7 @@ def tune_hyperparameters(
         "python_version": sys.version,
         "sklearn_version": sklearn.__version__,
     }
-    manifest_path = _save_model(searcher.best_estimator_, mp, metadata)
+    manifest_path = _save_model(best, mp, metadata)
     progress.append(ok("Saved best model", mp.name))
 
     append_receipt(
@@ -262,7 +284,8 @@ def tune_hyperparameters(
         "task": task,
         "search": search,
         "best_score": round(float(searcher.best_score_), 4),
-        "best_params": searcher.best_params_,
+        "best_params": best_params,
+        "feature_encoding": encoding_note(model, one_hot, [c for c in encoded_cols if c in features]),
         "top_results": top_results,
         "model_path": str(mp),
         "manifest_path": str(manifest_path),
@@ -916,6 +939,119 @@ _SECTION_TITLES = {
     "importance": "Feature Importance",
 }
 
+_LINEAR = ("LinearRegression", "Ridge", "Lasso", "LogisticRegression")
+
+
+def _class_counts(confusion: dict) -> dict[int, dict[str, int]] | None:
+    """Per class code: tp, fp, fn, support -- from the binary TP/FP/FN/TN the trainer stored."""
+    if not all(k in confusion for k in ("TP", "FP", "FN", "TN")):
+        return None
+    tp, fp, fn, tn = (int(confusion[k]) for k in ("TP", "FP", "FN", "TN"))
+    return {
+        1: {"tp": tp, "fp": fp, "fn": fn, "support": tp + fn},
+        0: {"tp": tn, "fp": fn, "fn": fp, "support": tn + fp},
+    }
+
+
+def _per_class(confusion: dict, labels: list[str] | None) -> list[dict]:
+    """Precision, recall, F1 and support per class, named as the data names them."""
+
+    def name(code: int) -> str:
+        return labels[code] if labels and code < len(labels) else str(code)
+
+    counts = _class_counts(confusion)
+    if counts is not None:
+        rows = []
+        for code in (0, 1):
+            c = counts[code]
+            precision = c["tp"] / (c["tp"] + c["fp"]) if c["tp"] + c["fp"] else 0.0
+            recall = c["tp"] / (c["tp"] + c["fn"]) if c["tp"] + c["fn"] else 0.0
+            f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+            rows.append(
+                {
+                    "class": name(code),
+                    "precision": round(precision, 4),
+                    "recall": round(recall, 4),
+                    "f1": round(f1, 4),
+                    "support": c["support"],
+                }
+            )
+        return rows
+    rows = []
+    for key, stats in confusion.items():
+        if key.startswith("class_") and isinstance(stats, dict):
+            code = key.removeprefix("class_")
+            label = name(int(float(code))) if code.replace(".", "", 1).isdigit() else code
+            rows.append({"class": label, **{k: stats.get(k) for k in ("precision", "recall", "f1", "support")}})
+    return rows
+
+
+def _baseline(task: str, metrics: dict, per_class: list[dict]) -> dict:
+    """What guessing scores on the same test rows, beside what the model scored.
+
+    The report printed accuracy 0.915 with nothing to read it against, and on a
+    90/10 target 0.9 is what always answering the majority class scores.
+    """
+    if task == "regression":
+        if metrics.get("r2") is None:
+            return {}
+        return {"rule": "predict the mean of the test rows", "metric": "r2", "baseline": 0.0, "model": metrics["r2"]}
+    total = sum(int(r["support"] or 0) for r in per_class)
+    if not total or metrics.get("accuracy") is None:
+        return {}
+    top = max(per_class, key=lambda r: int(r["support"] or 0))
+    share = round(int(top["support"]) / total, 4)
+    return {
+        "rule": f"always answer {top['class']!r}",
+        "metric": "accuracy",
+        "baseline": share,
+        "model": metrics["accuracy"],
+        "lift": round(float(metrics["accuracy"]) - share, 4),
+    }
+
+
+def _coefficient_rows(model_obj: Any, metadata: dict) -> list[dict] | None:
+    """A linear model's coefficients, each named as the data names it; None for any other model.
+
+    A text feature read one-hot has a coefficient per value against its first
+    value (shared.ml_utils.one_hot_for_linear); read back here as
+    "region = EMEA (vs APAC)".
+    """
+    steps = getattr(model_obj, "named_steps", None) or {}
+    encoder = steps.get("one_hot")
+    inner = steps["model"] if encoder is not None else model_obj
+    if type(inner).__name__ not in _LINEAR or not hasattr(inner, "coef_"):
+        return None
+    features = list(metadata.get("feature_columns", []))
+    encoding = metadata.get("encoding_map", {}) or {}
+    coef = np.atleast_2d(np.asarray(inner.coef_, dtype=float))
+    names: list[str] = []  # one per column of coef
+    if encoder is not None:
+        one_hot = encoder.named_transformers_["one_hot"]
+        nominal = [int(i) for i in encoder.transformers_[0][2]]
+        remainder = next((list(c) for n, _, c in encoder.transformers_ if n == "remainder"), [])
+        for j, index in enumerate(nominal):
+            feature = features[index] if index < len(features) else str(index)
+            by_code = {int(v): str(k) for k, v in (encoding.get(feature) or {}).items()}
+            levels = [by_code.get(int(c), str(c)) for c in one_hot.categories_[j]]
+            dropped = one_hot.drop_idx_[j] if one_hot.drop_idx_ is not None else None
+            base = f" (vs {levels[dropped]})" if dropped is not None else ""
+            names += [f"{feature} = {level}{base}" for k, level in enumerate(levels) if k != dropped]
+        names += [features[int(i)] if int(i) < len(features) else str(i) for i in remainder]
+    else:
+        names = list(features)
+    logistic = type(inner).__name__ == "LogisticRegression"
+    rows = []
+    for column, label in enumerate(names[: coef.shape[1]]):
+        values = coef[:, column]
+        row: dict = {"term": label, "coefficient": round(float(values[0]), 6)}
+        if logistic and len(values) == 1:
+            row["odds_ratio"] = round(float(np.exp(values[0])), 6)
+        elif len(values) > 1:
+            row["coefficient_by_class"] = [round(float(v), 6) for v in values]
+        rows.append(row)
+    return rows
+
 
 def generate_training_report(
     model_path: str,
@@ -984,13 +1120,14 @@ def generate_training_report(
             }
         )
 
+    # Names from the data -- the target column, the file -- are text on the page.
     overview_html = (
         f"<table><tbody>"
-        f"<tr><td>Model</td><td>{model_type}</td></tr>"
-        f"<tr><td>Task</td><td>{task}</td></tr>"
-        f"<tr><td>Target</td><td>{target_column}</td></tr>"
-        f"<tr><td>Trained on</td><td>{trained_on}</td></tr>"
-        f"<tr><td>Date</td><td>{training_date[:19] if training_date else ''}</td></tr>"
+        f"<tr><td>Model</td><td>{html_escape(str(model_type))}</td></tr>"
+        f"<tr><td>Task</td><td>{html_escape(str(task))}</td></tr>"
+        f"<tr><td>Target</td><td>{html_escape(str(target_column))}</td></tr>"
+        f"<tr><td>Trained on</td><td>{html_escape(str(trained_on))}</td></tr>"
+        f"<tr><td>Date</td><td>{html_escape(training_date[:19]) if training_date else ''}</td></tr>"
         f"<tr><td>Features</td><td>{len(feature_columns)}</td></tr>"
         f"</tbody></table>"
     )
@@ -1018,16 +1155,97 @@ def generate_training_report(
     # at the tool that can produce one; this is the sibling that did not.
     omitted: dict[str, str] = {}
 
+    # Read against something. The page printed accuracy with no baseline,
+    # per-class results as a TP/FP/FN/TN list, and nothing about a linear
+    # model's coefficients (sweep F19).
     confusion = metrics.get("confusion_matrix", {})
-    if confusion:
-        cm_rows = "".join(f"<tr><td>{k}</td><td>{v}</td></tr>" for k, v in confusion.items())
-        cm_html = f"<table><thead><tr><th>Category</th><th>Count</th></tr></thead><tbody>{cm_rows}</tbody></table>"
-        sections.append({"id": "confusion", "heading": "Confusion Matrix", "html": cm_html})
-    elif task != "regression":
+    labels = target_labels(metadata)
+    per_class = _per_class(confusion, labels) if confusion else []
+    baseline = _baseline(task, metrics, per_class)
+    if baseline:
+        verdict = (
+            "this model does no better."
+            if baseline["metric"] == "accuracy" and baseline["lift"] <= 0
+            else f"this model scores {baseline['model']:.4f}."
+        )
+        sections.append(
+            {
+                "id": "baseline",
+                "heading": "Against a baseline",
+                "html": (
+                    f"<p>To {html_escape(baseline['rule'])} scores {baseline['metric']} "
+                    f"<b>{baseline['baseline']:.4f}</b> on the same test rows; {html_escape(verdict)}</p>"
+                ),
+            }
+        )
+    if per_class:
+        rows_html = "".join(
+            f"<tr><td>{html_escape(str(r['class']))}</td><td>{r['precision']}</td><td>{r['recall']}</td>"
+            f"<td>{r['f1']}</td><td>{r['support']}</td></tr>"
+            for r in per_class
+        )
+        sections.append(
+            {
+                "id": "per_class",
+                "heading": "Per-class results",
+                "html": "<table><thead><tr><th>Class</th><th>Precision</th><th>Recall</th><th>F1</th><th>Support</th>"
+                f"</tr></thead><tbody>{rows_html}</tbody></table>",
+            }
+        )
+    counts = _class_counts(confusion) if confusion else None
+    if counts is not None:
+        import plotly.graph_objects as go
+
+        from shared.html_theme import plotly_div
+
+        names = [labels[i] if labels and i < len(labels) else str(i) for i in (0, 1)]
+        grid = [[counts[0]["tp"], counts[0]["fn"]], [counts[1]["fn"], counts[1]["tp"]]]
+        fig = go.Figure(
+            go.Heatmap(
+                z=grid,
+                x=[f"predicted {n}" for n in names],
+                y=[f"actual {n}" for n in names],
+                text=[[f"{v:,}" for v in row] for row in grid],
+                texttemplate="%{text}",
+                colorscale="Blues",
+                showscale=False,
+                hovertemplate="%{y}, %{x}: %{z}<extra></extra>",
+            )
+        )
+        fig.update_layout(height=340, margin={"l": 20, "r": 20, "t": 20, "b": 20}, yaxis={"autorange": "reversed"})
+        sections.append({"id": "confusion", "heading": "Confusion Matrix", "html": plotly_div(fig, 360, theme)})
+    elif task != "regression" and not per_class:
         omitted["confusion"] = (
             "This model carries no confusion matrix: only train_classifier() records one. "
             "Retrain with train_classifier(), or use evaluate_model() to score this model "
             "against a held-out file."
+        )
+
+    coefficients = _coefficient_rows(model_obj, metadata) if model_obj is not None else None
+    if coefficients:
+        logistic = any("odds_ratio" in r for r in coefficients)
+        by_class = any("coefficient_by_class" in r for r in coefficients)
+        head = "<th>Term</th><th>Coefficient</th>" + ("<th>Odds ratio</th>" if logistic else "")
+        body = "".join(
+            f"<tr><td>{html_escape(r['term'])}</td><td>"
+            + (", ".join(str(v) for v in r["coefficient_by_class"]) if by_class else str(r["coefficient"]))
+            + "</td>"
+            + (f"<td>{r['odds_ratio']}</td>" if logistic else "")
+            + "</tr>"
+            for r in coefficients
+        )
+        note = (
+            "Each coefficient is per unit of its feature, so their sizes compare only within one feature; "
+            "a text value's is against the column's first value."
+            + (" An odds ratio above 1 raises the odds of the positive class." if logistic else "")
+            + (" One coefficient per class, in class order." if by_class else "")
+        )
+        sections.append(
+            {
+                "id": "coefficients",
+                "heading": "Coefficients",
+                "html": f"<p>{html_escape(note)}</p><table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>",
+            }
         )
 
     if model_obj is not None and hasattr(model_obj, "feature_importances_"):
@@ -1036,12 +1254,11 @@ def generate_training_report(
         fi_rows = "".join(f"<tr><td>{f}</td><td>{round(i, 4)}</td></tr>" for f, i in fi_pairs)
         fi_html = f"<table><thead><tr><th>Feature</th><th>Importance</th></tr></thead><tbody>{fi_rows}</tbody></table>"
         sections.append({"id": "importance", "heading": "Feature Importance (Top 10)", "html": fi_html})
-    else:
+    elif not coefficients:
         kind = type(model_obj).__name__ if model_obj is not None else "this model"
         omitted["importance"] = (
-            f"{kind} exposes no feature_importances_ — linear and distance-based models "
-            "weight features differently. Train a tree or forest (dtc, rf, dtr, rfr) for "
-            "importances, or read the coefficients from the model itself."
+            f"{kind} exposes no feature_importances_ and no coefficients. Train a tree or "
+            "forest (dtc, rf, dtr, rfr) for importances, or a linear model (lr, lir) for coefficients."
         )
 
     # Said on the page as well as in the response: a report is read as a file,
@@ -1095,6 +1312,7 @@ def generate_training_report(
         "model_type": model_type,
         "task": task,
         "interactive_prediction": embedded,
+        "baseline": baseline,
         "sections_generated": [sec["id"] for sec in sections],
         "sections_omitted": omitted,
         "progress": progress,

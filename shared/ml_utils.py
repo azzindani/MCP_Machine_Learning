@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import LabelEncoder
@@ -187,6 +189,51 @@ def _auto_preprocess(df: pd.DataFrame, target_column: str) -> tuple[pd.DataFrame
         df[num_cols] = df[num_cols].fillna(medians)
 
     return df, encoding_map, encoded_cols
+
+
+# Models that weigh a feature by a single coefficient. Training label-encodes a
+# text column alphabetically -- APAC 0, EMEA 1, LATAM 2 -- which a tree only ever
+# splits on, but a coefficient reads as a quantity: LATAM counts as twice EMEA.
+LINEAR_MODELS = frozenset({"lr", "lir", "lar", "rr", "pr"})
+
+
+def one_hot_for_linear(model: str, estimator: Any, feature_cols: list[str], encoding_map: dict) -> tuple[Any, list[str]]:
+    """Wrap a linear estimator so each text feature enters it as indicators, not as its code.
+
+    The saved model still takes the label-coded row every prediction path
+    already builds; the one-hot step inside it expands the codes. The first
+    level of each column is the baseline (drop="first"), so a coefficient reads
+    as "this value against that one", and a value never seen in training scores
+    as the baseline. Returns (estimator, the columns one-hot encoded); the
+    estimator comes back unwrapped when the model is not linear or no feature is text.
+    """
+    nominal = [i for i, column in enumerate(feature_cols) if column in encoding_map]
+    if model not in LINEAR_MODELS or estimator is None or not nominal:
+        return estimator, []
+    from sklearn.compose import ColumnTransformer
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import OneHotEncoder
+
+    levels = [list(range(len(encoding_map[feature_cols[i]]))) for i in nominal]
+    encoder = OneHotEncoder(categories=levels, drop="first", handle_unknown="ignore", sparse_output=False)
+    step = ColumnTransformer([("one_hot", encoder, nominal)], remainder="passthrough")
+    return Pipeline([("one_hot", step), ("model", estimator)]), [feature_cols[i] for i in nominal]
+
+
+def encoding_note(model: str, one_hot: list[str], encoded_cols: list[str]) -> dict:
+    """How the text features reached the model, for the response: one-hot or label codes."""
+    if one_hot:
+        return {
+            "one_hot": one_hot,
+            "note": "Each text column entered this linear model as one indicator per value, "
+            "its first value (alphabetically) as the baseline.",
+        }
+    if encoded_cols:
+        return {
+            "label_codes": encoded_cols,
+            "note": "Text columns entered as alphabetical integer codes, which a tree model only splits on.",
+        }
+    return {}
 
 
 def target_labels(metadata: dict) -> list[str] | None:
