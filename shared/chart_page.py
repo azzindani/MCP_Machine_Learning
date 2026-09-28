@@ -20,6 +20,8 @@ check; a diff here is a visual regression in one of the two products.
 
 from __future__ import annotations
 
+import html as _html
+
 # ---------------------------------------------------------------------------
 # Plotly margins
 # ---------------------------------------------------------------------------
@@ -140,6 +142,10 @@ def chart_page_html(
     # Same specificity as the `--chart-h` declaration in CHART_PAGE_CSS and
     # written after it, so it wins on order without an !important.
     height_css = f"\nbody{{--chart-h:{round(float(chart_height))}px}}" if chart_height else ""
+    # The heading is the figure's title, and a title names columns: a column
+    # called `<img src=x onerror=...>` became markup in the <h1> and ran when
+    # the page was opened. Text, always.
+    title = _html.escape(title)
     return f"""<!DOCTYPE html>
 <html lang="en"><head>
 <meta charset="utf-8">
