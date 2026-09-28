@@ -166,6 +166,30 @@ def refused(tool: str, exc: PathOutsideRootError) -> dict[str, Any]:
     }
 
 
+_DENIED = re.compile(r"\[Errno 13\] Permission denied: '(?P<path>[^']+)'")
+
+
+def _unwritable_hint(path: str) -> str:
+    folder = Path(path).parent if Path(path).suffix else Path(path)
+    return (
+        f"The server may not write in {folder}. Name another output folder (output_dir / output_path), "
+        "or give the server's user write access to that one. Your data was not the problem."
+    )
+
+
+def unwritable(tool: str, exc: PermissionError) -> dict[str, Any]:
+    """The fleet's failure shape for an output the server was not allowed to write."""
+    path = str(exc.filename or "")
+    return {
+        "success": False,
+        "op": tool,
+        "error": f"Permission denied writing {path}" if path else str(exc),
+        "hint": _unwritable_hint(path) if path else "The server was refused access to a file; name another output folder.",
+        "progress": [],
+        "token_estimate": 0,
+    }
+
+
 def _suggesting(fn: Any, name: str) -> Any:
     @functools.wraps(fn)
     def suggesting(*a: Any, **kw: Any) -> Any:
@@ -173,11 +197,19 @@ def _suggesting(fn: Any, name: str) -> Any:
         # and anomaly labels, split_dataset, every HTML report, model outputs)
         # let the refusal propagate, and the caller got "Error executing tool"
         # with no success, hint or op -- found live on anomaly_detection.
+        # An output folder the server may not write in is the same kind of
+        # answer: eight actions let the PermissionError escape raw, and the ones
+        # that caught it blamed the data ("verify your data first").
         try:
             result = fn(*a, **kw)
         except PathOutsideRootError as exc:
             return refused(name, exc)
+        except PermissionError as exc:
+            return unwritable(name, exc)
         if isinstance(result, dict) and result.get("success") is False:
+            denied = _DENIED.search(str(result.get("error", "")))
+            if denied:
+                return {**result, "hint": _unwritable_hint(denied["path"])}
             try:
                 return suggest(result, kw)
             except Exception:
