@@ -59,6 +59,13 @@ def _plain(value: Any) -> Any:
     return round(float(value), 4) if isinstance(value, float) else str(value)
 
 
+def _num(value: float) -> str:
+    """Four significant figures, digits grouped, never in e-notation: an error in house prices reads as 19,980."""
+    if value == 0 or not np.isfinite(value):
+        return f"{value:g}"
+    return f"{value:,.{max(0, 3 - int(np.floor(np.log10(abs(value)))))}f}"
+
+
 class _Scorer:
     """A saved model and its manifest, scoring raw rows exactly as evaluate_model does."""
 
@@ -491,9 +498,9 @@ def generate_model_dashboard(
     else:
         perf = _regression(y, pred)
         base = perf["baseline"]
-        headline = f"R² {perf['r2']:.3f}; RMSE {perf['rmse']:,.4g} against {base['rmse']:,.4g} for {base['rule']}"
-        cards = {"R²": f"{perf['r2']:.3f}", "RMSE": f"{perf['rmse']:,.4g}", "Baseline RMSE": f"{base['rmse']:,.4g}",
-                 "MAE": f"{perf['mae']:,.4g}"}  # fmt: skip
+        headline = f"R² {perf['r2']:.3f}; RMSE {_num(perf['rmse'])} against {_num(base['rmse'])} for {base['rule']}"
+        cards = {"R²": f"{perf['r2']:.3f}", "RMSE": _num(perf["rmse"]), "Baseline RMSE": _num(base["rmse"]),
+                 "MAE": _num(perf["mae"])}  # fmt: skip
         sections.append({"id": "performance", "heading": "Performance", "html": metrics_cards_html(cards)})
         resid = y - pred
         scatter = go.Figure(go.Scattergl(x=y, y=pred, mode="markers", marker={"size": 4, "opacity": 0.5}, name="rows"))

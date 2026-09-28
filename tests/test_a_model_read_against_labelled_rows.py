@@ -21,6 +21,7 @@ import pandas as pd
 import pytest
 from sklearn.metrics import r2_score, roc_auc_score
 
+from servers.ml_advanced._adv_dashboard import _num
 from servers.ml_advanced._adv_viz import generate_cluster_report
 from servers.ml_advanced.engine import generate_model_dashboard
 from servers.ml_basic._basic_train import train_classifier, train_regressor
@@ -180,6 +181,14 @@ def test_a_regressor_is_read_against_the_mean(home):
     assert "residuals" in d["sections_generated"] and "threshold" not in d["sections_generated"]
 
 
+@pytest.mark.parametrize(
+    ("value", "shown"),
+    [(19980.4, "19,980"), (454000.0, "454,000"), (1234.56, "1,235"), (3.14159, "3.142"), (0.0012345, "0.001234")],
+)
+def test_an_error_reads_in_the_targets_own_digits(value, shown):
+    assert _num(value) == shown
+
+
 def test_a_multiclass_model_has_no_threshold(home):
     df = _churn(900, 6)
     df["tier"] = pd.cut(df["charges"], [-np.inf, 60, 80, np.inf], labels=["low", "mid", "high"]).astype(str)
@@ -241,7 +250,8 @@ def test_a_cluster_is_named_by_what_sets_it_apart(tmp_path, monkeypatch):
     personas = {p["cluster"]: p for p in r["personas"]}
     assert personas["0"]["name"] == "high income, low age" or personas["0"]["name"] == "low age, high income"
     assert personas["1"]["share"] == 0.4 and personas["1"]["name"].startswith(("low income", "high age"))
-    assert "Personas" in Path(r["output_path"]).read_text(encoding="utf-8")
+    page = Path(r["output_path"]).read_text(encoding="utf-8")
+    assert "Personas" in page and "— 40 rows, 40.0%" in page
 
 
 def test_the_response_is_json_a_strict_reader_accepts(home, model):
