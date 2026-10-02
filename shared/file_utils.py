@@ -167,6 +167,57 @@ def resolve_path(
 
 
 _ENCODING_FALLBACKS = ("utf-8-sig", "cp1252", "latin-1")
+# A byte-order mark says the encoding outright. Without it a UTF-16 file (what Excel's "Unicode text" writes)
+# "decodes" as cp1252 -- every character followed by a NUL -- and reads as one column of garbage.
+_BOMS: tuple[tuple[bytes, str], ...] = ((b"\xff\xfe", "utf-16"), (b"\xfe\xff", "utf-16"), (b"\xef\xbb\xbf", "utf-8-sig"))
+
+
+def sniff_encoding(file_path: str | Path, default: str = "utf-8") -> str:
+    """The encoding a byte-order mark names, else `default`."""
+    try:
+        with Path(file_path).open("rb") as fh:
+            head = fh.read(3)
+    except OSError:
+        return default
+    return next((enc for mark, enc in _BOMS if head.startswith(mark)), default)
+
+
+def sniff_separator(file_path: str | Path, encoding: str = "utf-8", default: str = ",") -> str:
+    """The delimiter a file's first lines agree on: `;` (what Excel writes in much of Europe and Turkey), a tab or
+    `|`, when the header holds no comma. Anything unclear is `default`.
+
+    A semicolon file read as comma-separated is one column holding every header and every row whole, and
+    every tool then reports a one-column table without saying why.
+    """
+    try:
+        with Path(file_path).open("rb") as fh:
+            raw = fh.read(16384)
+    except OSError:
+        return default
+    text = raw.decode("utf-16" if encoding == "utf-16" else "utf-8", errors="replace").lstrip("\ufeff")
+    lines = [line for line in text.splitlines()[:6] if line.strip()]
+    if len(lines) < 2:
+        return default
+
+    def outside_quotes(line: str, mark: str) -> int:
+        count, quoted = 0, False
+        for char in line:
+            if char == '"':
+                quoted = not quoted
+            elif char == mark and not quoted:
+                count += 1
+        return count
+
+    if outside_quotes(lines[0], default):
+        return default
+    best, best_count = default, 0
+    for mark in (";", "\t", "|"):
+        counts = {outside_quotes(line, mark) for line in lines[:5]}
+        # The same number of delimiters on every line it was checked on, and at least one.
+        if len(counts) == 1 and (n := counts.pop()) > best_count:
+            best, best_count = mark, n
+    return best
+
 
 
 def read_csv(
@@ -185,6 +236,10 @@ def read_csv(
     Strips leading/trailing whitespace from column names.
     Compatible with files produced by MCP_Data_Analyst.
     """
+    if encoding == "utf-8":
+        encoding = sniff_encoding(file_path, encoding)
+    if separator == ",":
+        separator = sniff_separator(file_path, encoding)
     kwargs: dict = {"sep": separator, "low_memory": False}
     if max_rows > 0:
         kwargs["nrows"] = max_rows
