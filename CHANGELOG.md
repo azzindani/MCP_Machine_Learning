@@ -11,6 +11,13 @@ guess dressed as a record.
 
 ## [Unreleased]
 
+### Fixed — a file is read as what it says it is
+
+- A CSV's byte-order mark and delimiter are read from the file (`sniff_encoding`, `sniff_separator`): a
+  UTF-16 export, or a `;`, tab or `|` file whose header and first rows agree on it, no longer reads as one
+  column. A comma file, a quoted comma and a one-column file are left as they were. `query_data` reads a
+  UTF-16 table through DuckDB too.
+
 ### Fixed — a model is asked about a null the way it was trained on one
 
 - Training fills a number's null with the column median and gives a text null its own class; every
