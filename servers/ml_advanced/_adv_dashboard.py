@@ -37,7 +37,7 @@ from shared.file_utils import embed_content, resolve_path
 from shared.file_utils import read_csv as _read_csv
 from shared.handover import make_context, make_handover
 from shared.leakage import leakage_note, leakage_suspects
-from shared.ml_utils import target_labels
+from shared.ml_utils import model_matrix, target_labels
 from shared.progress import ok, warn
 
 from ._adv_helpers import _error, _load_model, get_output_path
@@ -78,16 +78,8 @@ class _Scorer:
         self.labels = target_labels(metadata) if self.task == "classification" else None
 
     def matrix(self, frame: pd.DataFrame) -> np.ndarray:
-        df = frame.copy()
-        for col, mapping in self.encoding.items():
-            if col in df.columns and not str(col).startswith("__target__"):
-                df[col] = df[col].astype(str).map(mapping).fillna(-1).astype(int)
-        X = df[self.features].apply(pd.to_numeric, errors="coerce").fillna(0).values.astype(float)
-        if self.meta.get("scaler") is not None:
-            X = self.meta["scaler"].transform(X)
-        if self.meta.get("poly") is not None:
-            X = self.meta["poly"].transform(X)
-        return X
+        x, _ = model_matrix(frame, self.meta, self.features)
+        return x
 
     def truth(self, series: pd.Series) -> np.ndarray:
         if self.task != "classification":

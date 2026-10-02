@@ -14,7 +14,7 @@ from shared.counts import counted
 from shared.file_utils import get_output_dir, resolve_path
 from shared.file_utils import read_csv as _read_csv
 from shared.handover import make_context, make_handover
-from shared.ml_utils import label_for, target_labels
+from shared.ml_utils import label_for, model_matrix, prep_notes, target_labels
 from shared.model_signing import is_signed_by_us
 from shared.platform_utils import get_max_rows
 from shared.progress import info, ok, warn
@@ -66,12 +66,6 @@ def get_predictions(
         df = _read_csv(str(data_path))
         progress.append(ok(f"Loaded {pname(file_path)}", f"{len(df):,} rows"))
 
-        # apply same encoding as training
-        encoding_map: dict = metadata.get("encoding_map", {})
-        for col, mapping in encoding_map.items():
-            if col in df.columns:
-                df[col] = df[col].astype(str).map(mapping).fillna(-1).astype(int)
-
         feature_cols: list[str] = metadata.get("feature_columns", [])
         missing = [c for c in feature_cols if c not in df.columns]
         if missing:
@@ -80,17 +74,10 @@ def get_predictions(
                 "Ensure the data file has the same columns used during training.",
             )
 
-        x = df[feature_cols].fillna(0).values.astype(float)
-
-        # apply scaler if used
-        sc = metadata.get("scaler")
-        if sc is not None:
-            x = sc.transform(x)
-
-        # apply poly if used
-        poly = metadata.get("poly")
-        if poly is not None:
-            x = poly.transform(x)
+        # The rows go through the preparation the model was trained behind: text as
+        # its training codes, a number's null as that column's training median.
+        x, prep = model_matrix(df, metadata, feature_cols)
+        progress.extend(prep_notes(prep))
 
         cap = min(max_rows, get_max_rows())
         x_slice = x[:cap]
@@ -263,24 +250,12 @@ def predict_single(model_path: str, input_data: str) -> dict:
     # was used.
     extras = [k for k in record if k not in feature_columns]
 
-    # Build single-row DataFrame and apply encoding
+    # Build the one-row frame and prepare it as training prepared its rows.
     row_df = pd.DataFrame([{c: record[c] for c in feature_columns}])
-    encoding_map: dict = metadata.get("encoding_map", {})
-    for col, mapping in encoding_map.items():
-        if col in row_df.columns:
-            row_df[col] = row_df[col].map(mapping).fillna(-1)
-    # Fill missing numerics
-    for col in row_df.select_dtypes(include="number").columns:
-        if bool(row_df[col].isnull().any()):
-            row_df[col] = row_df[col].fillna(0)
-
-    x = row_df.values
     task = metadata.get("task", "classification")
-    scaler = metadata.get("scaler")
-    if scaler is not None:
-        x = scaler.transform(x)
 
     try:
+        x, prep = model_matrix(row_df, metadata, feature_columns)
         if hasattr(model, "predict") and not (
             hasattr(model, "predict_proba") is False and type(model).__name__ == "Booster"
         ):
@@ -307,6 +282,7 @@ def predict_single(model_path: str, input_data: str) -> dict:
         )
 
     progress.append(ok("Loaded model", mp.name))
+    progress.extend(prep_notes(prep))
     if extras:
         progress.append(
             warn(
@@ -331,6 +307,7 @@ def predict_single(model_path: str, input_data: str) -> dict:
         "probabilities": prob,
         "feature_columns": feature_columns,
         "ignored_fields": extras,
+        "unseen_categories": {c: record[c] for c in prep["unseen"]},
         "progress": progress,
         "token_estimate": 0,
     }

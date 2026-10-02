@@ -11,7 +11,7 @@ import pandas as pd
 from shared.file_utils import PathOutsideRootError, embed_content
 from shared.handover import make_context, make_handover
 from shared.leakage import leakage_note, leakage_suspects
-from shared.ml_utils import label_for, target_labels
+from shared.ml_utils import label_for, model_matrix, prep_notes, target_labels
 from shared.quality import quality_report
 from shared.small_sample import rounded
 
@@ -721,11 +721,9 @@ def evaluate_model(
         candidates = [c for c in (feature_columns or list(df.columns)) if c in df.columns and c != target_column]
         suspects = leakage_suspects(df, target_column, candidates)
 
-        # Encode categoricals using stored map
-        for col, mapping in encoding_map.items():
-            if col in df.columns and col != target_column:
-                df[col] = df[col].astype(str).map(mapping).fillna(-1).astype(int)
-
+        # Prepared as training prepared its rows: text as its training codes, a
+        # number's null as that column's training median (the leakage read above
+        # needed the nulls; the model needs them filled).
         available = [c for c in feature_columns if c in df.columns]
         if not available:
             return {
@@ -735,11 +733,8 @@ def evaluate_model(
                 "token_estimate": 30,
             }
 
-        X = df[available].fillna(0).values.astype(float)
-        if scaler is not None:
-            X = scaler.transform(X)
-        if poly is not None:
-            X = poly.transform(X)
+        X, prep = model_matrix(df, metadata, available, target=target_column)
+        progress.extend(prep_notes(prep))
 
         y_true = df[target_column].values
 
@@ -971,37 +966,23 @@ def batch_predict(
             }
         progress.append(ok("Loaded data", f"{len(df):,} rows"))
 
-        # Encode a copy, not the caller's frame. The label encoding exists only
-        # to build X, it was applied to `df` in place, and `df` is what gets
-        # written out below -- so the predictions CSV came back carrying the
-        # training-time integers under the original column headers. A row that
-        # went in as `campaign_platform: "Google Ads", device: "Desktop"` was
-        # saved as `1` and `0` beneath those same names, reported as success.
-        # The file misrepresents itself, and only reading it back shows it.
-        encoded = df.copy()
-        unmapped: dict[str, int] = {}
-        for col, mapping in encoding_map.items():
-            if col in encoded.columns:
-                mapped = encoded[col].astype(str).map(mapping)
-                # `fillna(-1)` makes a category the model never saw into a real
-                # category as far as the model is concerned. That is the only
-                # thing to do with it here, but it is worth saying out loud
-                # rather than letting it ride under success:true.
-                missing = int(mapped.isna().sum())
-                if missing:
-                    unmapped[col] = missing
-                encoded[col] = mapped.fillna(-1).astype(int)
-
-        if unmapped:
-            detail = ", ".join(f"{c}: {n} row(s)" for c, n in unmapped.items())
-            progress.append(warn("Unseen categories encoded as -1", detail))
-
-        available = [c for c in feature_columns if c in encoded.columns]
-        X = encoded[available].fillna(0).values.astype(float)
-        if scaler is not None:
-            X = scaler.transform(X)
-        if poly is not None:
-            X = poly.transform(X)
+        # The features are prepared into a matrix of their own, never in place: the
+        # label encoding exists only to build X, and `df` is what gets written out
+        # below. Applied to `df` itself it saved the training-time integers under the
+        # original column headers -- a row that went in as `device: "Desktop"` came
+        # back as `0` beneath that name, reported as success.
+        absent = [c for c in feature_columns if c not in df.columns]
+        if absent:
+            return {
+                "success": False,
+                "op": "batch_predict",
+                "error": f"Feature columns missing in data: {', '.join(absent)}",
+                "hint": "Use a file with the columns the model was trained on.",
+                "token_estimate": 40,
+            }
+        X, prep = model_matrix(df, metadata, feature_columns)
+        unmapped = prep["unseen"]
+        progress.extend(prep_notes(prep))
 
         if model_key == "xgb" or isinstance(model_obj, xgb.Booster):
             dmat = xgb.DMatrix(X)

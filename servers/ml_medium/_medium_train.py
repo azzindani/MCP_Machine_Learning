@@ -13,7 +13,7 @@ import sklearn
 from shared.feature_select import select_features
 from shared.file_utils import apply_default_mode, atomic_write_json
 from shared.handover import make_context, make_handover
-from shared.leakage import leakage_note, leakage_suspects, split_provenance
+from shared.leakage import leakage_note, leakage_suspects, split_provenance, with_original_nulls
 from shared.ml_utils import LINEAR_MODELS, encoding_note
 from shared.model_output import resolve_model_path
 from shared.model_signing import dump_signed
@@ -537,7 +537,7 @@ def compare_models(
     # the loan resolves -- and no single column determined anything. That guard
     # is tuned for "obviously impossible"; this one is for "quietly
     # meaningless", which is the one that gets shipped.
-    suspects = leakage_suspects(df, target_column, feature_cols)
+    suspects = leakage_suspects(with_original_nulls(df, df_raw, feature_cols), target_column, feature_cols)
     leak_note = leakage_note(suspects, best_fit)
     if leak_note:
         progress.append(warn("Possible target leakage", leak_note))

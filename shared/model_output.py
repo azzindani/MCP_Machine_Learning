@@ -39,6 +39,7 @@ import os
 from pathlib import Path
 
 from shared.file_utils import resolve_path
+from shared.ml_utils import FILL_KEY
 
 
 def default_models_dir(source: Path) -> Path:
@@ -115,7 +116,7 @@ def split_encoding_map(metadata: dict, model_path: Path) -> tuple[dict, str]:
     if not isinstance(raw, dict) or not raw:
         return metadata, ""
 
-    per_column = {col: len(vals) if hasattr(vals, "__len__") else 1 for col, vals in raw.items()}
+    per_column = {col: len(vals) if hasattr(vals, "__len__") else 1 for col, vals in raw.items() if col != FILL_KEY}
     total = sum(per_column.values())
     summary = {
         "columns": sorted(per_column),
