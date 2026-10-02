@@ -11,6 +11,40 @@ guess dressed as a record.
 
 ## [Unreleased]
 
+### Fixed — a model is asked about a null the way it was trained on one
+
+- Training fills a number's null with the column median and gives a text null its own class; every
+  prediction path answered `0` and `-1`. A loan model scored 100% on its test split and then
+  predicted one class for all 118,936 rows it had been trained on. The medians now travel with the
+  model (`encoding_map["__fill__"]`) and `prepare_features` / `model_matrix` (`shared/ml_utils.py`)
+  prepare a row identically in `predict_single`, `get_predictions`, `batch_predict`,
+  `evaluate_model`, the ROC and fit charts and the model dashboard. A text value the model never
+  saw is named (`unseen_categories`).
+- `train_classifier` and `compare_models` read leakage on the raw nulls, not on what the median fill
+  left: a field empty for exactly one outcome is now reported (`shared/leakage.py`, byte-identical
+  with Data_Analyst's).
+- `read_rows` answers JSON `null` for an empty cell instead of a bare `NaN`, and refuses a
+  reversed range.
+- `plot_learning_curve` offers only the models it can draw (`nb` and `xgb` were listed and refused)
+  and checks the model before a dry run.
+
+### Fixed — a next step names a tool the client has
+
+- `handover.suggested_next`, an insight's `action` and a "use filter_rows()" hint named the tier's own
+  tools (`{"tool": "inspect_dataset", "server": "data_basic"}`), which a client of the domain tools does
+  not have: `tools/call inspect_dataset` was "Unknown tool". The dispatcher now answers
+  `{"tool": "<domain tool>", "action": "<action>", "server": ...}` and `<domain>(action='...')` in
+  hints (`shared/domain_tools.point_at_domains`).
+
+### Fixed — one heavy call cannot freeze or kill the server
+
+- The MCP SDK runs a synchronous tool inline on the event loop: an SVM fit on 95,000 rows ran past
+  twenty minutes and the container went unhealthy with the call still running. A call now runs in
+  a child process (Linux; a thread elsewhere; `MCP_CALL_ISOLATION=inline` restores the old
+  behaviour), stopped before the container is out of memory or after `MCP_CALL_TIMEOUT_S`
+  (default 1800), with a reply that says which. `MCP_MAX_CALLS` (default 2) and `MCP_CALL_MEMORY_MB`
+  tune it (`shared/isolation.py`).
+
 ### Fixed — dates, and a quality score that shows its parts
 
 - `search_columns(dtype="datetime")` finds a date column stored as text
