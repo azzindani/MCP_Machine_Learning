@@ -297,6 +297,10 @@ def generate_cluster_report(
 # shared/token_estimate.py for why this is a choke point and not 101 edits.
 # A missing file or model is answered with the nearest files that exist;
 # see shared/missing_file.py for why this is a choke point.
+# The innermost layer, so every guard below still runs ahead of it: the HTTP server turns it on (shared/isolation.py).
+from shared.isolation import isolate_calls  # noqa: E402
+
+isolate_calls(mcp)
 suggest_missing_files(mcp)
 measure_responses(mcp)
 # A file sent inline -- a data: URI where a path goes -- is saved to the inbox
