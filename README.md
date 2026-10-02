@@ -6,8 +6,8 @@ A self-hosted MCP server that gives local LLMs structured access to the full sup
 
 ## Features
 
-- **One endpoint, four tools** — `/mcp` serves the whole surface as four domain tools: `ml_data`, `ml_train`, `ml_predict`, `ml_report`. Each takes an `action` (one of the 34 tools below, by its own name) and an `args` object whose every property says which actions take it. Same validation and answers as the tiers; the three tier endpoints keep serving for small local models and existing connections
-- **34 tools** across 3 tiers: basic (11), medium (12), advanced (11)
+- **One endpoint, four tools** — `/mcp` serves the whole surface as four domain tools: `ml_data`, `ml_train`, `ml_predict`, `ml_report`. Each takes an `action` (one of the 35 tools below, by its own name) and an `args` object whose every property says which actions take it. Same validation and answers as the tiers; the three tier endpoints keep serving for small local models and existing connections
+- **35 tools** across 3 tiers: basic (12), medium (12), advanced (11)
 - **LOCATE → INSPECT → PATCH → VERIFY** workflow for surgical ML operations
 - **Automatic version control** — every write is snapshotted and fully restorable
 - **Operation receipt logging** — full audit trail of all modifications
@@ -128,7 +128,7 @@ The first launch clones the repo and installs dependencies (~2–5 minutes). Sub
 ```
 
 4. Wait for the blue dot next to each server
-5. Start chatting — the model will see all 34 tools
+5. Start chatting — the model will see all 35 tools
 
 > **Low-memory machines:** Set `MCP_CONSTRAINED_MODE` to `"1"` in all `env` blocks and omit `ml-advanced` if needed. See [Configuration](#configuration) for details.
 
@@ -175,7 +175,7 @@ Replace the `"command"` and `"args"` in each entry with the bash equivalent:
 ### One endpoint: four domain tools at `/mcp`
 
 For a capable model, connect `/mcp` instead of the three tiers: four tools
-instead of 34. `action` names a tool below; `args` holds its arguments.
+instead of 35. `action` names a tool below; `args` holds its arguments.
 
 ```json
 {"action": "train_classifier",
@@ -194,7 +194,7 @@ the action does not take is refused by name.
 
 ### The tiers
 
-### Tier 1 — ml-basic (11 tools)
+### Tier 1 — ml-basic (12 tools)
 
 | Tool | Purpose |
 |---|---|
@@ -202,6 +202,7 @@ the action does not take is refused by name.
 | `read_column_profile` | Stats for one column: mean, std, nulls, unique, top values |
 | `search_columns` | Find columns by criteria: has_nulls, name_contains, and `dtype` — one of `numeric` `categorical` `bool` `datetime`, or a concrete pandas name (`float64`, `object`, …) which is widened to its group |
 | `read_rows` | Bounded row slice |
+| `query_data` | Read-only SQL over big csv/parquet/json files or a SQLite/DuckDB file, in chunks; a preview, or the whole result written to `.csv` (what the other tools read; they read CSV, not Parquet) or `.parquet` (for `query_data` itself). One SELECT only, no network, nothing written but `output_path`. `database` is a SQLite / DuckDB file, or the **name** of a PostgreSQL / MySQL / MariaDB server the operator configured (`MCP_DB_<NAME>_URL`): the URL and its password never pass through a call, and the session is read-only on the server too |
 | `train_classifier` | Train classifier: `lr svm rf dtc knn nb xgb` — AUC-ROC, class_weight, train_score |
 | `train_regressor` | Train regressor: `lir pr lar rr dtr rfr xgb` |
 | `get_predictions` | Run predictions on a CSV — supports `return_proba=True` for probabilities |
@@ -427,8 +428,8 @@ For lower-memory machines, set `MCP_CONSTRAINED_MODE=1` in the `env` section of 
 
 | Available RAM | Recommended load | Total tools |
 |---|---|---|
-| 4–8 GB | ml-basic only | 11 |
-| 8–16 GB | ml-basic + ml-medium | 25 |
+| 4–8 GB | ml-basic only | 12 |
+| 8–16 GB | ml-basic + ml-medium | 24 |
 | 16 GB+ | all three tiers | 35 |
 
 ### Environment Variables
@@ -436,6 +437,12 @@ For lower-memory machines, set `MCP_CONSTRAINED_MODE=1` in the `env` section of 
 | Variable | Default | Description |
 |---|---|---|
 | `MCP_CONSTRAINED_MODE` | `0` | Set to `1` for low-memory machines |
+| `MCP_CALL_ISOLATION` | `process` (Linux) | `process`, `thread` or `inline`: where a call runs. A call in a child process is stopped before the container is out of memory instead of taking the server down |
+| `MCP_MAX_CALLS` | `2` (`1` in constrained mode) | Calls running at once |
+| `MCP_CALL_TIMEOUT_S` | `1800` | A call longer than this is stopped, and says so |
+| `MCP_CALL_MEMORY_MB` | _(the container limit)_ | Memory one call may hold before it is stopped |
+| `MCP_DB_<NAME>_URL` | _(unset)_ | A database server `query_data` may read, by name: `postgresql://user:password@host:5432/db` (or `mysql://`, `mariadb://`). A call says `database="<name>"`; the URL never appears in one |
+| `MCP_BIG_TABLE` | `auto` | `auto` reads a CSV in chunks (DuckDB) when loading it whole would not fit in what a call may hold; `always` or `never` forces it |
 | `MCP_OUTPUT_DIR` | `~/Downloads` | Where models, reports, plots and prediction CSVs land by default |
 | `MCP_PUBLIC_BASE_URL` | _(unset)_ | Public URL serving `MCP_OUTPUT_DIR`; adds `public_url` to results |
 | `MCP_FETCH_URLS` | `0` | `1` lets any `file_path` argument be an `http(s)` URL |
@@ -579,7 +586,7 @@ requires a bearer token even while it's publicly reachable.
 
 Run in CI against a container (the `e2e` job) and by hand against the
 deployment. `pytest` itself stays offline. Exercises a running HTTP endpoint: auth enforcement plus a real
-handwritten-prompt-style call for **all 34 tools** across all 3 tiers
+handwritten-prompt-style call for **all 35 tools** across all 3 tiers
 (basic/medium/advanced), against a real generated dataset, chaining real
 outputs (`model_path`, cluster labels, etc.) between calls the way an actual
 workflow would — e.g. `train_classifier` → `plot_roc_curve` on the resulting

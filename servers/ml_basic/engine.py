@@ -6,14 +6,15 @@ import logging
 
 import pandas as pd
 
+from shared import big_table
 from shared.counts import counted
 from shared.dates import date_like
 from shared.file_utils import read_csv as _read_csv
 from shared.file_utils import resolve_path
 from shared.handover import make_context, make_handover
 from shared.platform_utils import get_max_columns, get_max_results, get_max_rows
+from shared.progress import info, ok, warn
 from shared.progress import name as pname
-from shared.progress import ok, warn
 from shared.version_control import size_kb
 
 from ._basic_helpers import _confusion_dict, _error
@@ -24,11 +25,14 @@ from ._basic_predict import (
     restore_version,
     split_dataset,
 )
+from ._basic_query import query_data
 from ._basic_train import train_classifier, train_regressor
+from ._first_look_big import column_profile, inspect_facts
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "query_data",
     "inspect_dataset",
     "read_column_profile",
     "search_columns",
@@ -86,27 +90,37 @@ def inspect_dataset(file_path: str) -> dict:
         if path.stat().st_size == 0:
             return _error(f"File is empty: {path.name}", "Verify the file has header + data rows.")
 
-        df = _read_csv(str(path))
-        progress.append(ok(f"Loaded {pname(file_path)}", f"{len(df):,} rows × {len(df.columns)} cols"))
-
+        # A file that cannot be loaded whole is read where it lies, in chunks: same fields, same shape.
+        too_big = big_table.reason(path)
         max_cols = get_max_columns()
-        all_columns = list(df.columns)
-        display_cols = all_columns[:max_cols]
+        if too_big:
+            facts = inspect_facts(big_table.BigTable(path))
+            row_count = facts["rows"]
+            all_columns = [c["name"] for c in facts["columns"]]
+            col_info = [{k: v for k, v in c.items() if k != "target_candidate"} for c in facts["columns"][:max_cols]]
+            target_candidates = [c["name"] for c in facts["columns"] if c["target_candidate"]]
+            progress.append(ok(f"Read {pname(file_path)} in chunks", f"{row_count:,} rows × {len(all_columns)} cols"))
+            progress.append(info("Read in chunks", too_big))
+        else:
+            df = _read_csv(str(path))
+            row_count = len(df)
+            progress.append(ok(f"Loaded {pname(file_path)}", f"{len(df):,} rows × {len(df.columns)} cols"))
 
-        col_info = []
-        for col in display_cols:
-            null_count = int(df[col].isnull().sum())
-            col_info.append(
-                {
-                    "name": col,
-                    "dtype": str(df[col].dtype),
-                    "null_count": null_count,
-                    "null_pct": round(null_count / len(df) * 100, 2) if len(df) else 0.0,
-                }
-            )
+            all_columns = list(df.columns)
+            col_info = []
+            for col in all_columns[:max_cols]:
+                null_count = int(df[col].isnull().sum())
+                col_info.append(
+                    {
+                        "name": col,
+                        "dtype": str(df[col].dtype),
+                        "null_count": null_count,
+                        "null_pct": round(null_count / len(df) * 100, 2) if len(df) else 0.0,
+                    }
+                )
 
-        # target candidates: ≤20 unique values or bool dtype
-        target_candidates = [c for c in all_columns if df[c].dtype == bool or df[c].nunique() <= 20]
+            # target candidates: ≤20 unique values or bool dtype
+            target_candidates = [c for c in all_columns if df[c].dtype == bool or df[c].nunique() <= 20]
         # Cut by get_max_results() while `truncated` above was derived from
         # get_max_columns(). Two lists, two caps, one flag: a caller whose
         # columns all fitted read `truncated: false` and could still be missing
@@ -117,7 +131,7 @@ def inspect_dataset(file_path: str) -> dict:
             "success": True,
             "op": "inspect_dataset",
             "file": pname(file_path),
-            "row_count": len(df),
+            "row_count": row_count,
             "column_count": len(all_columns),
             "file_size_kb": size_kb(path.stat().st_size),
             "columns": col_info,
@@ -129,13 +143,15 @@ def inspect_dataset(file_path: str) -> dict:
         }
         response["context"] = make_context(
             "inspect_dataset",
-            f"Inspected {pname(file_path)}: {len(df):,} rows × {len(all_columns)} cols",
+            f"Inspected {pname(file_path)}: {row_count:,} rows × {len(all_columns)} cols",
         )
         response["handover"] = make_handover(
             "LOCATE",
             ["read_column_profile", "search_columns", "read_rows"],
             {"file_path": file_path},
         )
+        if too_big:
+            response["chunked"] = {"engine": "duckdb", "why": too_big}
         response["token_estimate"] = len(str(response)) // 4
         return response
 
@@ -160,6 +176,42 @@ def _top_values(series: pd.Series, limit: int = 10) -> dict:
     return {str(k): int(v) for k, v in counts.items()}
 
 
+def _profile_in_chunks(file_path: str, path, column_name: str, why: str) -> dict:
+    """read_column_profile for a file too big to load: the same response, read where the file lies."""
+    table = big_table.BigTable(path)
+    profile = column_profile(table, column_name)
+    if profile is None:
+        return _error(
+            f"Column '{column_name}' not found. Available: {', '.join(table.names()[:10])}",
+            "Use inspect_dataset() to list all column names.",
+        )
+    progress = [ok(f"Read {pname(file_path)} in chunks", f"{table.rows():,} rows"), info("Read in chunks", why)]
+    if profile["kind"] == "empty":
+        progress.append(warn(f"'{column_name}' is empty", "no type or statistics inferred"))
+    else:
+        progress.append(ok(f"Profiled '{column_name}'", profile["kind"]))
+    response = {
+        "success": True,
+        "op": "read_column_profile",
+        "file": pname(file_path),
+        "column": column_name,
+        "profile": profile,
+        "progress": progress,
+        "chunked": {"engine": "duckdb", "why": why},
+    }
+    if profile["kind"] != "empty":
+        response["context"] = make_context(
+            "read_column_profile", f"Profiled column '{column_name}' ({profile['kind']}) in {pname(file_path)}"
+        )
+        response["handover"] = make_handover(
+            "INSPECT",
+            ["train_classifier", "train_regressor", "run_preprocessing"],
+            {"file_path": file_path, "column_name": column_name},
+        )
+    response["token_estimate"] = len(str(response)) // 4
+    return response
+
+
 def read_column_profile(file_path: str, column_name: str) -> dict:
     """Profile one column. Returns stats, null count, top values."""
     progress: list[dict] = []
@@ -172,6 +224,10 @@ def read_column_profile(file_path: str, column_name: str) -> dict:
             )
         if path.stat().st_size == 0:
             return _error(f"File is empty: {path.name}", "Verify the file has header + data rows.")
+
+        too_big = big_table.reason(path)
+        if too_big:
+            return _profile_in_chunks(file_path, path, column_name, too_big)
 
         df = _read_csv(str(path))
         if column_name not in df.columns:
@@ -407,6 +463,23 @@ def search_columns(
 # ---------------------------------------------------------------------------
 # 4. read_rows
 # ---------------------------------------------------------------------------
+def _rows_of(window: pd.DataFrame) -> list[dict]:
+    """A window of the frame as JSON-safe records.
+
+    A null is JSON null. `where(notna, None)` leaves NaN in a float column, which the wire carries as a
+    bare `NaN` that JSON.parse refuses -- every row with a gap in it made the whole answer unreadable. An
+    infinity has no JSON form either, so it is written as the text "inf" / "-inf" rather than dropped.
+    """
+    cells = window.astype(object).where(window.notna(), None)
+    return [
+        {
+            k: (("inf" if v > 0 else "-inf") if isinstance(v, float) and v in (float("inf"), float("-inf")) else v)
+            for k, v in record.items()
+        }
+        for record in cells.to_dict(orient="records")
+    ]
+
+
 def read_rows(file_path: str, start: int, end: int) -> dict:
     """Read bounded row slice. Max rows enforced by hardware mode."""
     progress: list[dict] = []
@@ -420,9 +493,16 @@ def read_rows(file_path: str, start: int, end: int) -> dict:
         if path.stat().st_size == 0:
             return _error(f"File is empty: {path.name}", "Verify the file has header + data rows.")
 
-        df = _read_csv(str(path))
-        total = len(df)
-        progress.append(ok(f"Loaded {pname(file_path)}", f"{total:,} rows total"))
+        # A file too big to load answers from the rows asked for, read where it lies.
+        too_big = big_table.reason(path)
+        if too_big:
+            table = big_table.BigTable(path)
+            total = table.rows()
+            progress.append(ok(f"Read {pname(file_path)} in chunks", f"{total:,} rows total"))
+        else:
+            df = _read_csv(str(path))
+            total = len(df)
+            progress.append(ok(f"Loaded {pname(file_path)}", f"{total:,} rows total"))
 
         if end < start:
             return _error(
@@ -435,19 +515,10 @@ def read_rows(file_path: str, start: int, end: int) -> dict:
         actual = min(requested, cap)
         truncated = requested > actual
 
-        slice_df = df.iloc[start : start + actual]
-        # A null is JSON null. `where(notna, None)` leaves NaN in a float column, which the
-        # wire carries as a bare `NaN` that JSON.parse refuses -- every row with a gap in it
-        # made the whole answer unreadable. An infinity has no JSON form either, so it is
-        # written as the text "inf" / "-inf" rather than dropped.
-        cells = slice_df.astype(object).where(slice_df.notna(), None)
-        rows = [
-            {
-                k: (("inf" if v > 0 else "-inf") if isinstance(v, float) and v in (float("inf"), float("-inf")) else v)
-                for k, v in record.items()
-            }
-            for record in cells.to_dict(orient="records")
-        ]
+        if too_big:
+            rows = table.window(start, actual) if actual else []
+        else:
+            rows = _rows_of(df.iloc[start : start + actual])
 
         # What the caller could have had from this window: their own range,
         # bounded by where the file ends. Running out of rows is not truncation
@@ -468,6 +539,8 @@ def read_rows(file_path: str, start: int, end: int) -> dict:
         }
         if truncated:
             response["hint"] = f"Results capped at {cap}. Use start/end parameters to page through the data."
+        if too_big:
+            response["chunked"] = {"engine": "duckdb", "why": too_big}
         response["context"] = make_context(
             "read_rows",
             f"Read rows {start}–{start + len(rows)} of {total:,} from {pname(file_path)}",

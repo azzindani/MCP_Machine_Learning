@@ -133,7 +133,7 @@ echo "$R" | grep -q 'outside the folders' && pass "/etc/hostname refused as outs
   || fail "/etc/hostname refused without naming why: $(echo "$R" | head -c 300)"
 
 echo
-echo "===== ml_basic (11 tools) ====="
+echo "===== ml_basic (12 tools) ====="
 
 echo '== prompt: "what columns does this dataset have?" -> inspect_dataset =='
 R=$(call basic "$SID_BASIC" 10 inspect_dataset "{\"file_path\":\"$DATASET_PATH\"}")
@@ -150,6 +150,10 @@ ok_json "$R" && pass "search_columns found the real float columns" || fail "$R"
 echo '== prompt: "show me rows 0-10" -> read_rows =='
 R=$(call basic "$SID_BASIC" 13 read_rows "{\"file_path\":\"$DATASET_PATH\",\"start\":0,\"end\":10}")
 ok_json "$R" && pass "read_rows returned real row data" || fail "$R"
+
+echo '== prompt: "how many rows per label, without loading it all?" -> query_data =='
+R=$(call basic "$SID_BASIC" 62 query_data "{\"sql\":\"SELECT label, count(*) AS n FROM data GROUP BY label\",\"file_path\":\"$DATASET_PATH\"}")
+ok_json "$R" && pass "query_data answered with SQL over the real file" || fail "$R"
 
 echo '== prompt: "split this into train/test sets" -> split_dataset =='
 R=$(call basic "$SID_BASIC" 14 split_dataset "{\"file_path\":\"$DATASET_PATH\",\"test_size\":0.2}")
