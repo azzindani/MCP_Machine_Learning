@@ -3,6 +3,7 @@ plot_predictions_vs_actual, generate_cluster_report."""
 
 from __future__ import annotations
 
+import importlib
 from html import escape as html_escape
 from pathlib import Path
 
@@ -13,7 +14,7 @@ from shared.file_utils import atomic_write_text, embed_content
 from shared.file_utils import read_csv as _read_csv
 from shared.handover import make_context, make_handover
 from shared.html_theme import apply_fig_theme, calc_chart_height, get_theme, plotly_template
-from shared.ml_utils import one_hot_for_linear
+from shared.ml_utils import _auto_preprocess, model_matrix, one_hot_for_linear, prep_notes
 from shared.model_signing import load_signed
 from shared.platform_utils import get_fit_n_jobs, get_learning_curve_row_cap
 from shared.progress import info, ok, warn
@@ -91,7 +92,6 @@ def plot_roc_curve(
 
         feature_columns = metadata.get("feature_columns", [])
         target_column = metadata.get("target_column", "")
-        encoding_map = metadata.get("encoding_map", {})
 
         if dp.stat().st_size == 0:
             return {
@@ -103,11 +103,6 @@ def plot_roc_curve(
         df = _read_csv(str(dp))
         progress.append(ok("Loaded data", f"{len(df)} rows"))
 
-        # Encode
-        for col, mapping in encoding_map.items():
-            if col in df.columns and col != target_column:
-                df[col] = df[col].map(mapping).fillna(df[col])
-
         available = [c for c in feature_columns if c in df.columns]
         if not available:
             return {
@@ -116,8 +111,19 @@ def plot_roc_curve(
                 "hint": "Use the same dataset used for training.",
                 "token_estimate": 30,
             }
+        absent = [c for c in feature_columns if c not in df.columns]
+        if absent:
+            return {
+                "success": False,
+                "error": f"Feature columns missing in data: {', '.join(absent)}",
+                "hint": "Use the same dataset used for training.",
+                "token_estimate": 30,
+            }
 
-        X = df[available].select_dtypes(include="number").fillna(0)
+        # Prepared as the model was trained: text as its codes, scaled and expanded as it was
+        # fitted, a number's null as that column's training median.
+        X, prep = model_matrix(df, metadata, available, target=target_column)
+        progress.extend(prep_notes(prep))
         y_true = df[target_column] if target_column in df.columns else None
 
         if y_true is None:
@@ -264,6 +270,44 @@ def plot_roc_curve(
 # ---------------------------------------------------------------------------
 
 
+def _curve_estimators(task: str) -> dict:
+    """model key -> estimator builder, for the models a learning curve can draw.
+
+    The published list offers every model of both tasks; this answers for the ones that
+    fit a plain estimator behind the sklearn API, which is every one train_* can fit.
+    """
+
+    def build(module: str, cls: str, **kwargs):
+        return lambda: getattr(importlib.import_module(module), cls)(**kwargs)
+
+    def poly():
+        from sklearn.linear_model import LinearRegression
+        from sklearn.pipeline import make_pipeline
+        from sklearn.preprocessing import PolynomialFeatures
+
+        return make_pipeline(PolynomialFeatures(degree=2), LinearRegression())
+
+    if task == "classification":
+        return {
+            "lr": build("sklearn.linear_model", "LogisticRegression", random_state=42, max_iter=200),
+            "rf": build("sklearn.ensemble", "RandomForestClassifier", n_estimators=50, random_state=42),
+            "dtc": build("sklearn.tree", "DecisionTreeClassifier", random_state=42),
+            "knn": build("sklearn.neighbors", "KNeighborsClassifier", n_neighbors=5),
+            "svm": build("sklearn.svm", "SVC", kernel="rbf", gamma="auto", random_state=42),
+            "nb": build("sklearn.naive_bayes", "GaussianNB"),
+            "xgb": build("xgboost", "XGBClassifier", n_estimators=50, max_depth=3, verbosity=0, n_jobs=1),
+        }
+    return {
+        "lir": build("sklearn.linear_model", "LinearRegression"),
+        "rfr": build("sklearn.ensemble", "RandomForestRegressor", n_estimators=50, random_state=42),
+        "dtr": build("sklearn.tree", "DecisionTreeRegressor", random_state=42),
+        "lar": build("sklearn.linear_model", "Lasso", max_iter=200, tol=0.1),
+        "rr": build("sklearn.linear_model", "Ridge", max_iter=100, tol=0.1),
+        "pr": poly,
+        "xgb": build("xgboost", "XGBRegressor", n_estimators=50, max_depth=3, verbosity=0, n_jobs=1),
+    }
+
+
 def plot_learning_curve(
     file_path: str,
     target_column: str,
@@ -306,6 +350,17 @@ def plot_learning_curve(
             "token_estimate": 30,
         }
 
+    builders = _curve_estimators(task)
+    if model not in builders:
+        return {
+            "success": False,
+            "op": "plot_learning_curve",
+            "error": f"Unknown model '{model}' for {task}. Allowed: {', '.join(builders)}",
+            "hint": "Check model string; classification and regression take different models.",
+            "progress": [],
+            "token_estimate": 30,
+        }
+
     if dry_run:
         return {
             "success": True,
@@ -317,8 +372,6 @@ def plot_learning_curve(
         }
 
     try:
-        import importlib
-
         import plotly.graph_objects as go
         from sklearn.model_selection import learning_curve
         from sklearn.preprocessing import LabelEncoder
@@ -341,44 +394,16 @@ def plot_learning_curve(
                 "token_estimate": 30,
             }
 
-        df = df.dropna(subset=[target_column])
+        # The curve is of the model train_* would fit, on the table train_* would fit it on:
+        # text as codes, a number's null as its median. A second, private preparation here
+        # filled nulls with 0 and dropped any column that was not already a number.
+        df, codes, _encoded = _auto_preprocess(df, target_column)
         y = df[target_column]
-        # Encode categoricals
-        codes: dict = {}
-        for col in df.select_dtypes(include=["object", "string"]).columns:
-            le = LabelEncoder()
-            df[col] = le.fit_transform(df[col].astype(str))
-            codes[col] = {str(c): i for i, c in enumerate(le.classes_)}
-        X = df.drop(columns=[target_column]).select_dtypes(include="number").fillna(0)
+        X = df.drop(columns=[target_column]).select_dtypes(include="number")
         n_source_rows = len(X)
 
-        # Build estimator
-        CLASSIFIERS = {
-            "lr": ("sklearn.linear_model", "LogisticRegression", {"random_state": 42, "max_iter": 200}),
-            "rf": ("sklearn.ensemble", "RandomForestClassifier", {"n_estimators": 50, "random_state": 42}),
-            "dtc": ("sklearn.tree", "DecisionTreeClassifier", {"random_state": 42}),
-            "knn": ("sklearn.neighbors", "KNeighborsClassifier", {"n_neighbors": 5}),
-            "svm": ("sklearn.svm", "SVC", {"kernel": "rbf", "gamma": "auto", "random_state": 42}),
-        }
-        REGRESSORS = {
-            "lir": ("sklearn.linear_model", "LinearRegression", {}),
-            "rfr": ("sklearn.ensemble", "RandomForestRegressor", {"n_estimators": 50, "random_state": 42}),
-            "dtr": ("sklearn.tree", "DecisionTreeRegressor", {"random_state": 42}),
-        }
-        model_map = CLASSIFIERS if task == "classification" else REGRESSORS
-        if model not in model_map:
-            allowed = ", ".join(model_map.keys())
-            return {
-                "success": False,
-                "error": f"Unknown model '{model}'. Allowed: {allowed}",
-                "hint": "Check model string.",
-                "token_estimate": 30,
-            }
-
-        mod_name, cls_name, kwargs = model_map[model]
-        cls = getattr(importlib.import_module(mod_name), cls_name)
-        # The curve is of the model train_* would fit: a linear one reads text one-hot.
-        estimator, _ = one_hot_for_linear(model, cls(**kwargs), list(X.columns), codes)
+        # A linear one reads text one-hot.
+        estimator, _ = one_hot_for_linear(model, builders[model](), list(X.columns), codes)
 
         scoring = "accuracy" if task == "classification" else "r2"
         train_sizes = np.linspace(0.1, 1.0, 10)
@@ -556,7 +581,6 @@ def plot_predictions_vs_actual(
 
         feature_columns = metadata.get("feature_columns", [])
         target_column = metadata.get("target_column", "")
-        encoding_map = metadata.get("encoding_map", {})
 
         if dp.stat().st_size == 0:
             return {
@@ -568,11 +592,15 @@ def plot_predictions_vs_actual(
         df = _read_csv(str(dp))
         progress.append(ok("Loaded data", f"{len(df)} rows"))
 
-        for col, mapping in encoding_map.items():
-            if col in df.columns and col != target_column:
-                df[col] = df[col].map(mapping).fillna(df[col])
-
         available = [c for c in feature_columns if c in df.columns]
+        absent = [c for c in feature_columns if c not in df.columns]
+        if absent:
+            return {
+                "success": False,
+                "error": f"Feature columns missing in data: {', '.join(absent)}",
+                "hint": "Provide the same dataset used for training.",
+                "token_estimate": 30,
+            }
 
         if target_column not in df.columns:
             return {
@@ -599,7 +627,8 @@ def plot_predictions_vs_actual(
                 "token_estimate": 30,
             }
 
-        X = df.loc[valid_mask, available].select_dtypes(include="number").fillna(0)
+        X, prep = model_matrix(df.loc[valid_mask], metadata, available, target=target_column)
+        progress.extend(prep_notes(prep))
         y_true = df.loc[valid_mask, target_column].values
 
         try:

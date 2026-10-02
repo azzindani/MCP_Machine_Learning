@@ -31,7 +31,7 @@ from shared.file_utils import read_csv as _read_csv
 from shared.handover import make_context, make_handover
 from shared.html_layout import get_output_path as _get_output_path
 from shared.leakage import split_provenance
-from shared.ml_utils import encoding_note, leakage_warning, one_hot_for_linear, target_labels, typical_row
+from shared.ml_utils import FILL_KEY, encoding_note, leakage_warning, one_hot_for_linear, target_labels, typical_row
 from shared.model_js import ModelNotEmbeddable, prediction_panel
 from shared.model_js import build_payload as build_model_payload
 from shared.model_output import encoding_map_path, resolve_model_path, split_encoding_map
@@ -565,7 +565,9 @@ def read_model_report(model_path: str, top_n: int = 0, skip_encoding_map: bool =
         except Exception:
             raw_map = None
     if isinstance(raw_map, dict) and raw_map:
-        per_column = {col: len(vals) if hasattr(vals, "__len__") else 1 for col, vals in raw_map.items()}
+        per_column = {
+            col: len(vals) if hasattr(vals, "__len__") else 1 for col, vals in raw_map.items() if col != FILL_KEY
+        }
         encoding_map_summary = {
             "columns": sorted(per_column),
             "entries_per_column": per_column,

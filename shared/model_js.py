@@ -22,6 +22,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from shared.ml_utils import FILL_KEY
+
 # A forest of 100 deep trees serialises into megabytes of JS. Past this many
 # nodes the panel is dropped rather than doubling the size of the report.
 _MAX_TREE_NODES = 60_000
@@ -153,12 +155,17 @@ def build_payload(model: Any, metadata: dict) -> dict:
         pairs = sorted(encoding_map[target_key].items(), key=lambda kv: kv[1])
         target_labels = [str(k) for k, _ in pairs]
 
+    # A blank number box is a null, and a null reached the model as its column's training
+    # median; the page answered 0 for it, so the panel and the saved model disagreed.
+    fill = {k: v for k, v in (encoding_map.get(FILL_KEY) or {}).items() if k in features}
+
     return {
         "model": spec,
         "features": features,
         "target": target,
         "choices": choices,
         "codes": codes,
+        "fill": fill,
         "scaling": scaling,
         "targetLabels": target_labels,
     }
@@ -175,7 +182,8 @@ _SCORER_JS = """
       const table = P.codes[name];
       if (table) return table[raw] !== undefined ? table[raw] : 0;
       const n = parseFloat(raw);
-      return isFinite(n) ? n : 0;
+      const f = P.fill && P.fill[name] !== undefined ? P.fill[name] : 0;
+      return isFinite(n) ? n : f;
     });
   }
 

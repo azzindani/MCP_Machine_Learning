@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 import numpy as np
@@ -187,8 +188,100 @@ def _auto_preprocess(df: pd.DataFrame, target_column: str) -> tuple[pd.DataFrame
     if len(num_cols) > 0:
         medians = df[num_cols].median()
         df[num_cols] = df[num_cols].fillna(medians)
+        # Kept, because training is only half of what a null meets: a model that
+        # was fitted on median-filled rows has to be asked about median-filled
+        # rows, or it scores a different table than the one it was measured on.
+        encoding_map[FILL_KEY] = {
+            str(c): float(m)
+            for c, m in medians.items()
+            if c != target_column and c not in encoded_cols and not math.isnan(float(m))
+        }
 
     return df, encoding_map, encoded_cols
+
+
+# Where the training medians travel: inside the encoding map, beside `__target__<col>`,
+# so every place that already carries the map (the pickle, the manifest, its sidecar,
+# export_model) carries them too, with no new key to thread through five metadata dicts.
+FILL_KEY = "__fill__"
+_RESERVED_PREFIXES = ("__target__", FILL_KEY)
+
+
+def is_reserved_key(key: object) -> bool:
+    """True for the encoding-map entries that are not a column's value codes."""
+    return str(key).startswith(_RESERVED_PREFIXES)
+
+
+def prepare_features(
+    df: pd.DataFrame, metadata: dict, features: list[str] | None = None, target: str = ""
+) -> tuple[pd.DataFrame, dict]:
+    """The model's input rows, prepared the way its training rows were.
+
+    Returns (float frame in feature order, what was done to it). Training
+    label-encoded text with a null as its own "nan" class and filled a number's
+    null with that column's median; prediction answered with 0 for every
+    numeric null and -1 for a text one, so a model scored 100% on its test split
+    and then predicted one class for every row it had been trained on. The same
+    function now serves training-shaped input everywhere a saved model is used.
+
+    A model saved before the medians were kept has none to apply: its numeric
+    nulls are filled with 0, as they always were, and the report says so.
+    """
+    feats = list(features if features is not None else metadata.get("feature_columns", []))
+    encoding = metadata.get("encoding_map") or {}
+    fill = encoding.get(FILL_KEY)
+    out: dict[str, pd.Series] = {}
+    unseen: dict[str, int] = {}
+    filled: dict[str, int] = {}
+    for col in feats:
+        series = df[col]
+        mapping = encoding.get(col) if col != target and not is_reserved_key(col) else None
+        if mapping is not None:
+            text = series.astype(object).where(series.notna(), "nan").astype(str)
+            codes = text.map(mapping)
+            missing = int(codes.isna().sum())
+            if missing:
+                unseen[col] = missing
+            out[col] = codes.fillna(-1).astype(float)
+            continue
+        num = pd.to_numeric(series, errors="coerce").replace([np.inf, -np.inf], np.nan)
+        nulls = int(num.isna().sum())
+        if nulls:
+            filled[col] = nulls
+            value = fill.get(col, 0.0) if isinstance(fill, dict) else 0.0
+            num = num.fillna(value)
+        out[col] = num.astype(float)
+    report = {
+        "unseen": unseen,
+        "null_filled": filled,
+        "null_fill": "training medians" if isinstance(fill, dict) else "0 (saved before training medians were kept)",
+    }
+    return pd.DataFrame(out, index=df.index, columns=feats), report
+
+
+def model_matrix(df: pd.DataFrame, metadata: dict, features: list[str] | None = None, target: str = ""):
+    """prepare_features, then the scaler and polynomial expansion the model was fitted behind."""
+    frame, report = prepare_features(df, metadata, features, target)
+    x = frame.values.astype(float)
+    if metadata.get("scaler") is not None:
+        x = metadata["scaler"].transform(x)
+    if metadata.get("poly") is not None:
+        x = metadata["poly"].transform(x)
+    return x, report
+
+
+def prep_notes(report: dict) -> list[dict]:
+    """Progress lines for what prepare_features did, empty when it did nothing worth saying."""
+    from shared.progress import info, warn
+
+    notes: list[dict] = []
+    if report["null_filled"]:
+        detail = ", ".join(f"{c}: {n:,} row(s)" for c, n in report["null_filled"].items())
+        notes.append(info(f"Missing numbers filled ({report['null_fill']})", detail))
+    if report["unseen"]:
+        detail = ", ".join(f"{c}: {n:,} row(s)" for c, n in report["unseen"].items())
+        notes.append(warn("Unseen categories scored as unknown: the model never saw them", detail))
+    return notes
 
 
 # Models that weigh a feature by a single coefficient. Training label-encodes a

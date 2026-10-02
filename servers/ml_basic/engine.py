@@ -424,13 +424,30 @@ def read_rows(file_path: str, start: int, end: int) -> dict:
         total = len(df)
         progress.append(ok(f"Loaded {pname(file_path)}", f"{total:,} rows total"))
 
+        if end < start:
+            return _error(
+                f"end ({end}) is before start ({start}).",
+                "Pass start and end as row positions with end >= start; end is exclusive.",
+            )
+
         cap = get_max_rows()
         requested = max(0, end - start)
         actual = min(requested, cap)
         truncated = requested > actual
 
         slice_df = df.iloc[start : start + actual]
-        rows = slice_df.where(slice_df.notna(), other=None).to_dict(orient="records")
+        # A null is JSON null. `where(notna, None)` leaves NaN in a float column, which the
+        # wire carries as a bare `NaN` that JSON.parse refuses -- every row with a gap in it
+        # made the whole answer unreadable. An infinity has no JSON form either, so it is
+        # written as the text "inf" / "-inf" rather than dropped.
+        cells = slice_df.astype(object).where(slice_df.notna(), None)
+        rows = [
+            {
+                k: (("inf" if v > 0 else "-inf") if isinstance(v, float) and v in (float("inf"), float("-inf")) else v)
+                for k, v in record.items()
+            }
+            for record in cells.to_dict(orient="records")
+        ]
 
         # What the caller could have had from this window: their own range,
         # bounded by where the file ends. Running out of rows is not truncation

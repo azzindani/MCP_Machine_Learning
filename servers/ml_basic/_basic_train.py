@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from shared.feature_select import select_features
 from shared.handover import make_context, make_handover
-from shared.leakage import leakage_note, leakage_suspects, split_provenance
+from shared.leakage import leakage_note, leakage_suspects, split_provenance, with_original_nulls
 from shared.ml_utils import encoding_note, one_hot_for_linear
 from shared.model_output import resolve_model_path
 
@@ -173,7 +173,7 @@ def train_classifier(
             # that withheld the warning -- and it printed `link_clicks` among
             # feature_columns beside `would_train: true`, which reads as
             # approval. Everything the check needs is already in hand here.
-            suspects = leakage_suspects(df, target_column, feature_cols)
+            suspects = leakage_suspects(with_original_nulls(df, df_raw, feature_cols), target_column, feature_cols)
             note = leakage_note(suspects)
             if note:
                 progress.append(warn("Possible target leakage", note))
@@ -318,7 +318,7 @@ def train_classifier(
         # See the regressor path below: the 0.999 determination check alone let
         # a leaking model through, and the evidence-based check ran only in
         # ml_medium. Both trainers now run both.
-        suspects = leakage_suspects(df, target_column, feature_cols)
+        suspects = leakage_suspects(with_original_nulls(df, df_raw, feature_cols), target_column, feature_cols)
         leak_note = leakage_note(suspects, acc)
         if leak_note:
             progress.append(warn("Possible target leakage", leak_note))
@@ -519,7 +519,7 @@ def train_regressor(
             # that withheld the warning -- and it printed `link_clicks` among
             # feature_columns beside `would_train: true`, which reads as
             # approval. Everything the check needs is already in hand here.
-            suspects = leakage_suspects(df, target_column, feature_cols)
+            suspects = leakage_suspects(with_original_nulls(df, df_raw, feature_cols), target_column, feature_cols)
             note = leakage_note(suspects)
             if note:
                 progress.append(warn("Possible target leakage", note))
@@ -637,7 +637,7 @@ def train_regressor(
         # returned an empty `leakage_warning` on a clicks model scoring r2 0.983
         # whose feature set contained `link_clicks` -- a strict subset of the
         # target in 100% of rows. Both checks, on both trainers, from here.
-        suspects = leakage_suspects(df, target_column, feature_cols)
+        suspects = leakage_suspects(with_original_nulls(df, df_raw, feature_cols), target_column, feature_cols)
         leak_note = leakage_note(suspects, r2)
         if leak_note:
             progress.append(warn("Possible target leakage", leak_note))
