@@ -113,6 +113,22 @@ def search_columns(
 
 
 @mcp.tool(
+    annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
+)
+def query_data(
+    sql: str,
+    file_path: str = "",
+    tables: dict[str, str] | None = None,
+    database: str = "",
+    output_path: str = "",
+    max_rows: int = 50,
+    memory_mb: int = 0,
+) -> dict:
+    """Read-only SQL on big csv/parquet/json files or a database, in chunks."""
+    return engine.query_data(sql, file_path, tables, database, output_path, max_rows, memory_mb)
+
+
+@mcp.tool(
     annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
 )
 def read_rows(file_path: str, start: int, end: int) -> dict:
@@ -236,6 +252,10 @@ def split_dataset(
 # shared/token_estimate.py for why this is a choke point and not 101 edits.
 # A missing file or model is answered with the nearest files that exist;
 # see shared/missing_file.py for why this is a choke point.
+# The innermost layer, so every guard below still runs ahead of it: the HTTP server turns it on (shared/isolation.py).
+from shared.isolation import isolate_calls  # noqa: E402
+
+isolate_calls(mcp)
 suggest_missing_files(mcp)
 measure_responses(mcp)
 # A file sent inline -- a data: URI where a path goes -- is saved to the inbox
