@@ -33,6 +33,7 @@ from servers.ml_medium.server import mcp as medium  # noqa: E402
 from shared.arg_errors import contract_errors  # noqa: E402
 from shared.deploy_auth import build_auth, build_oauth_bridge  # noqa: E402
 from shared.domain_tools import register_domains  # noqa: E402
+from shared.isolation import add_narrowing_hint  # noqa: E402
 from shared.strict_args import enforce_known_arguments  # noqa: E402
 
 _VERSION = "0.2.0"  # keep in sync with pyproject.toml [project].version
@@ -52,9 +53,10 @@ if _oauth_bridge is not None:
 # Each domain: what it is for, then its actions -- each an existing tier tool.
 DOMAINS = {
     "ml_data": (
-        "Look at and prepare a dataset: schema, profile, search, rows, quality, outliers, split, preprocess, reduce, undo.",
+        "Look at and prepare a dataset: schema, profile, search, rows, SQL on big files, quality, outliers, split, preprocess, reduce, undo.",
         [
             (basic, "inspect_dataset"),
+            (basic, "query_data"),
             (basic, "read_column_profile"),
             (basic, "search_columns"),
             (basic, "read_rows"),
@@ -107,6 +109,10 @@ DOMAINS = {
     ),
 }
 register_domains(mcp, DOMAINS)
+add_narrowing_hint(
+    "For a table too big to load, query_data (an action of ml_data) filters, aggregates or samples it where it lies, "
+    "in chunks, and writes the smaller result for these tools to read."
+)
 
 
 @mcp.custom_route("/health", methods=["GET"])

@@ -44,6 +44,34 @@ guess dressed as a record.
   behaviour), stopped before the container is out of memory or after `MCP_CALL_TIMEOUT_S`
   (default 1800), with a reply that says which. `MCP_MAX_CALLS` (default 2) and `MCP_CALL_MEMORY_MB`
   tune it (`shared/isolation.py`).
+- The three tier endpoints (`/basic/mcp`, `/medium/mcp`, `/advanced/mcp`) were still answered inline;
+  they run their sync tools in the same child process when served over HTTP (`isolate_calls`, installed
+  first in each tier so every argument guard still runs ahead of it).
+
+### Added — a first look at a table too big to load
+
+- `inspect_dataset`, `read_column_profile` and `read_rows` read the whole file into pandas, so a file of a
+  few hundred MB killed a 1 GB container on the first question asked of it. When loading a file whole
+  would need more than a call may hold (`shared/big_table.py`: file size x 6 against what the container
+  allows; `MCP_BIG_TABLE=always|never` forces it) they answer from DuckDB in chunks, with the same fields,
+  counted exactly. The response carries `chunked: {engine, why}`. A test reads one file both ways and
+  holds the answers equal. Training and the other tools still load the file; `query_data` narrows it
+  first (a sample, a filter, an aggregate) and writes the CSV they read.
+- `query_data` reads a CSV's cells the way pandas does (`NA`, `NULL`, `nan` are gaps).
+- `query_data` reads a database server: `database="warehouse"` names a PostgreSQL, MySQL or MariaDB
+  server the operator set up (`MCP_DB_WAREHOUSE_URL`). The URL, and the password in it, never pass through
+  a call and are taken out of any error; one SELECT is checked and the session is read-only on the
+  server as well; rows stream through a server-side cursor (`shared/sql_remote.py`, byte-identical with
+  Data_Analyst's; adds `psycopg` and `pymysql`). Checked live against PostgreSQL 16 and MariaDB 11.
+
+### Added — `query_data`: SQL where a table lies
+
+- `query_data` (ml_basic, an action of `ml_data`) runs one read-only SELECT over big csv / parquet /
+  json files or a SQLite / DuckDB file, in chunks, inside a memory limit it is given, and returns a
+  preview or writes the whole result to csv (what `inspect_dataset` and the trainers read) or parquet
+  (for `query_data` itself).
+  Only the files a call names are readable, with no network and no extension install
+  (`shared/sql_query.py`, byte-identical with Data_Analyst's). A memory refusal now names it.
 
 ### Fixed — dates, and a quality score that shows its parts
 
