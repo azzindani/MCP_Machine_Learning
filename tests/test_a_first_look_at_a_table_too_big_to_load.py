@@ -151,6 +151,23 @@ class TestReadRowsIsTheSameAnswer:
         assert chunked["success"] is False and chunked["error"] == loaded["error"]
 
 
+class TestAConstantColumnHasNoSkew:
+    def test_whatever_noise_the_engine_reports(self, table, monkeypatch):
+        """DuckDB gave NaN for a constant column on one CPU and -3.4e8 (rounding noise) on another; pandas says 0.0."""
+        chunked = big_table.BigTable(table)
+        real = chunked._ask
+
+        def noisy(sql, limit=1000):
+            rows = real(sql, limit)
+            if "skewness" in sql:
+                rows[0]["skew"] = -346184879.9163
+            return rows
+
+        monkeypatch.setattr(chunked, "_ask", noisy)
+        assert chunked.numeric("same", finite=True)["skew"] == 0.0
+        assert chunked.numeric("price", finite=True)["skew"] == -346184879.9163, "only a constant column is overruled"
+
+
 class TestWhenItIsChunked:
     def test_a_file_that_fits_is_loaded_as_it_always_was(self, table, monkeypatch):
         monkeypatch.setenv("MCP_CALL_MEMORY_MB", "4096")
