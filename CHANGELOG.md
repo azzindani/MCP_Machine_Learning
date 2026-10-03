@@ -11,6 +11,13 @@ guess dressed as a record.
 
 ## [Unreleased]
 
+### Fixed — a dropdown readable in a dark page
+
+- "Try the model" showed a dark page's dropdown as pale text on a white list: the report CSS declared no
+  `color-scheme`, so native controls (lists, scrollbars, number and date pickers) stayed light. The palettes now
+  carry it, and the panel's list is drawn in the surface and text colours. The panel also read two tokens no theme
+  defines (`--card`, `--muted`), so its cards and labels took no theme colour; it now reads `--surface` and `--text-muted`.
+
 ### Added — the model dashboard carries the model
 
 - `generate_model_dashboard` gains **Try the model**, the form the training report has always had: the fitted model
