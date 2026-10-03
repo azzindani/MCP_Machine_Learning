@@ -11,6 +11,15 @@ guess dressed as a record.
 
 ## [Unreleased]
 
+### Added — the model dashboard carries the model
+
+- `generate_model_dashboard` gains **Try the model**, the form the training report has always had: the fitted model
+  is shipped in the page as a scoring function, so a reader changes a value and watches the answer move from a file
+  with nothing running behind it. It follows the answer (and the warning about training rows). A model too large to
+  ship (a forest past 60,000 nodes, or a model with no exact short form) gets a note that says so, with the size and
+  the way out (tune it smaller or train a linear model), and the response reports `interactive_prediction` and
+  `not_embeddable`. The page's answers were checked against the model's own, in a real browser.
+
 ### Fixed — a report you can scroll with the pointer over a chart
 
 - Every report chart took the mouse wheel (`scrollZoom`) and, drag-to-zoom cancelling the touch, every one-finger
