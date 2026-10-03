@@ -208,6 +208,23 @@ class TestTheVariablesToKeep:
         assert any("possible target leakage" in v["note"] for v in r["variables"] if v["variable"] == "leak")
 
 
+class TestTheAnswerIsNotBuriedUnderTheTable:
+    def _section(self, home, forest, **kw) -> str:
+        _dash(home, forest, train_file_path=str(home / "train.csv"), **kw)
+        html = (home / "d.html").read_text(encoding="utf-8")
+        start = html.index('id="vs-data"')
+        return html[start : html.index("Partial dependence", start)]
+
+    def test_the_curve_comes_before_the_long_table_of_variables(self, home, forest):
+        section = self._section(home, forest)
+        assert section.index("variables kept (best first)") < section.index("<table")
+
+    def test_the_table_of_variables_scrolls_in_a_box_of_its_own(self, home, forest):
+        section = self._section(home, forest)
+        assert section.count('class="vs-scroll"') == section.count("<table") >= 2
+        assert "max-height" in section and "position:sticky" in section
+
+
 class TestTheRefitCurve:
     def test_a_tree_model_is_refitted_on_its_top_k_and_scored_on_held_out_rows(self, home, forest, monkeypatch):
         calls: list[int] = []

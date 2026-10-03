@@ -644,8 +644,17 @@ def _predictions_html(
     )
 
 
+def _scroll(table: str) -> str:
+    """A long table in a box of its own, so the answer below it is not pushed a screen per ten variables away."""
+    return (
+        "<style>.vs-scroll{max-height:26rem;overflow:auto;border-radius:6px}"
+        ".vs-scroll thead th{position:sticky;top:0;z-index:1}</style>"
+        f'<div class="vs-scroll">{table}</div>'
+    )
+
+
 def _variables_html(used: list[dict], left: list[dict], curve: dict | None, go: Any, fig_html: Any, metric: str) -> str:
-    """The variables page: a keep-the-top-K slider, every input with its share, the columns left out, the refit curve."""
+    """The variables page: a keep-the-top-K slider, the refit curve, every input with its share, the columns left out."""
     if not used:
         return "<p>No inputs.</p>"
     enough_k = next((i + 1 for i, r in enumerate(used) if r["cumulative"] >= KEEP_SHARE), len(used))
@@ -663,17 +672,8 @@ def _variables_html(used: list[dict], left: list[dict], curve: dict | None, go: 
         "Slide to see what keeping only the top few would keep.</p>"
         f'<label style="display:block;margin:.5rem 0">Keep the top <b id="vs-k"></b> of {len(used)} variables '
         f'<input id="vs-range" type="range" min="1" max="{len(used)}" step="1" value="{enough_k}" style="width:100%"></label>'
-        '<p id="vs-out"></p>' + data_table_html(rows, max_rows=80)
+        '<p id="vs-out"></p>'
     )
-    flagged = [r for r in used if r["note"] and "does without" not in r["note"]]
-    if flagged:
-        body += (
-            "<p><b>Look at these before trusting the ranking:</b> "
-            + html_escape("; ".join(f"{r['variable']} ({r['note']})" for r in flagged[:6]))
-            + ".</p>"
-        )
-    if left:
-        body += "<p>Columns in the file the model was not given:</p>" + data_table_html(left, max_rows=60)
     if curve and curve.get("points"):
         fig = go.Figure(go.Scatter(x=[p["variables"] for p in curve["points"]], y=[p[metric] for p in curve["points"]],
                                    mode="lines+markers", name="refitted on the top K"))  # fmt: skip
@@ -692,6 +692,16 @@ def _variables_html(used: list[dict], left: list[dict], curve: dict | None, go: 
         )
     elif curve and curve.get("skipped"):
         body += f"<p>No refit curve: {html_escape(curve['skipped'])}.</p>"
+    flagged = [r for r in used if r["note"] and "does without" not in r["note"]]
+    if flagged:
+        body += (
+            "<p><b>Look at these before trusting the ranking:</b> "
+            + html_escape("; ".join(f"{r['variable']} ({r['note']})" for r in flagged[:6]))
+            + ".</p>"
+        )
+    body += _scroll(data_table_html(rows, max_rows=max(80, min(len(rows), 500))))
+    if left:
+        body += "<p>Columns in the file the model was not given:</p>" + _scroll(data_table_html(left, max_rows=60))
     return body
 
 

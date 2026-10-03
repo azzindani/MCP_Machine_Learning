@@ -19,7 +19,7 @@ guess dressed as a record.
   is a seeded random sample and says so) and **Variables to keep** (every input ranked with its share of the
   importance and the running total, the columns left out and why, an identifier or a possible leak flagged on
   its row, and for a tree model the held-out score of the model refitted on its top K variables, with the K that
-  is within 1% of the full model named; the refit needs `train_file_path` and says so when it is missing). A
+  is within 1% of the full model named, drawn above the table, which scrolls in a box of its own; the refit needs `train_file_path` and says so when it is missing). A
   linear or scaled model is not refitted behind the wrong preprocessing; it says why.
 - The page says when it was scored on the rows the model was trained on (by file name, and by the rows
   themselves when the file was copied under another name): the headline carries the warning and the response
