@@ -278,16 +278,17 @@ _SCORER_JS = """
 _PANEL_CSS = """
 .mdl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(13rem,1fr));gap:.75rem;margin-bottom:1rem}
 .mdl-field{display:flex;flex-direction:column;gap:.25rem}
-.mdl-field label{font-size:.75rem;text-transform:uppercase;letter-spacing:.03em;color:var(--muted)}
-.mdl-field input,.mdl-field select{background:var(--card);color:var(--text);border:1px solid var(--border);
+.mdl-field label{font-size:.75rem;text-transform:uppercase;letter-spacing:.03em;color:var(--text-muted)}
+.mdl-field input,.mdl-field select{background:var(--surface);color:var(--text);border:1px solid var(--border);
   border-radius:.375rem;padding:.4rem .5rem;font-size:.875rem;font-family:inherit}
+.mdl-field select option{background:var(--surface);color:var(--text)}
 .mdl-result{display:flex;flex-wrap:wrap;align-items:baseline;gap:.4rem .75rem;padding:.9rem 1rem;
-  background:var(--card);border:1px solid var(--border);border-radius:.5rem;margin-bottom:.75rem}
-.mdl-result .lbl{font-size:.75rem;text-transform:uppercase;letter-spacing:.03em;color:var(--muted)}
+  background:var(--surface);border:1px solid var(--border);border-radius:.5rem;margin-bottom:.75rem}
+.mdl-result .lbl{font-size:.75rem;text-transform:uppercase;letter-spacing:.03em;color:var(--text-muted)}
 .mdl-result .val{font-size:1.5rem;font-weight:600;color:var(--accent);
   min-width:0;overflow-wrap:anywhere}
 .mdl-row{display:flex;align-items:center;gap:.6rem;margin:.3rem 0;font-size:.8125rem}
-.mdl-name{flex:0 1 9rem;min-width:0;color:var(--muted);
+.mdl-name{flex:0 1 9rem;min-width:0;color:var(--text-muted);
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mdl-track{flex:1 1 auto;min-width:4rem;height:.5rem;background:var(--border);
   border-radius:.25rem;overflow:hidden}
