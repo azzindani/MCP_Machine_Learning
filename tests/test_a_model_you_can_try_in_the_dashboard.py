@@ -83,6 +83,24 @@ class TestTheDashboardHasTheForm:
         flattered = _dash(home, model, "churned", file="train.csv")["sections_generated"]
         assert flattered[:3] == ["answer", "overlap", "predict"]
 
+    def test_the_warnings_about_the_scores_come_before_the_form_that_invites_playing(self, home):
+        df = _frame(900, 3)
+        df["leak"] = df["price"] * 1.0
+        df.to_csv(home / "leaky.csv", index=False)
+        train_regressor(
+            str(home / "leaky.csv"),
+            "price",
+            "rfr",
+            feature_columns=["tenure", "leak"],
+            output_path=str(home / "leaky.pkl"),
+        )
+        r = _dash(home, home / "leaky.pkl", "price", file="leaky.csv")
+        order = r["sections_generated"]
+        assert {"overlap", "leakage", "predict"} <= set(order) and r["interactive_prediction"] is True
+        assert order.index("predict") > max(order.index("overlap"), order.index("leakage"))
+        assert order[: order.index("predict")] == ["answer", *order[1 : order.index("predict")]]
+        assert set(order[1 : order.index("predict")]) == {"overlap", "leakage"}
+
     def test_the_rows_table_and_the_form_live_on_one_page(self, home):
         _dash(home, _train(home, "lr", "churned", "lr"), "churned")
         html = (home / "d.html").read_text(encoding="utf-8")
