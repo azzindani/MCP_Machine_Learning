@@ -201,7 +201,7 @@ def generate_model_dashboard(
     dry_run: bool = False,
     return_content: bool = False,
 ) -> dict:
-    """Model on labelled rows: baseline, ROC, threshold cost, drivers, errors, drift."""
+    """Model on labelled rows: ROC, cost, drivers, variables to keep, row predictions."""
     return engine.generate_model_dashboard(
         model_path,
         file_path,

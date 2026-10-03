@@ -11,6 +11,21 @@ guess dressed as a record.
 
 ## [Unreleased]
 
+### Added — the model dashboard reads a model row by row, and says which variables to keep
+
+- `generate_model_dashboard` gains **Predictions** (every scored row: what the model said, what was true, its
+  confidence or its error in the unit and as a share, and the values of the four variables that matter most;
+  sort by any column, show only the mistakes, search, export the rows on screen as CSV; a file past 20,000 rows
+  is a seeded random sample and says so) and **Variables to keep** (every input ranked with its share of the
+  importance and the running total, the columns left out and why, an identifier or a possible leak flagged on
+  its row, and for a tree model the held-out score of the model refitted on its top K variables, with the K that
+  is within 1% of the full model named; the refit needs `train_file_path` and says so when it is missing). A
+  linear or scaled model is not refitted behind the wrong preprocessing; it says why.
+- The page says when it was scored on the rows the model was trained on (by file name, and by the rows
+  themselves when the file was copied under another name): the headline carries the warning and the response
+  reports `scored_on_training_rows`, because those scores flatter the model.
+- Row data goes into the page as JSON with `<` escaped, so a cell holding `</script>` cannot end the script.
+
 ### Fixed — a file is read as what it says it is
 
 - A CSV's byte-order mark and delimiter are read from the file (`sniff_encoding`, `sniff_separator`): a

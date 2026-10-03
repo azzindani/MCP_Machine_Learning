@@ -17,7 +17,12 @@ labelled rows. This scores a file with the model and draws them:
   model's coefficients or odds ratios;
 - errors by segment, the most confident mistakes, leakage suspects;
 - drift against the training file (`train_file_path`), per feature, as PSI;
-- a leaderboard when other models are named (`compare_model_paths`).
+- a leaderboard when other models are named (`compare_model_paths`);
+- the predictions themselves, row by row: what the model said against what was true, filterable and sortable;
+- the variables: every input ranked, how much of the importance the top few hold, which are identifiers, constants
+  or leak suspects, and (with `train_file_path`, for a tree model) the held-out score of a model refitted on only
+  the top K variables -- the number to read before dropping any;
+- a warning when the rows scored are the rows the model was trained on, whose scores flatter it.
 
 Every number is computed here from the scored rows; the page recomputes only
 the threshold, from the same scores.
@@ -28,6 +33,7 @@ from __future__ import annotations
 import json
 import logging
 from html import escape as html_escape
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -51,6 +57,17 @@ PD_POINTS = 15
 MAX_SEGMENT_LEVELS = 20
 MIN_SEGMENT_ROWS = 30
 PSI_MODERATE, PSI_MAJOR = 0.1, 0.25
+MAX_PRED_ROWS = 1500  # predictions carried into the page, a random sample past this
+MAX_CURVE_ROWS = 6000  # training rows each refit of the variable-selection curve learns from
+TREE_MODELS = (
+    "rf",
+    "rfr",
+    "dtc",
+    "dtr",
+)  # refitting on fewer variables needs no scaler or one-hot step that spans all of them
+ID_SHARE = 0.95  # a column this unique, of whole numbers or text, identifies a row; it does not describe one
+OVERLAP_SHARE = 0.05  # scored rows also in the training file, past which the scores are called flattered
+KEEP_SHARE = 0.9  # the share of the importance the slider opens on
 
 
 def _plain(value: Any) -> Any:
@@ -361,6 +378,323 @@ def _slider_html(th: dict, scores: np.ndarray, y: np.ndarray, positive: str) -> 
     )
 
 
+def _shared_rows(train: pd.DataFrame, scored: pd.DataFrame, features: list[str]) -> float | None:
+    """The share of scored rows whose feature values also appear in the training file, or None when rows do not identify.
+
+    A discrete table repeats rows by chance, so the share only means something when the scored rows are nearly all distinct.
+    """
+    cols = [c for c in features if c in train.columns and c in scored.columns]
+    if not cols or len(scored) == 0:
+        return None
+    if scored[cols].astype(str).drop_duplicates().shape[0] < 0.9 * len(scored):
+        return None
+    a = set(pd.util.hash_pandas_object(train[cols].astype(str), index=False))
+    b = pd.util.hash_pandas_object(scored[cols].astype(str), index=False)
+    return float(b.isin(a).mean())
+
+
+def _identifier(series: pd.Series) -> bool:
+    """A column of whole numbers or text in which nearly every value is different: a row's name, not a fact about it."""
+    values = series.dropna()
+    if len(values) < 50 or not (pd.api.types.is_integer_dtype(values) or values.dtype == object):
+        return False
+    return values.nunique() >= ID_SHARE * len(values)
+
+
+def _why_left_out(series: pd.Series) -> str:
+    if series.notna().sum() == 0 or series.nunique(dropna=True) <= 1:
+        return "constant: one value in every row"
+    if _identifier(series):
+        return "an identifier: every value is different"
+    if series.isna().mean() > 0.6:
+        return f"mostly empty ({series.isna().mean():.0%} missing)"
+    if series.dtype == object and series.nunique() > 50:
+        return f"text with {series.nunique():,} different values"
+    return "not chosen as an input"
+
+
+def _variable_rows(
+    importance: list[dict], df: pd.DataFrame, target: str, features: list[str], suspects: list[dict]
+) -> tuple[list[dict], list[dict]]:
+    """Every input best first with its share of the importance, and the columns that were left out and why."""
+    leaks = {str(sp.get("feature")) for sp in suspects}
+    total = sum(max(r["drop"], 0.0) for r in importance) or 1.0
+    used, running = [], 0.0
+    for r in importance:
+        share = (max(r["drop"], 0.0) + 0.0) / total  # + 0.0: a tiny negative drop is no "-0.0%"
+        running += share
+        notes = []
+        if r["feature"] in df.columns:
+            col = df[r["feature"]]
+            if _identifier(col):
+                notes.append("an identifier: it names rows, so the model may be remembering them")
+            elif col.nunique(dropna=True) <= 1:
+                notes.append("constant")
+        if r["feature"] in leaks:
+            notes.append("possible target leakage")
+        if r["drop"] <= 0.0005:
+            notes.append("the model does without it")
+        used.append({"variable": r["feature"], "importance": r["drop"] or 0.0, "spread": r["spread"], "share": round(share, 4),
+                     "cumulative": round(min(running, 1.0), 4), "note": "; ".join(notes)})  # fmt: skip
+    left = [{"variable": c, "why": _why_left_out(df[c])} for c in df.columns if c != target and c not in features]
+    return used, left
+
+
+def _selection_curve(
+    scorer: _Scorer, train: pd.DataFrame, test: pd.DataFrame, target: str, ordered: list[str], metric: str
+) -> dict:
+    """The held-out score of the model refitted on only its top K variables, for a ladder of K; or why it was not made."""
+    from sklearn.base import clone
+    from sklearn.metrics import accuracy_score, r2_score, roc_auc_score
+
+    if (
+        scorer.meta.get("model_key") not in TREE_MODELS
+        or scorer.meta.get("scaler") is not None
+        or scorer.meta.get("poly") is not None
+    ):
+        return {"skipped": "a refit on fewer variables is made for tree models (random forest, decision tree); "
+                           "a scaled or linear model needs its own preprocessing for each subset"}  # fmt: skip
+    if not hasattr(scorer.model, "get_params"):
+        return {"skipped": "this model cannot be refitted from its saved form"}
+    train = train.dropna(subset=[target])
+    if len(train) < 100:
+        return {"skipped": "the training file has fewer than 100 labelled rows"}
+    if len(train) > MAX_CURVE_ROWS:
+        train = train.sample(MAX_CURVE_ROWS, random_state=42)
+    y_train, y_test = scorer.truth(train[target]), scorer.truth(test[target])
+    if scorer.task == "classification" and (y_train < 0).any():
+        return {"skipped": "the training file holds classes the model was not trained on"}
+    ladder = sorted({k for k in (1, 2, 3, 5, 8, 13, 21) if k < len(ordered)} | {len(ordered)})
+    points = []
+    for k in ladder:
+        feats = ordered[:k]
+        fitted = clone(scorer.model)
+        x_train, _ = model_matrix(train, scorer.meta, feats)
+        fitted.fit(x_train, y_train)
+        x_test, _ = model_matrix(test, scorer.meta, feats)
+        if metric == "auc":
+            score = float(roc_auc_score(y_test, fitted.predict_proba(x_test)[:, 1]))
+        elif metric == "r2":
+            score = float(r2_score(y_test, fitted.predict(x_test)))
+        else:
+            score = float(accuracy_score(y_test, fitted.predict(x_test)))
+        points.append({"variables": k, metric: round(score, 4)})
+    full = points[-1][metric]
+    tolerance = 0.01 * abs(full)
+    enough = next((p["variables"] for p in points if p[metric] >= full - tolerance), len(ordered))
+    return {"metric": metric, "points": points, "full": full, "enough": enough, "rows": len(train)}
+
+
+_VARS_JS = r"""
+<script>
+(function(){
+  var el=document.getElementById('vs-data'),r=document.getElementById('vs-range');
+  if(!el||!r)return;
+  var d=JSON.parse(el.textContent),out=document.getElementById('vs-out'),k=document.getElementById('vs-k');
+  function draw(){
+    var n=+r.value,c=d.c[n-1],names=d.v.slice(0,n);
+    k.textContent=n;
+    out.textContent='The top '+n+' of '+d.v.length+' variables hold '+(c*100).toFixed(0)+'% of the importance; the other '
+      +(d.v.length-n)+' hold '+((1-c)*100).toFixed(0)+'%. Kept: '+names.slice(0,12).join(', ')+(n>12?', and '+(n-12)+' more':'')+'.';
+  }
+  r.addEventListener('input',draw);draw();
+})();
+</script>
+"""
+
+_PRED_JS = r"""
+<script>
+(function(){
+  var el=document.getElementById('pred-data');if(!el)return;
+  var D=JSON.parse(el.textContent),rows=D.rows,cls=D.task==='classification',per=25,page=0,key=null,asc=true;
+  var sel=document.getElementById('pred-filter'),body=document.querySelector('#pred-table tbody'),
+      info=document.getElementById('pred-info'),prev=document.getElementById('pred-prev'),next=document.getElementById('pred-next');
+  function val(r,k){return k.charAt(0)==='f'&&k.length>1&&!isNaN(+k.slice(1))?r.f[+k.slice(1)]:r[k];}
+  function keep(r){
+    var v=sel.value;if(v==='all')return true;
+    if(cls)return v==='wrong'?!r.ok:!!r.ok;
+    return v==='over'?r.e<0:v==='under'?r.e>0:Math.abs(r.e)>=D.big;
+  }
+  function shown(){
+    var out=rows.filter(keep);
+    if(key){out.sort(function(a,b){var x=val(a,key),y=val(b,key);
+      if(x===null||x===undefined)return 1;if(y===null||y===undefined)return -1;
+      var d=(typeof x==='number'&&typeof y==='number')?x-y:String(x).localeCompare(String(y));return asc?d:-d;});}
+    return out;
+  }
+  function cellText(r,k){
+    var v=val(r,k);if(v===null||v===undefined)return '';
+    if(k==='ok')return v?'✓':'✗';
+    if(k==='c'||k==='q')return (v*100).toFixed(1)+'%';
+    if(k==='r')return v.toFixed(1)+'%';
+    return typeof v==='number'?v.toLocaleString('en-US'):String(v);
+  }
+  function draw(){
+    var all=shown(),pages=Math.max(1,Math.ceil(all.length/per));page=Math.min(page,pages-1);
+    body.textContent='';
+    all.slice(page*per,page*per+per).forEach(function(r){
+      var tr=document.createElement('tr');if(cls&&!r.ok)tr.className='pred-wrong';
+      D.cols.forEach(function(c){var td=document.createElement('td');td.textContent=cellText(r,c.k);tr.appendChild(td);});
+      body.appendChild(tr);
+    });
+    info.textContent=all.length.toLocaleString('en-US')+' of '+rows.length.toLocaleString('en-US')+' rows shown · page '+(page+1)+' of '+pages;
+    prev.disabled=page===0;next.disabled=page>=pages-1;
+  }
+  sel.addEventListener('change',function(){page=0;draw();});
+  prev.addEventListener('click',function(){page--;draw();});next.addEventListener('click',function(){page++;draw();});
+  document.querySelectorAll('#pred-table th[data-k]').forEach(function(th){
+    th.addEventListener('click',function(){var k=th.getAttribute('data-k');asc=key===k?!asc:true;key=k;page=0;draw();});
+  });
+  document.getElementById('pred-csv').addEventListener('click',function(){
+    var q=function(v){v=v===null||v===undefined?'':String(v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
+    var lines=[D.cols.map(function(c){return q(c.t);}).join(',')];
+    shown().forEach(function(r){lines.push(D.cols.map(function(c){return q(val(r,c.k));}).join(','));});
+    var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/csv'}));
+    a.download='predictions.csv';document.body.appendChild(a);a.click();a.remove();
+  });
+  draw();
+})();
+</script>
+"""
+
+
+def _cell(value: Any) -> Any:
+    """A cell as the predictions table sorts and exports it: a number stays a number, a gap is null, the rest is text."""
+    if value is None or value is pd.NA or (isinstance(value, float) and not np.isfinite(value)):
+        return None
+    if isinstance(value, (bool, np.bool_)):
+        return str(bool(value))
+    if isinstance(value, (int, np.integer)):
+        return int(value)
+    if isinstance(value, (float, np.floating)):
+        return round(float(value), 4)
+    return str(value)
+
+
+def _prediction_rows(
+    scorer: _Scorer,
+    df: pd.DataFrame,
+    y: np.ndarray,
+    pred: np.ndarray,
+    proba: np.ndarray | None,
+    shown: list[str],
+    rng: np.random.Generator,
+) -> list[dict]:
+    """What the model said about each row (a random MAX_PRED_ROWS of them past that), beside what was true."""
+    n = len(df)
+    index = np.arange(n) if n <= MAX_PRED_ROWS else np.sort(rng.choice(n, MAX_PRED_ROWS, replace=False))
+    rows = []
+    for i in index:
+        row: dict[str, Any] = {"i": int(i) + 1, "f": [_cell(df.at[i, c]) for c in shown]}
+        if scorer.task == "classification":
+            row.update(a=scorer.name(int(y[i])), p=scorer.name(int(pred[i])), ok=int(pred[i] == y[i]))
+            if proba is not None:
+                row["c"] = round(float(proba[i].max()), 3)
+                if proba.shape[1] == 2:
+                    row["q"] = round(float(proba[i, 1]), 3)
+        else:
+            err = float(y[i] - pred[i])
+            row.update(a=round(float(y[i]), 4), p=round(float(pred[i]), 4), e=round(err, 4),
+                       r=round(err / float(y[i]) * 100, 2) if y[i] else None)  # fmt: skip
+        rows.append(row)
+    return rows
+
+
+def _predictions_html(
+    rows: list[dict], shown: list[str], scorer: _Scorer, positive: str, total: int, target: str
+) -> str:
+    """The predictions table: a filter, sortable columns, pages, and the rows as a CSV."""
+    cls = scorer.task == "classification"
+    cols = [{"k": "i", "t": "Row"}, {"k": "a", "t": f"Actual {target}"}, {"k": "p", "t": "Predicted"}]
+    if cls:
+        cols += [{"k": "ok", "t": "Right?"}, {"k": "c", "t": "Confidence"}]
+        if any("q" in r for r in rows):
+            cols.append({"k": "q", "t": f"Chance of {positive}"})
+    else:
+        cols += [{"k": "e", "t": "Error (actual − predicted)"}, {"k": "r", "t": "Error, % of actual"}]
+    cols += [{"k": f"f{j}", "t": name} for j, name in enumerate(shown)]
+    if cls:
+        options = [("all", "all rows"), ("wrong", "only the wrong"), ("right", "only the right")]
+        big = 0.0
+    else:
+        errors = sorted(abs(r["e"]) for r in rows)
+        big = errors[int(0.9 * (len(errors) - 1))] if errors else 0.0
+        options = [
+            ("all", "all rows"),
+            ("over", "predicted too high"),
+            ("under", "predicted too low"),
+            ("big", "the largest tenth of the errors"),
+        ]
+    payload = json.dumps({"rows": rows, "cols": cols, "task": scorer.task, "big": big}).replace("<", "\\u003c")
+    head = "".join(f'<th data-k="{c["k"]}" style="cursor:pointer">{html_escape(c["t"])}</th>' for c in cols)
+    chosen = (
+        f"a random {len(rows):,} of the {total:,} scored rows" if len(rows) < total else f"all {total:,} scored rows"
+    )
+    return (
+        f'<script type="application/json" id="pred-data">{payload}</script>'
+        "<style>.pred-wrong td{background:rgba(207,34,46,.10)}#pred-table th[data-k]:hover{text-decoration:underline}"
+        "#pred-table-wrap{overflow-x:auto}.pred-bar{display:flex;flex-wrap:wrap;gap:.75rem;align-items:center;margin:.5rem 0}</style>"
+        f"<p>What the model said about {chosen}, beside what was true. Click a column to sort by it.</p>"
+        '<div class="pred-bar"><label>Show <select id="pred-filter">'
+        + "".join(f'<option value="{v}">{html_escape(t)}</option>' for v, t in options)
+        + '</select></label><button type="button" id="pred-prev">‹ Previous</button>'
+        '<button type="button" id="pred-next">Next ›</button><span id="pred-info"></span>'
+        '<button type="button" id="pred-csv">Download these rows (CSV)</button></div>'
+        f'<div id="pred-table-wrap"><table id="pred-table"><thead><tr>{head}</tr></thead><tbody></tbody></table></div>'
+    )
+
+
+def _variables_html(used: list[dict], left: list[dict], curve: dict | None, go: Any, fig_html: Any, metric: str) -> str:
+    """The variables page: a keep-the-top-K slider, every input with its share, the columns left out, the refit curve."""
+    if not used:
+        return "<p>No inputs.</p>"
+    enough_k = next((i + 1 for i, r in enumerate(used) if r["cumulative"] >= KEEP_SHARE), len(used))
+    payload = json.dumps({"v": [r["variable"] for r in used], "c": [r["cumulative"] for r in used]}).replace(
+        "<", "\\u003c"
+    )
+    rows = [{"variable": r["variable"], f"importance ({metric} lost)": r["importance"], "share": f"{r['share']:.1%}",
+             "cumulative": f"{r['cumulative']:.1%}", "note": r["note"]} for r in used]  # fmt: skip
+    from shared.html_theme import data_table_html
+
+    body = (
+        f'<script type="application/json" id="vs-data">{payload}</script>'
+        "<p>Every input the model was given, best first. <b>Importance</b> is how much the model's score falls when the "
+        "variable is shuffled; <b>cumulative</b> is the share of all the importance held by it and every variable above it. "
+        "Slide to see what keeping only the top few would keep.</p>"
+        f'<label style="display:block;margin:.5rem 0">Keep the top <b id="vs-k"></b> of {len(used)} variables '
+        f'<input id="vs-range" type="range" min="1" max="{len(used)}" step="1" value="{enough_k}" style="width:100%"></label>'
+        '<p id="vs-out"></p>' + data_table_html(rows, max_rows=80)
+    )
+    flagged = [r for r in used if r["note"] and "does without" not in r["note"]]
+    if flagged:
+        body += (
+            "<p><b>Look at these before trusting the ranking:</b> "
+            + html_escape("; ".join(f"{r['variable']} ({r['note']})" for r in flagged[:6]))
+            + ".</p>"
+        )
+    if left:
+        body += "<p>Columns in the file the model was not given:</p>" + data_table_html(left, max_rows=60)
+    if curve and curve.get("points"):
+        fig = go.Figure(go.Scatter(x=[p["variables"] for p in curve["points"]], y=[p[metric] for p in curve["points"]],
+                                   mode="lines+markers", name="refitted on the top K"))  # fmt: skip
+        fig.add_hline(y=curve["full"], line_dash="dash", annotation_text="all variables")
+        fig.update_layout(xaxis_title="variables kept (best first)", yaxis_title=f"held-out {metric}")
+        verdict = (
+            f"no smaller set gets within 1% of the full model's {metric} {curve['full']:.3f}: all {len(used)} are needed "
+            "for the last of it"
+            if curve["enough"] >= len(used)
+            else f"<b>the top {curve['enough']}</b> of {len(used)} reach within 1% of the full model's {metric} "
+            f"{curve['full']:.3f}"
+        )
+        body += (
+            f"<p>Refitting the model on only its top K variables (on {curve['rows']:,} training rows) and scoring the "
+            f"held-out rows: {verdict}.</p>" + fig_html(fig, 340)
+        )
+    elif curve and curve.get("skipped"):
+        body += f"<p>No refit curve: {html_escape(curve['skipped'])}.</p>"
+    return body
+
+
 def generate_model_dashboard(
     model_path: str,
     file_path: str,
@@ -420,6 +754,16 @@ def generate_model_dashboard(
     if dry_run:
         return {"success": True, "op": "generate_model_dashboard", "dry_run": True, "output_path": str(out),
                 "rows": len(df), "task": scorer.task, "progress": progress, "token_estimate": 40}  # fmt: skip
+
+    train, train_name = None, ""
+    if train_file_path:
+        try:
+            tp_ = resolve_path(train_file_path, (".csv",))
+        except ValueError as exc:
+            return _error(str(exc), "Pass the file the model was trained on.")
+        if not tp_.exists():
+            return _error(f"File not found: {train_file_path}", "Pass the file the model was trained on.")
+        train, train_name = _read_csv(str(tp_)), tp_.name
 
     y = scorer.truth(df[target])
     if scorer.task == "classification" and (y < 0).any():
@@ -570,6 +914,29 @@ def generate_model_dashboard(
                 "is how much the model leans on it. Near zero means the model does without it.</p>" + fig_html(bars, 60 + 26 * len(imp)),
     })  # fmt: skip
     resp["importance"] = importance
+    suspects = leakage_suspects(df, target, [c for c in scorer.features if c in df.columns])
+    used, left_out = _variable_rows(importance, df, target, scorer.features, suspects)
+    if train is None:
+        curve: dict | None = {
+            "skipped": "pass train_file_path (the file the model was trained on) to refit it on fewer variables"
+        }
+    else:
+        try:
+            curve = _selection_curve(scorer, train, df, target, [r["variable"] for r in used], metric)
+        except Exception as exc:  # a refit that fails must not take the rest of the dashboard with it
+            logger.exception("selection curve failed")
+            curve = {"skipped": f"the refit failed ({type(exc).__name__}: {exc})"}
+    sections.append({"id": "variables", "heading": "Variables: which to keep",
+                     "html": _variables_html(used, left_out, curve, go, fig_html, metric)})  # fmt: skip
+    resp["variables"] = used
+    resp["left_out"] = left_out
+    resp["selection_curve"] = curve
+    shown = [r["feature"] for r in importance[:4]]
+    pred_rows = _prediction_rows(scorer, df, y, pred, proba, shown, rng)
+    anchor = max(i for i, sec in enumerate(sections) if sec["id"] in ("confusion", "residuals"))
+    sections.insert(anchor + 1, {"id": "predictions", "heading": "Predictions, row by row",
+                                 "html": _predictions_html(pred_rows, shown, scorer, positive, len(df), target)})  # fmt: skip
+    resp["predictions"] = {"rows_in_page": len(pred_rows), "rows_scored": len(df), "columns_shown": shown}
     pd_rows = []
     for r in importance[:PD_FEATURES]:
         part = _partial_dependence(scorer, sample.head(1000), r["feature"])
@@ -644,23 +1011,41 @@ def generate_model_dashboard(
         heading = "The most confident mistakes" if scorer.task == "classification" else "The largest misses"
         sections.append({"id": "worst", "heading": heading, "html": data_table_html(worst_rows)})
     resp["worst_predictions"] = worst_rows
-    suspects = leakage_suspects(df, target, [c for c in scorer.features if c in df.columns])
     note = leakage_note(suspects, None)
     if suspects:
         sections.insert(
             0, {"id": "leakage", "heading": "Scores may not be real", "html": f"<p>{html_escape(note)}</p>"}
         )
     resp["leakage_suspects"] = suspects[:10]
+    shared = _shared_rows(train, df, scorer.features) if train is not None else None
+    trained_on = Path(str(metadata.get("trained_on") or "")).name
+    flattered = (bool(trained_on) and trained_on == dp.name) or (shared is not None and shared >= OVERLAP_SHARE)
+    if flattered:
+        headline += " (rows the model was trained on: the score flatters it)"
+        recorded = {
+            k: v
+            for k, v in (metadata.get("metrics") or {}).items()
+            if isinstance(v, (int, float)) and not isinstance(v, bool)
+        }
+        why = (
+            f"{dp.name} is the file this model was trained on"
+            if trained_on == dp.name
+            else f"{shared:.0%} of the rows scored here are also in {train_name}"
+        )
+        sections.insert(0, {"id": "overlap", "heading": "These scores include rows the model learned from", "html": (
+            f"<p><b>{html_escape(why)}.</b> A model is fitted to its training rows, so on them it looks better than it is: "
+            "every score on this page flatters it."
+            + (" When it was trained, on the rows it had not seen, it scored "
+               + html_escape(", ".join(f"{k} {v}" for k, v in recorded.items())) + "." if recorded else "")
+            + " Score a held-out file (the test split) to read how it does on new rows.</p>")})  # fmt: skip
+        resp["scored_on_training_rows"] = True
+        resp["held_out_metrics_when_trained"] = recorded
+        progress.append(warn("These rows include the model's training rows", why))
+    if shared is not None:
+        resp["share_of_rows_in_training_file"] = round(shared, 4)
 
     # --- Drift against the rows it learned from --------------------------------
-    if train_file_path:
-        try:
-            tp_ = resolve_path(train_file_path, (".csv",))
-        except ValueError as exc:
-            return _error(str(exc), "Pass the file the model was trained on.")
-        if not tp_.exists():
-            return _error(f"File not found: {train_file_path}", "Pass the file the model was trained on.")
-        train = _read_csv(str(tp_))
+    if train is not None:
         drift = []
         for feature in scorer.features:
             if feature in train.columns:
@@ -672,7 +1057,7 @@ def generate_model_dashboard(
         moved = [d for d in drift if d["shift"] != "stable"]
         sections.append({
             "id": "drift", "heading": "Drift from the training rows",
-            "html": f"<p>Population stability index per feature, {tp_.name} against {dp.name}: under {PSI_MODERATE} is "
+            "html": f"<p>Population stability index per feature, {train_name} against {dp.name}: under {PSI_MODERATE} is "
                     f"stable, {PSI_MODERATE}-{PSI_MAJOR} a moderate shift, above {PSI_MAJOR} a major one. "
                     f"{len(moved)} of {len(drift)} features have moved.</p>" + data_table_html(drift),
         })  # fmt: skip
@@ -715,7 +1100,7 @@ def generate_model_dashboard(
         theme=theme,
         open_after=open_after,
         output_path=str(out),
-        extra_body=_SLIDER_JS if binary else "",
+        extra_body=(_SLIDER_JS if binary else "") + _VARS_JS + _PRED_JS,
     )
     progress.append(ok("Model dashboard saved", out.name))
     if suspects:
