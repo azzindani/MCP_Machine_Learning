@@ -23,7 +23,13 @@ from pathlib import Path
 
 import plotly.io as pio  # lazy-safe: imported once at module level
 
-from shared.chart_page import apply_axis_automargin, apply_chart_margins, chart_page_html, take_page_title
+from shared.chart_page import (
+    CHART_SCROLL_JS,
+    apply_axis_automargin,
+    apply_chart_margins,
+    chart_page_html,
+    take_page_title,
+)
 from shared.file_utils import atomic_write_text
 from shared.html_layout import VIEWPORT_META, get_output_path  # noqa: F401
 from shared.plotly_bundle import include_plotlyjs_for, plotly_script_tag
@@ -560,7 +566,7 @@ def save_chart(
         config={
             "responsive": True,
             "displayModeBar": True,
-            "scrollZoom": True,
+            "scrollZoom": False,
         },
     )
 
@@ -851,6 +857,7 @@ def build_html_report(
 {_COPY_CLIPBOARD_JS}
 {_PRINT_BTN_JS}
 {_BACK_TO_TOP_JS}
+{CHART_SCROLL_JS}
 {dev_js}
 {extra}
 </body></html>"""
@@ -931,8 +938,9 @@ def plotly_div(fig: object, height: int = 450, theme: str = "device") -> str:
     # height, which a subplot grid needs.
     apply_axis_automargin(fig)
 
-    # Cap rendered height to 80 vh via inline CSS so tall charts scroll
-    # instead of forcing the viewport to grow.
+    # The box grows to its chart. It was `height:min(Hpx,80vh);overflow:hidden auto`: the card's padding made the box
+    # shorter than the chart it held, so every chart sat in a scroll box of its own that took the first wheel turns
+    # and swipes meant for the page. The docstring always said min-height.
     inner = pio.to_html(
         fig,  # type: ignore[arg-type]
         full_html=False,
@@ -940,7 +948,7 @@ def plotly_div(fig: object, height: int = 450, theme: str = "device") -> str:
         config={
             "responsive": True,
             "displayModeBar": True,
-            "scrollZoom": True,
+            "scrollZoom": False,
         },
     )
-    return f'<div class="chart-container" style="height:min({height}px,80vh);overflow:hidden auto">' + inner + "</div>"
+    return f'<div class="chart-container" style="min-height:{height}px">' + inner + "</div>"

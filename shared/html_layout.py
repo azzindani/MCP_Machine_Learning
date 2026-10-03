@@ -30,7 +30,7 @@ VIEWPORT_META = '<meta name="viewport" content="width=device-width,initial-scale
 # 3000-point scattergl rendered as empty axes. plotly.express switches scatter to
 # WebGL on its own above ~1000 points, and this repo calls px.scatter, so the trap
 # was live. Data Analyst never had it; both now use plotly's own default.
-PLOTLY_CFG_JS = '{"responsive":true,"displayModeBar":true,"scrollZoom":true}'
+PLOTLY_CFG_JS = '{"responsive":true,"displayModeBar":true,"scrollZoom":false}'
 
 
 def plotly_config() -> dict:
@@ -38,7 +38,7 @@ def plotly_config() -> dict:
     return {
         "responsive": True,
         "displayModeBar": True,
-        "scrollZoom": True,
+        "scrollZoom": False,  # the wheel scrolls the page; chart_page.CHART_SCROLL_JS zooms on Ctrl/Cmd + wheel
     }
 
 
