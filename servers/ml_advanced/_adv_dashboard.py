@@ -44,6 +44,8 @@ from shared.file_utils import read_csv as _read_csv
 from shared.handover import make_context, make_handover
 from shared.leakage import leakage_note, leakage_suspects
 from shared.ml_utils import model_matrix, target_labels
+from shared.model_js import ModelNotEmbeddable, prediction_panel
+from shared.model_js import build_payload as build_model_payload
 from shared.progress import ok, warn
 
 from ._adv_helpers import _error, _load_model, get_output_path
@@ -705,6 +707,32 @@ def _variables_html(used: list[dict], left: list[dict], curve: dict | None, go: 
     return body
 
 
+def _try_the_model(model_obj: Any, metadata: dict) -> tuple[dict, str, str]:
+    """The "Try the model" section, the script that runs it, and why not when the model cannot be embedded.
+
+    The model travels in the page as a scoring function, so a reader can change a value and watch the answer move
+    from a file:// URL with nothing running behind it. Only a model whose scoring is short and exact is embedded
+    (a linear model, a tree, a forest of up to 60,000 nodes): the page says so when it is not, and why.
+    """
+    try:
+        payload = build_model_payload(model_obj, metadata)
+    except ModelNotEmbeddable as exc:
+        why = str(exc)
+    except Exception as exc:  # an unusual model must not take the dashboard with it
+        logger.debug("model embedding skipped: %s", exc)
+        why = type(exc).__name__
+    else:
+        defaults = metadata.get("feature_defaults")
+        html, script = prediction_panel(payload, dict(defaults) if isinstance(defaults, dict) else {})
+        return {"id": "predict", "heading": "Try the model", "html": html}, script, ""
+    note = (
+        f"<p><b>This model is too large to run inside the page: {html_escape(why)}.</b> Tune it smaller (a tree or "
+        "forest with a lower max_depth and fewer trees) or train a linear model, and this section becomes a form "
+        "that answers as you change the values.</p>"
+    )
+    return {"id": "predict", "heading": "Try the model", "html": note}, "", why
+
+
 def generate_model_dashboard(
     model_path: str,
     file_path: str,
@@ -1099,6 +1127,14 @@ def generate_model_dashboard(
         sections.append({"id": "leaderboard", "heading": "Leaderboard, on these rows", "html": data_table_html(board)})
         resp["leaderboard"] = board
 
+    panel, panel_script, not_embedded = _try_the_model(model_obj, metadata)
+    sections.insert(1 if resp.get("scored_on_training_rows") else 0, panel)
+    resp["interactive_prediction"] = not not_embedded
+    if not_embedded:
+        resp["not_embeddable"] = not_embedded
+        progress.append(warn("The model is not embedded in the page", not_embedded))
+    else:
+        progress.append(ok("Embedded model for in-page prediction"))
     sections.insert(0, {"id": "answer", "heading": "The answer first", "html": f"<p><b>{html_escape(headline)}</b></p>"
                         + (f"<p>Weakest segment: {html_escape(weak[0]['column'])} = {html_escape(weak[0]['value'])} "
                            f"({weak[0]['rows']:,} rows).</p>" if weak else "")})  # fmt: skip
@@ -1110,7 +1146,7 @@ def generate_model_dashboard(
         theme=theme,
         open_after=open_after,
         output_path=str(out),
-        extra_body=(_SLIDER_JS if binary else "") + _VARS_JS + _PRED_JS,
+        extra_body=(_SLIDER_JS if binary else "") + _VARS_JS + _PRED_JS + panel_script,
     )
     progress.append(ok("Model dashboard saved", out.name))
     if suspects:
