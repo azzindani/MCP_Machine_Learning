@@ -11,6 +11,16 @@ guess dressed as a record.
 
 ## [Unreleased]
 
+### Fixed — a report you can scroll with the pointer over a chart
+
+- Every report chart took the mouse wheel (`scrollZoom`) and, drag-to-zoom cancelling the touch, every one-finger
+  swipe, so a page of charts stopped scrolling whenever the pointer was on one. The wheel now scrolls the page and
+  Ctrl/Cmd + wheel zooms a chart; on a touch screen the charts do not drag (a tap hovers, the toolbar zooms). It
+  holds for the model dashboard, the reports and the single-chart pages alike (`CHART_SCROLL_JS`).
+- A report chart no longer sits in a scroll box of its own. The box was `height:min(Hpx,80vh);overflow:hidden auto`
+  and the card's padding made it shorter than its chart, so each chart carried a few pixels of inner scrolling that
+  took the first wheel turns and swipes. It is `min-height` now, as its docstring said.
+
 ### Added — the model dashboard reads a model row by row, and says which variables to keep
 
 - `generate_model_dashboard` gains **Predictions** (every scored row: what the model said, what was true, its
