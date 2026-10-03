@@ -1128,7 +1128,10 @@ def generate_model_dashboard(
         resp["leaderboard"] = board
 
     panel, panel_script, not_embedded = _try_the_model(model_obj, metadata)
-    sections.insert(1 if resp.get("scored_on_training_rows") else 0, panel)
+    ahead = 0  # the warnings that say whether to believe the scores come before the form that invites playing with them
+    while ahead < len(sections) and sections[ahead]["id"] in ("overlap", "leakage"):
+        ahead += 1
+    sections.insert(ahead, panel)
     resp["interactive_prediction"] = not not_embedded
     if not_embedded:
         resp["not_embeddable"] = not_embedded
